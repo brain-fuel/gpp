@@ -61,10 +61,6 @@ gpp version
 go install goforge.dev/gpp/cmd/gpp@latest
 ```
 
-> Note: the `goforge.dev` vanity import path requires the domain to serve
-> go-import meta tags; until that is live, install from the repo checkout with
-> `go install ./cmd/gpp`.
-
 ## Keeping generated code fresh
 
 Use the [pre-commit](https://pre-commit.com) framework:
