@@ -71,6 +71,7 @@ func (r *fileResolver) resolve() ([]lower.Edit, []diag.Diagnostic) {
 			r.ctorCandidate(x)
 		case *ast.CallExpr:
 			r.pipeCandidate(x)
+			r.partialCandidate(x)
 		case *ast.TypeSwitchStmt:
 			r.matchCandidate(x)
 		}

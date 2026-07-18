@@ -307,15 +307,101 @@ func (r *fileResolver) finishCtor(use *ctorUse, targs []string) {
 		r.errorf(use.name.Pos(), "constructor %s expects %d arguments, got %d", v.Name, len(v.Params), len(use.call.Args))
 		return
 	}
-	argTexts := make([]string, len(use.call.Args))
-	for i, a := range use.call.Args {
-		argTexts[i] = r.text(a.Pos(), a.End())
-	}
 	if use.call.Ellipsis.IsValid() {
 		r.errorf(use.call.Ellipsis, "constructor arguments cannot be spread with ...")
 		return
 	}
+	var phIdx []int
+	for i, a := range use.call.Args {
+		if id, isID := a.(*ast.Ident); isID && id.Name == "_" {
+			phIdx = append(phIdx, i)
+		}
+	}
+	if len(phIdx) > 0 {
+		r.emitCtorPartial(use, targs, phIdx)
+		return
+	}
+	argTexts := make([]string, len(use.call.Args))
+	for i, a := range use.call.Args {
+		argTexts[i] = r.text(a.Pos(), a.End())
+	}
 	r.emitCtor(use, targs, argTexts)
+}
+
+// emitCtorPartial lowers a constructor call with placeholder arguments to
+// a capture-once closure producing the enum value:
+//
+//	Cons(_, tail)  ⇒  func(__gpp_c0 List[int]) func(int) List[int] {
+//	                      return func(__gpp_p0 int) List[int] {
+//	                          return Cons[int]{Head: __gpp_p0, Tail: __gpp_c0}
+//	                      }
+//	                  }(tail)
+func (r *fileResolver) emitCtorPartial(use *ctorUse, targs []string, phIdx []int) {
+	e, v := use.enum, use.variant
+	litType, ok := r.ctorTypeText(use, targs)
+	if !ok {
+		return
+	}
+	// Result type: the enum interface, so the closure is assignable
+	// wherever a producer of the sum is expected.
+	enumText := e.Name
+	if use.pkgAlias != "" {
+		enumText = use.pkgAlias + "." + enumText
+	} else if e.PkgPath != r.pkg.PkgPath {
+		alias, aok := r.importName(e.PkgPath)
+		if !aok {
+			r.errorf(use.name.Pos(), "using constructor %s requires importing %q", v.Name, e.PkgPath)
+			return
+		}
+		enumText = alias + "." + enumText
+	}
+	if len(e.TParams) > 0 {
+		enumText += "[" + strings.Join(targs, ", ") + "]"
+	}
+
+	subst := map[string]string{}
+	for i, name := range e.TParams {
+		subst[name] = targs[i]
+	}
+	isPH := map[int]bool{}
+	for _, i := range phIdx {
+		isPH[i] = true
+	}
+	var outerParams, outerArgs, innerParams, innerTypes, fields []string
+	ci, pi := 0, 0
+	for i, p := range v.Params {
+		pt, err := substTypeTextLite(p.Type, subst)
+		if err != nil {
+			r.errorf(use.name.Pos(), "internal error: rendering %s's field type: %v", v.Name, err)
+			return
+		}
+		if isPH[i] {
+			name := fmt.Sprintf("__gpp_p%d", pi)
+			pi++
+			innerParams = append(innerParams, name+" "+pt)
+			innerTypes = append(innerTypes, pt)
+			fields = append(fields, p.FieldName+": "+name)
+			continue
+		}
+		name := fmt.Sprintf("__gpp_c%d", ci)
+		ci++
+		outerParams = append(outerParams, name+" "+pt)
+		outerArgs = append(outerArgs, r.text(use.call.Args[i].Pos(), use.call.Args[i].End()))
+		fields = append(fields, p.FieldName+": "+name)
+	}
+	inner := fmt.Sprintf("func(%s) %s { return %s{%s} }",
+		strings.Join(innerParams, ", "), enumText, litType, strings.Join(fields, ", "))
+	out := inner
+	if len(outerParams) > 0 {
+		out = fmt.Sprintf("func(%s) func(%s) %s { return %s }(%s)",
+			strings.Join(outerParams, ", "), strings.Join(innerTypes, ", "), enumText, inner, strings.Join(outerArgs, ", "))
+	}
+	target := use.outermost()
+	r.edits = append(r.edits, lower.Edit{
+		Start: r.off(target.Pos()),
+		End:   r.off(target.End()),
+		New:   out,
+	})
 }
 
 // emitCtor rewrites the use to a composite literal.
@@ -532,7 +618,7 @@ func (r *fileResolver) targsFromArgs(use *ctorUse, targs []string) ([]string, bo
 		if err != nil || tv.Type == nil || tv.Type == types.Typ[types.Invalid] {
 			continue
 		}
-		if !unifyDecl(declExpr, types.Default(tv.Type), tparamIndex, bound) {
+		if !r.unifyDecl(declExpr, types.Default(tv.Type), tparamIndex, bound) {
 			return nil, false
 		}
 	}
@@ -556,11 +642,11 @@ func (r *fileResolver) targsFromArgs(use *ctorUse, targs []string) ([]string, bo
 // unifyDecl structurally unifies a declared parameter type expression
 // (in enum-tparam terms) against an actual argument type, binding tparams.
 // Unknown shapes succeed without binding (the backstop judges them).
-func unifyDecl(decl ast.Expr, actual types.Type, tparams map[string]int, bound []types.Type) bool {
+func (r *fileResolver) unifyDecl(decl ast.Expr, actual types.Type, tparams map[string]int, bound []types.Type) bool {
 	actual = types.Unalias(actual)
 	switch d := decl.(type) {
 	case *ast.ParenExpr:
-		return unifyDecl(d.X, actual, tparams, bound)
+		return r.unifyDecl(d.X, actual, tparams, bound)
 	case *ast.Ident:
 		i, isTParam := tparams[d.Name]
 		if !isTParam {
@@ -573,29 +659,29 @@ func unifyDecl(decl ast.Expr, actual types.Type, tparams map[string]int, bound [
 		return types.Identical(bound[i], actual)
 	case *ast.StarExpr:
 		if p, ok := actual.(*types.Pointer); ok {
-			return unifyDecl(d.X, p.Elem(), tparams, bound)
+			return r.unifyDecl(d.X, p.Elem(), tparams, bound)
 		}
 		return false
 	case *ast.ArrayType:
 		if d.Len == nil {
 			if s, ok := actual.(*types.Slice); ok {
-				return unifyDecl(d.Elt, s.Elem(), tparams, bound)
+				return r.unifyDecl(d.Elt, s.Elem(), tparams, bound)
 			}
 			return false
 		}
 		if a, ok := actual.(*types.Array); ok {
-			return unifyDecl(d.Elt, a.Elem(), tparams, bound)
+			return r.unifyDecl(d.Elt, a.Elem(), tparams, bound)
 		}
 		return false
 	case *ast.MapType:
 		if m, ok := actual.(*types.Map); ok {
-			return unifyDecl(d.Key, m.Key(), tparams, bound) &&
-				unifyDecl(d.Value, m.Elem(), tparams, bound)
+			return r.unifyDecl(d.Key, m.Key(), tparams, bound) &&
+				r.unifyDecl(d.Value, m.Elem(), tparams, bound)
 		}
 		return false
 	case *ast.ChanType:
 		if c, ok := actual.(*types.Chan); ok {
-			return unifyDecl(d.Value, c.Elem(), tparams, bound)
+			return r.unifyDecl(d.Value, c.Elem(), tparams, bound)
 		}
 		return false
 	case *ast.FuncType:
@@ -609,34 +695,72 @@ func unifyDecl(decl ast.Expr, actual types.Type, tparams map[string]int, bound [
 			return false
 		}
 		for i, p := range params {
-			if !unifyDecl(p, sig.Params().At(i).Type(), tparams, bound) {
+			if !r.unifyDecl(p, sig.Params().At(i).Type(), tparams, bound) {
 				return false
 			}
 		}
 		for i, res := range results {
-			if !unifyDecl(res, sig.Results().At(i).Type(), tparams, bound) {
+			if !r.unifyDecl(res, sig.Results().At(i).Type(), tparams, bound) {
 				return false
 			}
 		}
 		return true
 	case *ast.IndexExpr:
-		return unifyInstantiated(d.X, []ast.Expr{d.Index}, actual, tparams, bound)
+		return r.unifyInstantiated(d.X, []ast.Expr{d.Index}, actual, tparams, bound)
 	case *ast.IndexListExpr:
-		return unifyInstantiated(d.X, d.Indices, actual, tparams, bound)
+		return r.unifyInstantiated(d.X, d.Indices, actual, tparams, bound)
 	}
 	return true
 }
 
-func unifyInstantiated(base ast.Expr, args []ast.Expr, actual types.Type, tparams map[string]int, bound []types.Type) bool {
+func (r *fileResolver) unifyInstantiated(base ast.Expr, args []ast.Expr, actual types.Type, tparams map[string]int, bound []types.Type) bool {
 	named, _ := actual.(*types.Named)
-	if named == nil || named.TypeArgs() == nil || named.TypeArgs().Len() != len(args) {
+	if named == nil {
 		return true // shape unknown; let the backstop judge
 	}
-	if id, ok := base.(*ast.Ident); ok && named.Obj().Name() != id.Name {
+	baseID, isID := base.(*ast.Ident)
+	if isID && named.Obj().Pkg() != nil && named.Obj().Name() != baseID.Name {
+		// The actual type may be a VARIANT struct of the declared enum
+		// (Cons[int] is a List[int]): reconstruct the enum's type
+		// arguments from the variant's kept args and ground results.
+		if e, isVariant := r.reg.EnumByVariantType(named.Obj().Pkg().Path(), named.Obj().Name()); isVariant && e.Name == baseID.Name {
+			v := variantByTypeName(e, named.Obj().Name())
+			if v == nil || len(args) != len(e.TParams) {
+				return true
+			}
+			enumArgs := make([]types.Type, len(e.TParams))
+			if v.ResultArgs != nil {
+				for i, argText := range v.ResultArgs {
+					if i < len(e.TParams) && argText != e.TParams[i] {
+						enumArgs[i] = r.evalInPkg(e.PkgPath, argText)
+					}
+				}
+			}
+			kept := keptIndices(e, v)
+			ta := named.TypeArgs()
+			if ta != nil && ta.Len() == len(kept) {
+				for i, ki := range kept {
+					enumArgs[ki] = ta.At(i)
+				}
+			}
+			for i, a := range args {
+				if enumArgs[i] == nil {
+					continue
+				}
+				if !r.unifyDecl(a, enumArgs[i], tparams, bound) {
+					return false
+				}
+			}
+			return true
+		}
+		return true
+	}
+	ta := named.TypeArgs()
+	if ta == nil || ta.Len() != len(args) {
 		return true
 	}
 	for i, a := range args {
-		if !unifyDecl(a, named.TypeArgs().At(i), tparams, bound) {
+		if !r.unifyDecl(a, ta.At(i), tparams, bound) {
 			return false
 		}
 	}
