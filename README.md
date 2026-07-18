@@ -7,6 +7,34 @@ Generated packages compile with the standard Go toolchain and may be
 distributed and consumed **without** G++ — the same interoperability story
 Kotlin, Scala, and Clojure have with Java.
 
+## v0.3.0 — Functional Flow
+
+Pipelines, composition, partial application, and placeholders — all
+lowering to the plain Go you would have written:
+
+```go
+total := xs |> Filter(isEven) |> Map(double) |> Sum
+// Sum(StackMap(StackFilter(xs, isEven), double))
+
+answer := 21 |> Some |> .Map(double).UnwrapOr(0)
+
+toStr  := double >>> strconv.Itoa      // func(int) string
+inc    := add(1, _)                    // partial application
+between:= clamp(_, lo, hi)             // placeholder anywhere in a call
+```
+
+`x |> f(a)` inserts the piped value as the first argument (a placeholder
+`_` picks a different slot); bare-name segments are **method-aware**: they
+resolve against the piped value's members — full Go selector semantics
+plus G++ generic and enum methods — and against functions, constructors,
+builtins, and conversions in scope. Resolving to *both* is a hard error
+naming the two explicit spellings (`.Map(f)` for the member, `Map(_, f)`
+for the function). Multi-result stages follow Go's spread rule
+(`"42" |> strconv.Atoi |> handle` when `handle(int, error)`). `>>>`
+composes left-to-right into a capture-once closure, constructor operands
+included (`double >>> Some`). Partials capture their callee and fixed
+arguments exactly once at creation, method receivers bind-time.
+
 ## v0.2.0 — Algebraic Data Types
 
 Sum types with exhaustive pattern matching, constructor generation, and
@@ -149,6 +177,11 @@ The spec is executable: the Godog/Cucumber feature suite under
 - v0.2.0 GADT result-type arguments are the enum's own type parameter or a
   ground named type per position; refinement applies to `T`-typed returns
   (use `any(x).(T)` manually elsewhere).
+- `|>` and `>>>` are the lowest-precedence operators; `xs |> len > 0`
+  parses as `xs |> (len > 0)` and gets a parenthesize hint. Placeholders
+  cannot stand for variadic parameters, and `_.Method` receivers wait for
+  a later milestone. Fallible (multi-result) piping beyond Go's exact
+  spread rule arrives with v0.4.0 Typed Failure.
 
 ## Roadmap
 
@@ -156,7 +189,7 @@ The spec is executable: the Godog/Cucumber feature suite under
 | ------- | ----- |
 | v0.1.0  | Generic methods — shipped |
 | v0.2.0  | Algebraic data types, exhaustive matching — shipped |
-| v0.3.0  | Pipelines, composition, partial application |
+| v0.3.0  | Pipelines, composition, partial application — shipped |
 | v0.4.0  | Typed failure: Result/error propagation, expression-oriented control flow, literal patterns and guards |
 | v0.5.0  | Derived APIs: derivation, delegation, folds/visitors |
 

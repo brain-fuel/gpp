@@ -97,6 +97,70 @@ func initPropertySteps(sc *godog.ScenarioContext, w func() *World) {
 		})
 	})
 
+	sc.Step(`^for sampled pipelines, the pipeline equals its hand-written lowering and no carriers survive$`, func() error {
+		world := w()
+		rng := rand.New(rand.NewSource(20260719))
+		pool := []struct{ name, body string }{
+			{"inc", "return n + 1"},
+			{"double", "return n * 2"},
+			{"negate", "return -n"},
+			{"square", "return n * n"},
+		}
+		for sample := 0; sample < 4; sample++ {
+			k := 1 + rng.Intn(4)
+			head := rng.Intn(20)
+			var stages []string
+			for i := 0; i < k; i++ {
+				stages = append(stages, pool[rng.Intn(len(pool))].name)
+			}
+			// Hand-written nested lowering, inside-out.
+			nested := fmt.Sprintf("%d", head)
+			pipeline := fmt.Sprintf("%d", head)
+			for _, s := range stages {
+				nested = s + "(" + nested + ")"
+				pipeline += " |> " + s
+			}
+			var b strings.Builder
+			b.WriteString("package main\n\nimport \"fmt\"\n\n")
+			for _, p := range pool {
+				fmt.Fprintf(&b, "func %s(n int) int { %s }\n\n", p.name, p.body)
+			}
+			fmt.Fprintf(&b, "func main() {\n\tfmt.Println((%s) == %s)\n}\n", pipeline, nested)
+
+			dir := filepath.Join(world.Dir, fmt.Sprintf("flow%d", sample))
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/flow\n\ngo 1.24\n"), 0o644); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(dir, "main.gpp"), []byte(b.String()), 0o644); err != nil {
+				return err
+			}
+			res, err := gen.Run(gen.Options{Dir: dir, Patterns: []string{"."}})
+			if err != nil {
+				return fmt.Errorf("sample %d: %v", sample, err)
+			}
+			if !res.Ok() {
+				return fmt.Errorf("sample %d (%s): diagnostics: %v", sample, pipeline, res.Diags)
+			}
+			out, rerr := os.ReadFile(filepath.Join(dir, "main_gpp.go"))
+			if rerr != nil {
+				return rerr
+			}
+			for _, leftover := range []string{"__gpp_bare_", "__gpp_comp(", "//gpp:pattern", "case nil:"} {
+				if strings.Contains(string(out), leftover) {
+					return fmt.Errorf("sample %d: emitted file contains %q", sample, leftover)
+				}
+			}
+			// The lowering must be exactly the hand-written nesting.
+			if !strings.Contains(string(out), "("+nested+") == "+nested) {
+				return fmt.Errorf("sample %d: pipeline did not lower to %s:\n%s", sample, nested, out)
+			}
+		}
+		return nil
+	})
+
 	sc.Step(`^for sampled enums, generation succeeds exactly when the match covers every variant$`, func() error {
 		world := w()
 		rng := rand.New(rand.NewSource(20260718))

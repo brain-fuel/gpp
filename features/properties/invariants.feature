@@ -17,3 +17,6 @@ Feature: Generator invariants (property-based)
 
   Scenario: Exhaustiveness matches the coverage oracle (sampled)
     Then for sampled enums, generation succeeds exactly when the match covers every variant
+
+  Scenario: Pipelines lower to exactly their hand-written nesting (sampled)
+    Then for sampled pipelines, the pipeline equals its hand-written lowering and no carriers survive
