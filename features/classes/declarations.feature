@@ -62,7 +62,7 @@ Feature: Class declarations lower to witness structs
       }
 
       //gpp:default (Group[T]) LeftDiv(a, b T)
-      func (m *Group[T]) DefaultLeftDiv(a, b T) T { return Combine(Invert(b), a) }
+      func (m Group[T]) DefaultLeftDiv(a, b T) T { return Combine(Invert(b), a) }
       """
 
   Scenario: Generation is idempotent over classes

@@ -37,6 +37,9 @@ type Input struct {
 	Texts        map[string][]byte             // abs output path -> current shadow text
 	MethodsByDir map[string][]*registry.Method // dir -> generic methods declared there (PkgPath unset)
 	EnumsByDir   map[string][]*registry.Enum   // dir -> enums declared there (PkgPath provisional)
+	// v0.5.0 typeclasses (PkgPath provisional, cloned on registration).
+	ClassesByDir   map[string][]*registry.Class
+	InstancesByDir map[string][]*registry.Instance
 }
 
 // Output is the fixpoint result.
@@ -172,6 +175,17 @@ func buildRegistry(reg *registry.Registry, roots []*packages.Package, in *Input)
 				clone.PkgPath = pkg.PkgPath
 				record(reg.AddEnum(&clone))
 			}
+			for _, c := range in.ClassesByDir[dir] {
+				clone := *c
+				clone.PkgPath = pkg.PkgPath
+				clone.Embeds = append([]registry.ClassRef(nil), c.Embeds...)
+				record(reg.AddClass(&clone))
+			}
+			for _, inst := range in.InstancesByDir[dir] {
+				clone := *inst
+				clone.PkgPath = pkg.PkgPath
+				record(reg.AddInstance(&clone))
+			}
 			return
 		}
 		// Dependency package: scan distributed sources for markers.
@@ -196,8 +210,23 @@ func buildRegistry(reg *registry.Registry, roots []*packages.Package, in *Input)
 					}
 				}
 			}
+			classes, instances, fns, cerr := registry.ClassesFromMarkers(pkg.PkgPath, file, src)
+			if cerr == nil { // marker damage in a dep is not fatal
+				for _, c := range classes {
+					record(reg.AddClass(c))
+				}
+				for _, inst := range instances {
+					record(reg.AddInstance(inst))
+				}
+				for _, fn := range fns {
+					reg.AddConstrainedFn(fn)
+				}
+			}
 		}
 	})
+	if firstErr == nil {
+		registerConstrainedFns(reg, roots, in)
+	}
 	return firstErr
 }
 

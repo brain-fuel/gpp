@@ -146,3 +146,66 @@ Feature: Cross-package generic methods
     When I run gpp with arguments "run ."
     Then the exit code is 0
     And stdout contains "[5]"
+
+  Scenario: Classes, instances, and constrained callers span packages
+    Given a file "go.mod":
+      """
+      module example.com/demo
+
+      go 1.24
+      """
+    And a G++ file "algebra/algebra.gpp":
+      """
+      package algebra
+
+      type Monoid[T any] class {
+      	Combine(a, b T) T
+      	Empty() T
+      }
+
+      func Accumulate[T Monoid](xs []T) T {
+      	acc := Empty()
+      	for _, x := range xs {
+      		acc = Combine(acc, x)
+      	}
+      	return acc
+      }
+      """
+    And a G++ file "nums/nums.gpp":
+      """
+      package nums
+
+      import "example.com/demo/algebra"
+
+      instance IntAdd algebra.Monoid[int] {
+      	Combine(a, b int) int { return a + b }
+      	Empty() int { return 0 }
+      }
+      """
+    And a G++ file "main.gpp":
+      """
+      package main
+
+      import (
+      	"fmt"
+
+      	"example.com/demo/algebra"
+      	"example.com/demo/nums"
+      )
+
+      var _ = nums.IntAdd
+
+      func main() {
+      	fmt.Println(algebra.Accumulate([]int{1, 2, 3, 4}))
+      	fmt.Println(algebra.Accumulate(nums.IntAdd, []int{5, 6}))
+      }
+      """
+    When I run gpp with arguments "gen ./..."
+    Then the exit code is 0
+    When I run gpp with arguments "run ."
+    Then the exit code is 0
+    And stdout contains:
+      """
+      10
+      11
+      """

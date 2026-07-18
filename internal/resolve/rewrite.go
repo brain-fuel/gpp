@@ -81,10 +81,19 @@ func (r *fileResolver) resolve() ([]lower.Edit, []diag.Diagnostic) {
 			r.kcompCandidate(x)
 			r.partialCandidate(x)
 			r.tryCandidate(x)
+			r.dictCallCandidate(x)
+			r.opCallCandidate(x)
+			r.opSugarCandidate(x)
 		case *ast.AssignStmt:
 			r.exprformCandidate(x)
 		case *ast.TypeSwitchStmt:
 			r.matchCandidate(x)
+		case *ast.GenDecl:
+			r.classCandidate(x)
+			r.instanceCandidate(x, x.Doc)
+		case *ast.FuncDecl:
+			r.dictDeclCandidate(x)
+			r.instanceCandidate(x, x.Doc)
 		}
 		return true
 	})

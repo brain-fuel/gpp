@@ -42,6 +42,7 @@ type Registry struct {
 	methods     map[string]*Method
 	methodNames map[string]bool
 	enumIdx     *enumIndex
+	classIdxV   *classIndex
 }
 
 func New() *Registry {

@@ -111,7 +111,7 @@ func ClassEdits(f *syntax.File, c *syntax.ClassDecl) []Edit {
 			edits = append(edits, Edit{
 				Start: f.Offset(m.Name.Pos()),
 				End:   f.Offset(m.Name.End()),
-				New:   fmt.Sprintf("func (%s *%s) Default%s", recv, recvType, m.Name.Name),
+				New:   fmt.Sprintf("func (%s %s) Default%s", recv, recvType, m.Name.Name),
 			})
 		}
 	}
