@@ -140,8 +140,13 @@ func (r *fileResolver) candidate(sel *ast.SelectorExpr) {
 			return
 		}
 	}
-	// Bare method value without instantiation, but only when the method is
-	// generic — Go parity with uninstantiated generic function values.
+	// Bare method value. A method with no type parameters of its own (an
+	// enum method) needs no instantiation — lower it directly. Generic
+	// methods keep Go's rule for uninstantiated generic function values.
+	if h.method.NumMethodTParams == 0 {
+		r.methodValue(sel, sel, nil, h, tv)
+		return
+	}
 	r.errorf(sel.Pos(), "cannot use generic method %s.%s as a value without instantiation (write %s.%s[...])",
 		exprString(sel.X), sel.Sel.Name, exprString(sel.X), sel.Sel.Name)
 }

@@ -4,6 +4,7 @@ package gen
 
 import (
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/scanner"
 	"go/token"
@@ -266,8 +267,13 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 	}
 	enums, ediags := planEnums(idx, pkgPath, tbl)
 	diags = append(diags, ediags...)
+	enumNames := map[string]bool{}
+	for _, m := range enums.models {
+		enumNames[m.Name] = true
+	}
 
 	methodNames := map[*syntax.GenericMethod]string{}
+	enumMethods := map[*sourceFile][]*syntax.GenericMethod{}
 	var allMethods []*registry.Method
 	for _, f := range idx.files {
 		if f.gpp == nil {
@@ -277,6 +283,14 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 		if len(f.gpp.Matches) > 0 {
 			diags = append(diags, diag.At(idx.fset.Position(f.gpp.Matches[0].Match),
 				"match lowering is not implemented yet"))
+		}
+		// Enum receivers must be values: the lowered receiver type is the
+		// sealed interface.
+		for _, gm := range f.gpp.Methods {
+			if enumNames[gm.RecvTypeName] && gm.RecvPointer {
+				diags = append(diags, diag.At(idx.fset.Position(gm.Decl.Recv.Pos()),
+					"enum receiver must not be a pointer; %s is an interface after lowering", gm.RecvTypeName))
+			}
 		}
 		methods, errs := registry.MethodsFromFile(pkgPath, f.gpp, tbl)
 		for _, err := range errs {
@@ -291,6 +305,43 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 					methodNames[gm] = m.FuncName
 				}
 			}
+		}
+		// Plain (non-generic) methods on enum receivers also lower to
+		// package functions — interfaces cannot carry method bodies.
+		for _, decl := range f.gpp.AST.Decls {
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok || fd.Recv == nil || fd.Type.TypeParams != nil {
+				continue
+			}
+			gm, err := syntax.NewMethod(fd)
+			if err != nil || !enumNames[gm.RecvTypeName] {
+				continue
+			}
+			if gm.RecvPointer {
+				diags = append(diags, diag.At(idx.fset.Position(fd.Recv.Pos()),
+					"enum receiver must not be a pointer; %s is an interface after lowering", gm.RecvTypeName))
+				continue
+			}
+			if gm.NameOverride != "" && !token.IsIdentifier(gm.NameOverride) {
+				diags = append(diags, diag.At(idx.fset.Position(fd.Pos()),
+					"//gpp:name %q is not a valid Go identifier", gm.NameOverride))
+				continue
+			}
+			m := &registry.Method{
+				PkgPath:        pkgPath,
+				RecvTypeName:   gm.RecvTypeName,
+				MethodName:     fd.Name.Name,
+				FuncName:       naming.FuncName(gm.RecvTypeName, fd.Name.Name, gm.NameOverride),
+				NumRecvTParams: len(gm.RecvTParams),
+			}
+			origin := fmt.Sprintf("%s at %s", m.Origin(), idx.fset.Position(fd.Pos()))
+			if err := tbl.AddGenerated(m.FuncName, origin); err != nil {
+				diags = append(diags, diag.Errorf("%s", err))
+				continue
+			}
+			allMethods = append(allMethods, m)
+			methodNames[gm] = m.FuncName
+			enumMethods[f] = append(enumMethods[f], gm)
 		}
 	}
 	if len(diags) > 0 {
@@ -308,7 +359,7 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 				edits = append(edits, lower.EnumEdits(f.gpp, e, spec)...)
 			}
 		}
-		for _, gm := range f.gpp.Methods {
+		for _, gm := range append(append([]*syntax.GenericMethod{}, f.gpp.Methods...), enumMethods[f]...) {
 			funcName := methodNames[gm]
 			tparams, err := receiverTParams(idx, gm)
 			if err != nil {

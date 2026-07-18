@@ -76,12 +76,15 @@ func (r *fileResolver) methodValue(idx ast.Expr, sel *ast.SelectorExpr, typeArgs
 		}
 		targs = append(targs, tvv.Type)
 	}
-	inst, err := types.Instantiate(nil, sig, targs, true)
-	if err != nil {
-		r.errorf(sel.Pos(), "instantiating %s.%s: %v", exprString(sel.X), sel.Sel.Name, err)
-		return
+	isig := sig
+	if len(targs) > 0 {
+		inst, err := types.Instantiate(nil, sig, targs, true)
+		if err != nil {
+			r.errorf(sel.Pos(), "instantiating %s.%s: %v", exprString(sel.X), sel.Sel.Name, err)
+			return
+		}
+		isig = inst.(*types.Signature)
 	}
-	isig := inst.(*types.Signature)
 	params := isig.Params()
 	if params.Len() == 0 {
 		r.errorf(sel.Pos(), "internal error: lowered function %s has no receiver parameter", h.method.FuncName)
@@ -141,7 +144,10 @@ func (r *fileResolver) methodValue(idx ast.Expr, sel *ast.SelectorExpr, typeArgs
 		resText = " (" + strings.Join(parts, ", ") + ")"
 	}
 
-	allTargs := "[" + strings.Join(append(append([]string{}, recvTargs...), explicitTexts...), ", ") + "]"
+	allTargs := ""
+	if combined := append(append([]string{}, recvTargs...), explicitTexts...); len(combined) > 0 {
+		allTargs = "[" + strings.Join(combined, ", ") + "]"
+	}
 	call := funcRef + allTargs + "(__gpp_recv"
 	if len(callArgs) > 0 {
 		call += ", " + strings.Join(callArgs, ", ")

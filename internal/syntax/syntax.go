@@ -127,6 +127,20 @@ func ParseFile(fset *token.FileSet, path string, src []byte) (*File, error) {
 	return f, nil
 }
 
+// NewMethod builds method info for an ordinary (non-generic) method
+// declaration, e.g. an enum method that lowers like a generic method with
+// zero method type parameters.
+func NewMethod(fd *ast.FuncDecl) (*GenericMethod, error) {
+	gm := &GenericMethod{Decl: fd, LBrack: -1, RBrack: -1}
+	if err := gm.fillReceiver(); err != nil {
+		return nil, err
+	}
+	if name, ok := directive.Name(fd.Doc); ok {
+		gm.NameOverride = name
+	}
+	return gm, nil
+}
+
 // fillReceiver extracts receiver shape from the declaration.
 func (m *GenericMethod) fillReceiver() error {
 	fd := m.Decl

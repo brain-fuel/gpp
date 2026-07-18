@@ -68,17 +68,28 @@ func Decl(f *syntax.File, gm *syntax.GenericMethod, funcName string, recvTParams
 	})
 
 	// "[U any]" -> "[T any, U any]" — insert receiver tparams (with
-	// constraints) before the method's own, preserved verbatim.
+	// constraints) before the method's own, preserved verbatim. A method
+	// with no type parameters of its own (an enum method) gains a fresh
+	// bracket list when its receiver is generic.
 	if len(recvTParams) > 0 {
 		parts := make([]string, len(recvTParams))
 		for i, tp := range recvTParams {
 			parts[i] = tp.Name + " " + tp.Constraint
 		}
-		edits = append(edits, Edit{
-			Start: gm.LBrack + 1,
-			End:   gm.LBrack + 1,
-			New:   strings.Join(parts, ", ") + ", ",
-		})
+		if fd.Type.TypeParams != nil {
+			edits = append(edits, Edit{
+				Start: gm.LBrack + 1,
+				End:   gm.LBrack + 1,
+				New:   strings.Join(parts, ", ") + ", ",
+			})
+		} else {
+			at := f.Offset(fd.Name.End())
+			edits = append(edits, Edit{
+				Start: at,
+				End:   at,
+				New:   "[" + strings.Join(parts, ", ") + "]",
+			})
+		}
 	}
 
 	// "(f func(T) U)" -> "(s Stack[T], f func(T) U)"
