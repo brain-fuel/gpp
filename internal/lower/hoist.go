@@ -182,14 +182,17 @@ func (h *Hoister) renderTry(t *syntax.TryExpr) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	n := 0
+	return fmt.Sprintf("__gpp_try%d(%s)", h.tryIndex(t), inner), true
+}
+
+// tryIndex is a try's stable pass-1 number: its index in the file's Tries.
+func (h *Hoister) tryIndex(t *syntax.TryExpr) int {
 	for i, cand := range h.f.Tries {
 		if cand == t {
-			n = i
-			break
+			return i
 		}
 	}
-	return fmt.Sprintf("__gpp_try%d(%s)", n, inner), true
+	return 0
 }
 
 // renderIfExpr hoists an if expression.

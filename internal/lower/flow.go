@@ -78,23 +78,51 @@ func composeTextCtx(h *Hoister, c *syntax.ComposeExpr) (string, bool) {
 	return ComposeCarrier + "(" + strings.Join(parts, ", ") + ")", true
 }
 
-// stageText lowers one segment given the current value text.
+// stageText lowers one segment given the current value text. A stage-level
+// `?` applies to the STAGE RESULT (`x |> parse?` tries parse(x)), so try
+// suffixes on the segment unwrap first and re-wrap the rendered segment.
 func (h *Hoister) stageText(st *syntax.PipeStage, cur string) (string, bool) {
+	expr := st.Expr
+	var tries []*syntax.TryExpr
+	for {
+		bad, isBad := expr.(*ast.BadExpr)
+		if !isBad {
+			break
+		}
+		t, isTry := h.f.TryFor(bad)
+		if !isTry {
+			break
+		}
+		tries = append(tries, t)
+		expr = t.X
+	}
+	text, ok := h.segmentText(st, expr, cur)
+	if !ok {
+		return "", false
+	}
+	for i := len(tries) - 1; i >= 0; i-- {
+		text = fmt.Sprintf("__gpp_try%d(%s)", h.tryIndex(tries[i]), text)
+	}
+	return text, true
+}
+
+// segmentText renders the segment expression proper.
+func (h *Hoister) segmentText(st *syntax.PipeStage, expr ast.Expr, cur string) (string, bool) {
 	// Dot-segment: the __gpp_dot marker wraps the receiver so the whole
 	// suffix chain waits for the flowing type.
 	if st.Dot.IsValid() {
-		if ph := topLevelPlaceholder(st.Expr); ph != nil {
+		if ph := topLevelPlaceholder(expr); ph != nil {
 			h.errAt(ph.Pos(), "a dot segment receives the piped value as its receiver; _ is not allowed here")
 			return "", false
 		}
-		text, ok := h.render(st.Expr)
+		text, ok := h.render(expr)
 		if !ok {
 			return "", false
 		}
 		return DotCarrier + "(" + cur + ")." + text, true
 	}
 
-	switch seg := st.Expr.(type) {
+	switch seg := expr.(type) {
 	case *ast.CallExpr:
 		return h.callSegment(seg, cur)
 	case *ast.Ident:
@@ -110,10 +138,10 @@ func (h *Hoister) stageText(st *syntax.PipeStage, cur string) (string, bool) {
 		}
 		return SegCarrierPrefix + "0(" + cur + ", " + text + ")", true
 	case *ast.IndexExpr, *ast.IndexListExpr:
-		if name, brackets, ok := indexedBareParts(h.f, st.Expr); ok {
+		if name, brackets, ok := indexedBareParts(h.f, expr); ok {
 			return BareCarrierPrefix + name + brackets + "(" + cur + ")", true
 		}
-		text, ok := h.render(st.Expr)
+		text, ok := h.render(expr)
 		if !ok {
 			return "", false
 		}
@@ -133,7 +161,7 @@ func (h *Hoister) stageText(st *syntax.PipeStage, cur string) (string, bool) {
 		}
 		return SegCarrierPrefix + "0(" + cur + ", (" + text + "))", true
 	default:
-		text, ok := h.render(st.Expr)
+		text, ok := h.render(expr)
 		if !ok {
 			return "", false
 		}

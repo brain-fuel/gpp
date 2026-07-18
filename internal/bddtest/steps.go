@@ -82,6 +82,14 @@ func InitializeScenario(t *testing.T, sc *godog.ScenarioContext) {
 	sc.Step(`^a file "([^"]+)":$`, func(name string, doc *godog.DocString) error {
 		return w.writeFile(name, doc.Content)
 	})
+	// A go.mod that requires goforge.dev/gpp/std, replaced by this repo's
+	// std directory — the scenario-side equivalent of a released std.
+	sc.Step(`^a module "([^"]+)" using the gpp standard library$`, func(mod string) error {
+		content := fmt.Sprintf(
+			"module %s\n\ngo 1.24\n\nrequire goforge.dev/gpp/std v0.0.0\n\nreplace goforge.dev/gpp/std => %s\n",
+			mod, filepath.Join(w.origWD, "std"))
+		return w.writeFile("go.mod", content)
+	})
 }
 
 // runGpp invokes the CLI in-process with the scenario dir as working directory.

@@ -292,11 +292,7 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 		if f.gpp == nil {
 			continue
 		}
-		// TODO(v0.4.0): removed as typed-failure lowering lands (phases 4–7).
-		if len(f.gpp.Tries) > 0 {
-			diags = append(diags, diag.At(idx.fset.Position(f.gpp.Tries[0].QPos),
-				"? lowering is not implemented yet"))
-		}
+		// TODO(v0.4.0): removed as kleisli lowering lands (phase 7).
 		for _, c := range f.gpp.Composes {
 			for _, k := range c.Ops {
 				if k == syntax.ComposeKleisli {

@@ -32,6 +32,10 @@ type fileResolver struct {
 	// pass after the fixpoint converges, so transient can't-resolve-yet
 	// states never surface to the user.
 	report bool
+
+	// resultImportName is set when this iteration already emitted the
+	// std/result import edit, so one file adds it at most once.
+	resultImportName string
 }
 
 func (r *fileResolver) off(pos token.Pos) int { return r.tokFile.Offset(pos) }
@@ -75,6 +79,7 @@ func (r *fileResolver) resolve() ([]lower.Edit, []diag.Diagnostic) {
 			r.dotCandidate(x)
 			r.composeCandidate(x)
 			r.partialCandidate(x)
+			r.tryCandidate(x)
 		case *ast.AssignStmt:
 			r.exprformCandidate(x)
 		case *ast.TypeSwitchStmt:
