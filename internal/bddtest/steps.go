@@ -31,6 +31,7 @@ func InitializeScenario(t *testing.T, sc *godog.ScenarioContext) {
 	initParsingSteps(sc, func() *World { return w }, ps)
 	initParsingV2Steps(sc, ps)
 	initParsingV3Steps(sc, ps)
+	initParsingV4Steps(sc, ps)
 	initNamingSteps(sc, func() *World { return w }, ns)
 	initGenSteps(sc, func() *World { return w }, gs)
 	initGitSteps(sc, func() *World { return w })

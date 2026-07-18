@@ -102,11 +102,83 @@ type PipeStage struct {
 	Expr ast.Expr
 }
 
-// ComposeExpr is one `f >>> g >>> h` chain (left-associative, flattened).
+// ComposeKind discriminates the operator of one composition link.
+type ComposeKind int
+
+const (
+	ComposeFn      ComposeKind = iota // >>> — one-track composition
+	ComposeKleisli                    // >=> — railway (Kleisli) composition
+)
+
+// ComposeExpr is one `f >>> g >=> h` chain (left-associative, flattened;
+// the two operators share a precedence level and mix freely).
 type ComposeExpr struct {
 	Bad   *ast.BadExpr
-	Fns   []ast.Expr  // len >= 2; operands may be *ast.BadExpr
-	OpPos []token.Pos // position of `>>` in each `>>>`; len == len(Fns)-1
+	Fns   []ast.Expr    // len >= 2; operands may be *ast.BadExpr
+	OpPos []token.Pos   // first char of each operator; len == len(Fns)-1
+	Ops   []ComposeKind // operator of each link; len == len(Fns)-1
+}
+
+// TryExpr is one postfix `expr?` failure-propagation suffix (v0.4.0).
+type TryExpr struct {
+	Bad  *ast.BadExpr // placeholder spanning X.Pos()..QPos+1
+	X    ast.Expr     // the fallible expression; may itself be a placeholder
+	QPos token.Pos    // position of '?'
+}
+
+// IfExpr is one `if cond { e } else …` expression (v0.4.0). Only the root
+// of an else-if chain carries Bad and registers in Extensions.IfExprs;
+// else-if links hang off ElseIf with Bad == nil.
+type IfExpr struct {
+	Bad        *ast.BadExpr // nil on else-if links
+	If         token.Pos
+	Cond       ast.Expr
+	Lbrace     token.Pos
+	Then       ast.Expr
+	Rbrace     token.Pos
+	ElsePos    token.Pos
+	ElseIf     *IfExpr   // `else if …`; nil if braced else
+	ElseLbrace token.Pos // braced else only
+	Else       ast.Expr  // braced else only; nil when ElseIf != nil
+	ElseRbrace token.Pos
+}
+
+// SwitchExpr is one `switch [tag] { case …: e … }` expression (v0.4.0).
+type SwitchExpr struct {
+	Bad    *ast.BadExpr
+	Switch token.Pos
+	Tag    ast.Expr // nil for a tag-less switch
+	Lbrace token.Pos
+	Arms   []*SwitchExprArm
+	Rbrace token.Pos
+}
+
+// SwitchExprArm is one `case v1, v2: expr` or `default: expr` arm.
+type SwitchExprArm struct {
+	Case   token.Pos  // position of `case` or `default`
+	Values []ast.Expr // nil ⇒ default arm
+	Colon  token.Pos
+	Value  ast.Expr
+}
+
+// MatchExpr is one `match subject { case pattern: expr … }` expression.
+type MatchExpr struct {
+	Bad     *ast.BadExpr
+	Match   token.Pos
+	Subject ast.Expr
+	Lbrace  token.Pos
+	Arms    []*MatchExprArm
+	Rbrace  token.Pos
+}
+
+// MatchExprArm is one `case [binder :=] pattern: expr` arm.
+type MatchExprArm struct {
+	Case    token.Pos
+	Binder  *ast.Ident // nil if absent
+	Define  token.Pos  // NoPos if absent
+	Pattern Pattern
+	Colon   token.Pos
+	Value   ast.Expr
 }
 
 // Extensions collects a file's G++ constructs.
@@ -122,6 +194,11 @@ type Extensions struct {
 	Matches  []*MatchStmt // pre-order; includes matches nested inside arms
 	Pipes    []*PipeExpr
 	Composes []*ComposeExpr
+	// v0.4.0 — creation order; resolve placeholders by pointer.
+	Tries       []*TryExpr
+	IfExprs     []*IfExpr // roots only; else-if links via ElseIf
+	SwitchExprs []*SwitchExpr
+	MatchExprs  []*MatchExpr
 }
 
 // ParseFileExt parses G++ source: stock Go grammar plus enum declarations,

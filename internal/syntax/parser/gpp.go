@@ -3,6 +3,7 @@
 package parser
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 )
@@ -229,10 +230,10 @@ func (p *parser) parsePattern() Pattern {
 // ladder returns without consuming it and parseExpr's tail (parseExtOps)
 // takes over. `>>>` binds tighter than `|>`; both left-associative.
 
-// gppExtOp reports whether the current token starts a claimed `|>` or
-// `>>>` sequence (adjacency-checked).
+// gppExtOp reports whether the current token starts a claimed `|>`,
+// `>>>`, or `>=>` sequence (adjacency-checked).
 func (p *parser) gppExtOp() bool {
-	return p.atPipe() || p.atCompose()
+	return p.atPipe() || p.atCompose() || p.atKleisli()
 }
 
 func (p *parser) atPipe() bool {
@@ -245,6 +246,15 @@ func (p *parser) atPipe() bool {
 
 func (p *parser) atCompose() bool {
 	if p.tok != token.SHR {
+		return false
+	}
+	next := p.peekNonCommentTok()
+	return next.tok == token.GTR && next.pos == p.pos+2
+}
+
+// atKleisli claims `>=>`: GEQ immediately followed by GTR (v0.4.0).
+func (p *parser) atKleisli() bool {
+	if p.tok != token.GEQ {
 		return false
 	}
 	next := p.peekNonCommentTok()
@@ -271,26 +281,34 @@ func (p *parser) parseExtOps(x ast.Expr) ast.Expr {
 	}
 	last := pipe.Stages[len(pipe.Stages)-1]
 	pipe.Bad = &ast.BadExpr{From: x.Pos(), To: last.Expr.End()}
+	p.markExtBad(pipe.Bad)
 	return pipe.Bad
 }
 
-// parseComposeChain folds x through a `>>>` chain, if present.
+// parseComposeChain folds x through a `>>>` / `>=>` chain, if present.
+// The two operators share one flattened chain with per-link kinds.
 func (p *parser) parseComposeChain(x ast.Expr) ast.Expr {
-	if !p.atCompose() {
+	if !p.atCompose() && !p.atKleisli() {
 		return x
 	}
 	comp := &ComposeExpr{Fns: []ast.Expr{x}}
 	p.ext.Composes = append(p.ext.Composes, comp)
-	for p.atCompose() {
+	for p.atCompose() || p.atKleisli() {
+		kind := ComposeFn
+		if p.atKleisli() {
+			kind = ComposeKleisli
+		}
 		comp.OpPos = append(comp.OpPos, p.pos)
-		p.next() // consume SHR
+		comp.Ops = append(comp.Ops, kind)
+		p.next() // consume SHR or GEQ
 		p.next() // consume GTR
 		// Stops before the next claimed operator (tokPrec demotion), which
-		// yields left associativity and `>>>` binding tighter than `|>`.
+		// yields left associativity and compose binding tighter than `|>`.
 		op := p.parseBinaryExpr(nil, token.LowestPrec+1)
 		comp.Fns = append(comp.Fns, op)
 	}
 	comp.Bad = &ast.BadExpr{From: comp.Fns[0].Pos(), To: comp.Fns[len(comp.Fns)-1].End()}
+	p.markExtBad(comp.Bad)
 	return comp.Bad
 }
 
@@ -314,6 +332,258 @@ func (p *parser) parsePipeStage() *PipeStage {
 	}
 	stage.Expr = p.parseComposeChain(p.parseBinaryExpr(nil, token.LowestPrec+1))
 	return stage
+}
+
+// ── Typed failure (v0.4.0): postfix `?` and expression conditionals ───────
+
+// markExtBad records an extension placeholder so the composite-literal
+// suffix guard never treats it as a literal type.
+func (p *parser) markExtBad(bad *ast.BadExpr) {
+	if p.extBad == nil {
+		p.extBad = map[*ast.BadExpr]bool{}
+	}
+	p.extBad[bad] = true
+}
+
+// parseTrySuffix claims an adjacent postfix `?` on x. The caller verified
+// p.tok == token.ILLEGAL && p.lit == "?" && p.pos == x.End().
+func (p *parser) parseTrySuffix(x ast.Expr) ast.Expr {
+	t := &TryExpr{X: x, QPos: p.pos}
+	p.claimedQ = append(p.claimedQ, p.pos)
+	p.ext.Tries = append(p.ext.Tries, t)
+	p.next() // consume the ILLEGAL '?'
+	t.Bad = &ast.BadExpr{From: x.Pos(), To: t.QPos + 1}
+	p.markExtBad(t.Bad)
+	return t.Bad
+}
+
+// illegalQuestion is the scanner's exact message for '?'.
+var illegalQuestion = fmt.Sprintf("illegal character %#U", '?')
+
+// filterClaimedIllegals drops the scanner's illegal-character error for
+// exactly the claimed '?' positions. Matching is by byte offset AND exact
+// message, so no other error — including an unclaimed '?' elsewhere —
+// can be swallowed.
+func (p *parser) filterClaimedIllegals() {
+	if len(p.claimedQ) == 0 {
+		return
+	}
+	claimed := make(map[int]bool, len(p.claimedQ))
+	for _, pos := range p.claimedQ {
+		claimed[p.file.Offset(pos)] = true
+	}
+	kept := p.errors[:0]
+	for _, e := range p.errors {
+		if e.Msg == illegalQuestion && claimed[e.Pos.Offset] {
+			continue
+		}
+		kept = append(kept, e)
+	}
+	p.errors = kept
+}
+
+// parseExprFormOperand claims expression-position if/switch/match. It
+// returns nil when the current token is not an expression-form claim.
+func (p *parser) parseExprFormOperand() ast.Expr {
+	switch {
+	case p.tok == token.IF:
+		root := p.parseIfExpr()
+		root.Bad = &ast.BadExpr{From: root.If, To: ifExprEnd(root)}
+		p.markExtBad(root.Bad)
+		p.ext.IfExprs = append(p.ext.IfExprs, root)
+		return root.Bad
+	case p.tok == token.SWITCH:
+		se := p.parseSwitchExpr()
+		se.Bad = &ast.BadExpr{From: se.Switch, To: se.Rbrace + 1}
+		p.markExtBad(se.Bad)
+		p.ext.SwitchExprs = append(p.ext.SwitchExprs, se)
+		return se.Bad
+	case p.tok == token.IDENT && p.lit == "match" && exprMatchClaims(p.peekNonComment()):
+		me := p.parseMatchExpr()
+		me.Bad = &ast.BadExpr{From: me.Match, To: me.Rbrace + 1}
+		p.markExtBad(me.Bad)
+		p.ext.MatchExprs = append(p.ext.MatchExprs, me)
+		return me.Bad
+	}
+	return nil
+}
+
+// exprMatchClaims is the expression-position claim table for contextual
+// `match` — STRICTER than the statement table: binary-operator tokens
+// (+ - * & ^) validly continue a Go expression whose operand is the
+// identifier `match`, so they are not claimable here. Neither is `<-`:
+// statement sends (`match <- ch`, valid Go) parse through this same
+// expression path, so a receive subject must be parenthesized.
+func exprMatchClaims(tok token.Token) bool {
+	switch tok {
+	case token.IDENT, token.INT, token.FLOAT, token.IMAG, token.CHAR, token.STRING,
+		token.FUNC, token.STRUCT, token.MAP, token.CHAN, token.INTERFACE,
+		token.NOT:
+		return true
+	}
+	return false
+}
+
+func ifExprEnd(root *IfExpr) token.Pos {
+	for root.ElseIf != nil {
+		root = root.ElseIf
+	}
+	return root.ElseRbrace + 1
+}
+
+// parseIfExpr parses `if cond { e } else …` (the `if` token is current).
+func (p *parser) parseIfExpr() *IfExpr {
+	e := &IfExpr{If: p.pos}
+	p.next() // consume `if`
+	prevLev := p.exprLev
+	p.exprLev = -1
+	e.Cond = p.parseRhs()
+	p.exprLev = prevLev
+	if p.tok == token.DEFINE || p.tok == token.ASSIGN || p.tok == token.SEMICOLON {
+		p.error(p.pos, "if expressions cannot declare variables; bind before the if")
+	}
+	e.Lbrace = p.expect(token.LBRACE)
+	e.Then = p.parseBracedExprBody()
+	e.Rbrace = p.expect(token.RBRACE)
+
+	if p.tok == token.SEMICOLON && p.lit == "\n" && p.peekNonComment() == token.ELSE {
+		p.error(p.pos, "unexpected newline before else (write '} else')")
+		p.next()
+	}
+	if p.tok != token.ELSE {
+		p.error(p.pos, "missing else in if expression (every if expression requires an else)")
+		return e
+	}
+	e.ElsePos = p.pos
+	p.next() // consume `else`
+	if p.tok == token.IF {
+		e.ElseIf = p.parseIfExpr()
+		return e
+	}
+	e.ElseLbrace = p.expect(token.LBRACE)
+	e.Else = p.parseBracedExprBody()
+	e.ElseRbrace = p.expect(token.RBRACE)
+	return e
+}
+
+// parseBracedExprBody parses the single expression inside an arm/branch
+// brace pair, tolerating the ASI semicolon before `}`.
+func (p *parser) parseBracedExprBody() ast.Expr {
+	prevLev := p.exprLev
+	if p.exprLev < 0 {
+		p.exprLev = 0
+	}
+	x := p.parseExpr()
+	p.exprLev = prevLev
+	if p.tok == token.SEMICOLON {
+		p.next()
+	}
+	return x
+}
+
+// parseSwitchExpr parses `switch [tag] { arms }` (the `switch` token is
+// current).
+func (p *parser) parseSwitchExpr() *SwitchExpr {
+	e := &SwitchExpr{Switch: p.pos}
+	p.next()
+	if p.tok != token.LBRACE {
+		prevLev := p.exprLev
+		p.exprLev = -1
+		e.Tag = p.parseRhs()
+		p.exprLev = prevLev
+		if p.tok == token.SEMICOLON {
+			p.error(p.pos, "switch expressions cannot have an init statement")
+			p.next()
+		}
+	}
+	e.Lbrace = p.expect(token.LBRACE)
+	for p.tok == token.CASE || p.tok == token.DEFAULT {
+		e.Arms = append(e.Arms, p.parseSwitchExprArm())
+	}
+	e.Rbrace = p.expect(token.RBRACE)
+	return e
+}
+
+func (p *parser) parseSwitchExprArm() *SwitchExprArm {
+	arm := &SwitchExprArm{Case: p.pos}
+	if p.tok == token.CASE {
+		p.next()
+		prevLev := p.exprLev
+		if p.exprLev < 0 {
+			p.exprLev = 0
+		}
+		arm.Values = append(arm.Values, p.parseRhs())
+		for p.tok == token.COMMA {
+			p.next()
+			arm.Values = append(arm.Values, p.parseRhs())
+		}
+		p.exprLev = prevLev
+	} else {
+		p.next() // consume `default`
+	}
+	arm.Colon = p.expect(token.COLON)
+	arm.Value = p.parseArmValue()
+	return arm
+}
+
+// parseArmValue parses one arm expression, tolerating the trailing ASI
+// semicolon.
+func (p *parser) parseArmValue() ast.Expr {
+	prevLev := p.exprLev
+	if p.exprLev < 0 {
+		p.exprLev = 0
+	}
+	x := p.parseExpr()
+	p.exprLev = prevLev
+	if p.tok == token.SEMICOLON {
+		p.next()
+	}
+	return x
+}
+
+// parseMatchExpr parses `match subject { case pattern: expr … }` (the
+// contextual `match` identifier is current).
+func (p *parser) parseMatchExpr() *MatchExpr {
+	e := &MatchExpr{Match: p.pos}
+	p.next() // consume `match`
+	prevLev := p.exprLev
+	p.exprLev = -1
+	e.Subject = p.parseRhs()
+	p.exprLev = prevLev
+	e.Lbrace = p.expect(token.LBRACE)
+	for p.tok == token.CASE || p.tok == token.DEFAULT {
+		e.Arms = append(e.Arms, p.parseMatchExprArm())
+	}
+	e.Rbrace = p.expect(token.RBRACE)
+	return e
+}
+
+func (p *parser) parseMatchExprArm() *MatchExprArm {
+	arm := &MatchExprArm{Case: p.pos}
+	if p.tok == token.DEFAULT {
+		p.error(p.pos, "match expressions do not have a default case; use 'case _:'")
+		p.next()
+		arm.Pattern = &WildcardPattern{UnderscorePos: arm.Case}
+		arm.Colon = p.expect(token.COLON)
+		arm.Value = p.parseArmValue()
+		return arm
+	}
+	p.expect(token.CASE)
+	if p.tok == token.IDENT && p.peekNonComment() == token.DEFINE {
+		if p.lit == "_" {
+			p.error(p.pos, "cannot bind to _; name the binder or drop it")
+		}
+		arm.Binder = p.parseIdent()
+		arm.Define = p.pos
+		p.next() // consume :=
+		if p.tok == token.IDENT && p.lit == "_" {
+			p.error(p.pos, "cannot bind a wildcard pattern")
+		}
+	}
+	arm.Pattern = p.parsePattern()
+	arm.Colon = p.expect(token.COLON)
+	arm.Value = p.parseArmValue()
+	return arm
 }
 
 // ── Entry point ────────────────────────────────────────────────────────────
@@ -349,6 +619,7 @@ func parseFileExt(fset *token.FileSet, filename string, src any, mode Mode) (f *
 		f.FileStart = token.Pos(file.Base())
 		f.FileEnd = file.End()
 		ext = &p.ext
+		p.filterClaimedIllegals()
 		p.errors.Sort()
 		err = p.errors.Err()
 	}()

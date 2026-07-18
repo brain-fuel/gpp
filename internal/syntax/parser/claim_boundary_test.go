@@ -100,6 +100,96 @@ func TestClaimBoundary(t *testing.T) {
 		}
 	})
 
+	t.Run("v0.4 unclaimed forms keep stock errors", func(t *testing.T) {
+		for _, expr := range []string{
+			"a ? b : c", "f() ?", "a >= > b", "a >=>= b", "a >=>> b",
+		} {
+			stockErr, forkErr, ext := parseBoth(t, wrap(expr))
+			if stockErr == nil {
+				t.Errorf("%q: expected a stock parse error", expr)
+				continue
+			}
+			if forkErr == nil || forkErr.Error() != stockErr.Error() {
+				t.Errorf("%q: error parity broken:\nstock: %v\nfork:  %v", expr, stockErr, forkErr)
+			}
+			if ext != nil && (len(ext.Tries) > 0 || len(ext.Composes) > 0) {
+				t.Errorf("%q: near-miss was claimed", expr)
+			}
+		}
+		// Valid Go that must stay claim-free.
+		for _, src := range []string{
+			"package b\n\nfunc f(match, x int) int { return match + x }\n",
+			"package b\n\nfunc f(match chan int) { match <- 1 }\n",
+			"package b\n\nfunc try(x int) int { return x }\n\nfunc g() int { return try(1) }\n",
+			"package b\n\nfunc f(a, b int) bool { return a >= b }\n",
+		} {
+			mode := stdparser.ParseComments | stdparser.SkipObjectResolution
+			_, ext, err := forkparser.ParseFileExt(token.NewFileSet(), "b.go", []byte(src), forkparser.Mode(mode))
+			if err != nil {
+				t.Errorf("valid Go rejected: %v\n%s", err, src)
+				continue
+			}
+			if len(ext.Tries)+len(ext.MatchExprs)+len(ext.IfExprs)+len(ext.SwitchExprs)+len(ext.Composes) > 0 {
+				t.Errorf("valid Go claimed extensions:\n%s", src)
+			}
+		}
+	})
+
+	t.Run("v0.4 claimed forms", func(t *testing.T) {
+		for _, tc := range []struct {
+			expr                              string
+			tries, ifs, switches, matchExprs int
+		}{
+			{"f()?", 1, 0, 0, 0},
+			{"f()?.g()?", 2, 0, 0, 0},
+			{"f(g()?)?", 2, 0, 0, 0},
+			{"if c { a } else { b }", 0, 1, 0, 0},
+			{"if a { 1 } else if b { 2 } else { 3 }", 0, 1, 0, 0},
+			{"switch { default: 1 }", 0, 0, 1, 0},
+			{"switch c { case a, b: 1\ndefault: 2 }", 0, 0, 1, 0},
+			{"match c { case _: 1 }", 0, 0, 0, 1},
+			{"if c { a } else { b }?", 1, 1, 0, 0},
+		} {
+			stockErr, forkErr, ext := parseBoth(t, wrap(tc.expr))
+			if stockErr == nil {
+				t.Errorf("%q: expected stock go/parser to reject this", tc.expr)
+			}
+			if forkErr != nil {
+				t.Errorf("%q: fork failed: %v", tc.expr, forkErr)
+				continue
+			}
+			if len(ext.Tries) != tc.tries || len(ext.IfExprs) != tc.ifs ||
+				len(ext.SwitchExprs) != tc.switches || len(ext.MatchExprs) != tc.matchExprs {
+				t.Errorf("%q: got tries=%d ifs=%d switches=%d matches=%d, want %d/%d/%d/%d",
+					tc.expr, len(ext.Tries), len(ext.IfExprs), len(ext.SwitchExprs), len(ext.MatchExprs),
+					tc.tries, tc.ifs, tc.switches, tc.matchExprs)
+			}
+		}
+	})
+
+	t.Run("kleisli kinds", func(t *testing.T) {
+		_, forkErr, ext := parseBoth(t, wrap("f >=> g >>> h"))
+		if forkErr != nil {
+			t.Fatal(forkErr)
+		}
+		if len(ext.Composes) != 1 {
+			t.Fatalf("composes=%d", len(ext.Composes))
+		}
+		ops := ext.Composes[0].Ops
+		if len(ops) != 2 || ops[0] != forkparser.ComposeKleisli || ops[1] != forkparser.ComposeFn {
+			t.Fatalf("ops=%v", ops)
+		}
+	})
+
+	t.Run("complit guard", func(t *testing.T) {
+		// An extension placeholder must never become a composite-literal
+		// type: expect an error, never a silent CompositeLit parse.
+		_, forkErr, _ := parseBoth(t, wrap("f()?{1}"))
+		if forkErr == nil {
+			t.Fatal("f()?{1} parsed silently")
+		}
+	})
+
 	t.Run("dot segment shapes", func(t *testing.T) {
 		_, forkErr, ext := parseBoth(t, wrap("a |> .Map[string](f).Len()"))
 		if forkErr != nil {

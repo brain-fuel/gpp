@@ -27,6 +27,19 @@ type (
 	PipeExpr           = parser.PipeExpr
 	PipeStage          = parser.PipeStage
 	ComposeExpr        = parser.ComposeExpr
+	ComposeKind        = parser.ComposeKind
+	TryExpr            = parser.TryExpr
+	IfExpr             = parser.IfExpr
+	SwitchExpr         = parser.SwitchExpr
+	SwitchExprArm      = parser.SwitchExprArm
+	MatchExpr          = parser.MatchExpr
+	MatchExprArm       = parser.MatchExprArm
+)
+
+// Composition operator kinds.
+const (
+	ComposeFn      = parser.ComposeFn
+	ComposeKleisli = parser.ComposeKleisli
 )
 
 // File is one parsed .gpp file.
@@ -46,9 +59,19 @@ type File struct {
 	Pipes    []*PipeExpr
 	Composes []*ComposeExpr
 
-	matchOf   map[*ast.BadStmt]*MatchStmt
-	pipeOf    map[*ast.BadExpr]*PipeExpr
-	composeOf map[*ast.BadExpr]*ComposeExpr
+	// v0.4.0 typed-failure constructs, creation order.
+	Tries       []*TryExpr
+	IfExprs     []*IfExpr
+	SwitchExprs []*SwitchExpr
+	MatchExprs  []*MatchExpr
+
+	matchOf     map[*ast.BadStmt]*MatchStmt
+	pipeOf      map[*ast.BadExpr]*PipeExpr
+	composeOf   map[*ast.BadExpr]*ComposeExpr
+	tryOf       map[*ast.BadExpr]*TryExpr
+	ifOf        map[*ast.BadExpr]*IfExpr
+	switchExpOf map[*ast.BadExpr]*SwitchExpr
+	matchExpOf  map[*ast.BadExpr]*MatchExpr
 }
 
 // GenericMethod is a method declaration carrying its own type parameters.
@@ -88,9 +111,97 @@ func (f *File) ComposeFor(bad *ast.BadExpr) (*ComposeExpr, bool) {
 	return c, ok
 }
 
+// TryFor resolves a placeholder expression to its try suffix.
+func (f *File) TryFor(bad *ast.BadExpr) (*TryExpr, bool) {
+	t, ok := f.tryOf[bad]
+	return t, ok
+}
+
+// IfFor resolves a placeholder expression to its if expression.
+func (f *File) IfFor(bad *ast.BadExpr) (*IfExpr, bool) {
+	e, ok := f.ifOf[bad]
+	return e, ok
+}
+
+// SwitchExprFor resolves a placeholder expression to its switch expression.
+func (f *File) SwitchExprFor(bad *ast.BadExpr) (*SwitchExpr, bool) {
+	e, ok := f.switchExpOf[bad]
+	return e, ok
+}
+
+// MatchExprFor resolves a placeholder expression to its match expression.
+func (f *File) MatchExprFor(bad *ast.BadExpr) (*MatchExpr, bool) {
+	e, ok := f.matchExpOf[bad]
+	return e, ok
+}
+
 // flowSpan returns the byte span of a flow extension's placeholder.
 func (f *File) flowSpan(bad *ast.BadExpr) (int, int) {
 	return f.Offset(bad.From), f.Offset(bad.To)
+}
+
+// extPlaceholders lists every expression-extension placeholder.
+func (f *File) extPlaceholders() []*ast.BadExpr {
+	var out []*ast.BadExpr
+	for _, p := range f.Pipes {
+		out = append(out, p.Bad)
+	}
+	for _, c := range f.Composes {
+		out = append(out, c.Bad)
+	}
+	for _, t := range f.Tries {
+		out = append(out, t.Bad)
+	}
+	for _, e := range f.IfExprs {
+		out = append(out, e.Bad)
+	}
+	for _, e := range f.SwitchExprs {
+		out = append(out, e.Bad)
+	}
+	for _, e := range f.MatchExprs {
+		out = append(out, e.Bad)
+	}
+	return out
+}
+
+// OutermostExt lists the expression-extension placeholders whose spans are
+// not contained inside another extension expression's span — the set
+// pass-1 lowering rewrites (nested extensions render recursively inside
+// them). Ordered by source position.
+func (f *File) OutermostExt() []*ast.BadExpr {
+	all := f.extPlaceholders()
+	type span struct{ from, to int }
+	spans := make([]span, len(all))
+	for i, b := range all {
+		spans[i] = span{f.Offset(b.From), f.Offset(b.To)}
+	}
+	contained := func(i int) bool {
+		for j, s := range spans {
+			if j == i {
+				continue
+			}
+			if s.from <= spans[i].from && spans[i].to <= s.to && !(s.from == spans[i].from && s.to == spans[i].to) {
+				return true
+			}
+		}
+		return false
+	}
+	var out []*ast.BadExpr
+	for i, b := range all {
+		if !contained(i) {
+			out = append(out, b)
+		}
+	}
+	sortBadBySpan(f, out)
+	return out
+}
+
+func sortBadBySpan(f *File, bs []*ast.BadExpr) {
+	for i := 1; i < len(bs); i++ {
+		for j := i; j > 0 && f.Offset(bs[j].From) < f.Offset(bs[j-1].From); j-- {
+			bs[j], bs[j-1] = bs[j-1], bs[j]
+		}
+	}
 }
 
 // OutermostFlow lists the pipelines and compositions whose spans are not
@@ -143,11 +254,19 @@ func ParseFile(fset *token.FileSet, path string, src []byte) (*File, error) {
 		AST:       astFile,
 		Enums:     ext.Enums,
 		Matches:   ext.Matches,
-		Pipes:     ext.Pipes,
-		Composes:  ext.Composes,
-		matchOf:   map[*ast.BadStmt]*MatchStmt{},
-		pipeOf:    map[*ast.BadExpr]*PipeExpr{},
-		composeOf: map[*ast.BadExpr]*ComposeExpr{},
+		Pipes:       ext.Pipes,
+		Composes:    ext.Composes,
+		Tries:       ext.Tries,
+		IfExprs:     ext.IfExprs,
+		SwitchExprs: ext.SwitchExprs,
+		MatchExprs:  ext.MatchExprs,
+		matchOf:     map[*ast.BadStmt]*MatchStmt{},
+		pipeOf:      map[*ast.BadExpr]*PipeExpr{},
+		composeOf:   map[*ast.BadExpr]*ComposeExpr{},
+		tryOf:       map[*ast.BadExpr]*TryExpr{},
+		ifOf:        map[*ast.BadExpr]*IfExpr{},
+		switchExpOf: map[*ast.BadExpr]*SwitchExpr{},
+		matchExpOf:  map[*ast.BadExpr]*MatchExpr{},
 	}
 	for _, m := range ext.Matches {
 		f.matchOf[m.Stmt] = m
@@ -157,6 +276,18 @@ func ParseFile(fset *token.FileSet, path string, src []byte) (*File, error) {
 	}
 	for _, c := range ext.Composes {
 		f.composeOf[c.Bad] = c
+	}
+	for _, t := range ext.Tries {
+		f.tryOf[t.Bad] = t
+	}
+	for _, e := range ext.IfExprs {
+		f.ifOf[e.Bad] = e
+	}
+	for _, e := range ext.SwitchExprs {
+		f.switchExpOf[e.Bad] = e
+	}
+	for _, e := range ext.MatchExprs {
+		f.matchExpOf[e.Bad] = e
 	}
 	// Enclosing GenDecl for each enum (doc comments of ungrouped decls
 	// live on the GenDecl, not the TypeSpec).

@@ -75,8 +75,10 @@ type parser struct {
 	nestLev int
 
 	// gpp:begin — extension state
-	ahead []aheadTok // raw-token lookahead buffer (see gpp.go)
-	ext   Extensions // enum declarations and match statements
+	ahead    []aheadTok             // raw-token lookahead buffer (see gpp.go)
+	ext      Extensions             // extension constructs (see ext.go)
+	claimedQ []token.Pos            // positions of claimed postfix '?' tokens
+	extBad   map[*ast.BadExpr]bool  // extension placeholders (composite-lit guard)
 	// gpp:end
 }
 
@@ -1484,6 +1486,12 @@ func (p *parser) parseOperand() ast.Expr {
 		defer un(trace(p, "Operand"))
 	}
 
+	// gpp:begin — expression-position if/switch/match (v0.4.0); see gpp.go.
+	if x := p.parseExprFormOperand(); x != nil {
+		return x
+	}
+	// gpp:end
+
 	switch p.tok {
 	case token.IDENT:
 		x := p.parseIdent()
@@ -1767,6 +1775,16 @@ func (p *parser) parsePrimaryExpr(x ast.Expr) ast.Expr {
 			x = p.parseIndexOrSliceOrInstance(x)
 		case token.LPAREN:
 			x = p.parseCallOrConversion(x)
+		// gpp:begin — postfix `?` (v0.4.0): an ILLEGAL '?' written
+		// immediately after the expression is claimed as a try suffix;
+		// spaced or freestanding '?' keeps the stock scanner error.
+		case token.ILLEGAL:
+			if p.lit == "?" && p.pos == x.End() {
+				x = p.parseTrySuffix(x)
+				continue
+			}
+			return x
+		// gpp:end
 		case token.LBRACE:
 			// operand may have returned a parenthesized complit
 			// type; accept it but complain if we have a complit
@@ -1774,6 +1792,9 @@ func (p *parser) parsePrimaryExpr(x ast.Expr) ast.Expr {
 			// determine if '{' belongs to a composite literal or a block statement
 			switch t.(type) {
 			case *ast.BadExpr, *ast.Ident, *ast.SelectorExpr:
+				if bad, isBad := t.(*ast.BadExpr); isBad && p.extBad[bad] {
+					return x // gpp: extension placeholder is never a composite-lit type
+				}
 				if p.exprLev < 0 {
 					return x
 				}

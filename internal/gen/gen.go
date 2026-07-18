@@ -292,6 +292,24 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 		if f.gpp == nil {
 			continue
 		}
+		// TODO(v0.4.0): removed as typed-failure lowering lands (phases 4–7).
+		if len(f.gpp.Tries) > 0 {
+			diags = append(diags, diag.At(idx.fset.Position(f.gpp.Tries[0].QPos),
+				"? lowering is not implemented yet"))
+		}
+		if n := len(f.gpp.IfExprs) + len(f.gpp.SwitchExprs) + len(f.gpp.MatchExprs); n > 0 {
+			diags = append(diags, diag.At(idx.fset.Position(f.gpp.AST.Pos()),
+				"expression if/switch/match lowering is not implemented yet"))
+		}
+		for _, c := range f.gpp.Composes {
+			for _, k := range c.Ops {
+				if k == syntax.ComposeKleisli {
+					diags = append(diags, diag.At(idx.fset.Position(c.Bad.From),
+						"kleisli composition lowering is not implemented yet"))
+					break
+				}
+			}
+		}
 		// Enum receivers must be values: the lowered receiver type is the
 		// sealed interface.
 		for _, gm := range f.gpp.Methods {
