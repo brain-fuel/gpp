@@ -24,6 +24,9 @@ type (
 	Pattern            = parser.Pattern
 	WildcardPattern    = parser.WildcardPattern
 	ConstructorPattern = parser.ConstructorPattern
+	PipeExpr           = parser.PipeExpr
+	PipeStage          = parser.PipeStage
+	ComposeExpr        = parser.ComposeExpr
 )
 
 // File is one parsed .gpp file.
@@ -37,7 +40,15 @@ type File struct {
 	Enums   []*EnumDecl  // source order
 	Matches []*MatchStmt // pre-order (nested matches follow their parent)
 
-	matchOf map[*ast.BadStmt]*MatchStmt
+	// Pipes and Composes are in creation order (extensions nested in a
+	// head/left operand precede their encloser); resolve placeholders by
+	// pointer via PipeFor/ComposeFor, never by slice position.
+	Pipes    []*PipeExpr
+	Composes []*ComposeExpr
+
+	matchOf   map[*ast.BadStmt]*MatchStmt
+	pipeOf    map[*ast.BadExpr]*PipeExpr
+	composeOf map[*ast.BadExpr]*ComposeExpr
 }
 
 // GenericMethod is a method declaration carrying its own type parameters.
@@ -65,6 +76,58 @@ func (f *File) MatchFor(bad *ast.BadStmt) (*MatchStmt, bool) {
 	return m, ok
 }
 
+// PipeFor resolves a placeholder expression to its pipeline.
+func (f *File) PipeFor(bad *ast.BadExpr) (*PipeExpr, bool) {
+	p, ok := f.pipeOf[bad]
+	return p, ok
+}
+
+// ComposeFor resolves a placeholder expression to its composition.
+func (f *File) ComposeFor(bad *ast.BadExpr) (*ComposeExpr, bool) {
+	c, ok := f.composeOf[bad]
+	return c, ok
+}
+
+// flowSpan returns the byte span of a flow extension's placeholder.
+func (f *File) flowSpan(bad *ast.BadExpr) (int, int) {
+	return f.Offset(bad.From), f.Offset(bad.To)
+}
+
+// OutermostFlow lists the pipelines and compositions whose spans are not
+// contained inside another flow extension's span — the ones pass-1
+// lowering must rewrite (nested flows render recursively inside them).
+func (f *File) OutermostFlow() (pipes []*PipeExpr, composes []*ComposeExpr) {
+	type span struct{ from, to int }
+	var all []span
+	for _, p := range f.Pipes {
+		from, to := f.flowSpan(p.Bad)
+		all = append(all, span{from, to})
+	}
+	for _, c := range f.Composes {
+		from, to := f.flowSpan(c.Bad)
+		all = append(all, span{from, to})
+	}
+	contained := func(from, to int) bool {
+		for _, s := range all {
+			if s.from <= from && to <= s.to && !(s.from == from && s.to == to) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, p := range f.Pipes {
+		if from, to := f.flowSpan(p.Bad); !contained(from, to) {
+			pipes = append(pipes, p)
+		}
+	}
+	for _, c := range f.Composes {
+		if from, to := f.flowSpan(c.Bad); !contained(from, to) {
+			composes = append(composes, c)
+		}
+	}
+	return pipes, composes
+}
+
 // ParseFile parses .gpp source. Genuine syntax errors are returned as a
 // scanner.ErrorList.
 func ParseFile(fset *token.FileSet, path string, src []byte) (*File, error) {
@@ -73,17 +136,27 @@ func ParseFile(fset *token.FileSet, path string, src []byte) (*File, error) {
 		return nil, err
 	}
 	f := &File{
-		Path:    path,
-		Src:     src,
-		Fset:    fset,
-		TokFile: fset.File(astFile.Pos()),
-		AST:     astFile,
-		Enums:   ext.Enums,
-		Matches: ext.Matches,
-		matchOf: map[*ast.BadStmt]*MatchStmt{},
+		Path:      path,
+		Src:       src,
+		Fset:      fset,
+		TokFile:   fset.File(astFile.Pos()),
+		AST:       astFile,
+		Enums:     ext.Enums,
+		Matches:   ext.Matches,
+		Pipes:     ext.Pipes,
+		Composes:  ext.Composes,
+		matchOf:   map[*ast.BadStmt]*MatchStmt{},
+		pipeOf:    map[*ast.BadExpr]*PipeExpr{},
+		composeOf: map[*ast.BadExpr]*ComposeExpr{},
 	}
 	for _, m := range ext.Matches {
 		f.matchOf[m.Stmt] = m
+	}
+	for _, p := range ext.Pipes {
+		f.pipeOf[p.Bad] = p
+	}
+	for _, c := range ext.Composes {
+		f.composeOf[c.Bad] = c
 	}
 	// Enclosing GenDecl for each enum (doc comments of ungrouped decls
 	// live on the GenDecl, not the TypeSpec).

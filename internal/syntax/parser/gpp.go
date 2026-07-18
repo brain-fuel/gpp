@@ -32,16 +32,22 @@ func (p *parser) rawScan() (token.Pos, token.Token, string) {
 // peekNonComment returns the next non-comment token after the current one,
 // without consuming anything.
 func (p *parser) peekNonComment() token.Token {
+	return p.peekNonCommentTok().tok
+}
+
+// peekNonCommentTok is the position-aware peek (needed by the adjacency
+// checks for |> and >>>).
+func (p *parser) peekNonCommentTok() aheadTok {
 	for _, t := range p.ahead {
 		if t.tok != token.COMMENT {
-			return t.tok
+			return t
 		}
 	}
 	for {
 		pos, tok, lit := p.scanner.Scan()
 		p.ahead = append(p.ahead, aheadTok{pos, tok, lit})
 		if tok != token.COMMENT {
-			return tok
+			return aheadTok{pos, tok, lit}
 		}
 	}
 }
@@ -210,6 +216,104 @@ func (p *parser) parsePattern() Pattern {
 		cp.Rparen = p.expect(token.RPAREN)
 	}
 	return cp
+}
+
+// ── Pipelines and composition (v0.3.0) ─────────────────────────────────────
+//
+// `|>` and `>>>` are token SEQUENCES, not new tokens: OR immediately
+// followed by GTR, and SHR immediately followed by GTR. Both sequences are
+// invalid Go in every expression position (`>` can never begin an operand),
+// so claiming them — with strict adjacency, leaving spaced forms as stock
+// errors — preserves the superset. They sit below every Go binary operator:
+// tokPrec demotes a claimed operator to LowestPrec, so the stock precedence
+// ladder returns without consuming it and parseExpr's tail (parseExtOps)
+// takes over. `>>>` binds tighter than `|>`; both left-associative.
+
+// gppExtOp reports whether the current token starts a claimed `|>` or
+// `>>>` sequence (adjacency-checked).
+func (p *parser) gppExtOp() bool {
+	return p.atPipe() || p.atCompose()
+}
+
+func (p *parser) atPipe() bool {
+	if p.tok != token.OR {
+		return false
+	}
+	next := p.peekNonCommentTok()
+	return next.tok == token.GTR && next.pos == p.pos+1
+}
+
+func (p *parser) atCompose() bool {
+	if p.tok != token.SHR {
+		return false
+	}
+	next := p.peekNonCommentTok()
+	return next.tok == token.GTR && next.pos == p.pos+2
+}
+
+// parseExtOps folds a parsed expression through any `>>>` chain and then
+// any `|>` chain. Called from parseExpr's tail, so it applies at every
+// expression position.
+func (p *parser) parseExtOps(x ast.Expr) ast.Expr {
+	x = p.parseComposeChain(x)
+	if !p.atPipe() {
+		return x
+	}
+	pipe := &PipeExpr{Head: x}
+	p.ext.Pipes = append(p.ext.Pipes, pipe) // creation order; see Extensions doc
+	for p.atPipe() {
+		opPos := p.pos
+		p.next() // consume OR
+		p.next() // consume GTR (adjacent: no comment can intervene)
+		stage := p.parsePipeStage()
+		stage.OpPos = opPos
+		pipe.Stages = append(pipe.Stages, stage)
+	}
+	last := pipe.Stages[len(pipe.Stages)-1]
+	pipe.Bad = &ast.BadExpr{From: x.Pos(), To: last.Expr.End()}
+	return pipe.Bad
+}
+
+// parseComposeChain folds x through a `>>>` chain, if present.
+func (p *parser) parseComposeChain(x ast.Expr) ast.Expr {
+	if !p.atCompose() {
+		return x
+	}
+	comp := &ComposeExpr{Fns: []ast.Expr{x}}
+	p.ext.Composes = append(p.ext.Composes, comp)
+	for p.atCompose() {
+		comp.OpPos = append(comp.OpPos, p.pos)
+		p.next() // consume SHR
+		p.next() // consume GTR
+		// Stops before the next claimed operator (tokPrec demotion), which
+		// yields left associativity and `>>>` binding tighter than `|>`.
+		op := p.parseBinaryExpr(nil, token.LowestPrec+1)
+		comp.Fns = append(comp.Fns, op)
+	}
+	comp.Bad = &ast.BadExpr{From: comp.Fns[0].Pos(), To: comp.Fns[len(comp.Fns)-1].End()}
+	return comp.Bad
+}
+
+// parsePipeStage parses one segment after `|>`: a dot-segment
+// (`.Name…`, with arbitrary selector/call/index suffixes) or an ordinary
+// expression (compose chains fold in; pipelines do not — that keeps `|>`
+// left-associative).
+func (p *parser) parsePipeStage() *PipeStage {
+	stage := &PipeStage{}
+	if p.tok == token.PERIOD {
+		stage.Dot = p.pos
+		p.next()
+		if p.tok != token.IDENT {
+			p.errorExpected(p.pos, "method or field name")
+			stage.Expr = &ast.BadExpr{From: stage.Dot, To: p.pos}
+			return stage
+		}
+		var x ast.Expr = p.parseIdent()
+		stage.Expr = p.parsePrimaryExpr(x)
+		return stage
+	}
+	stage.Expr = p.parseComposeChain(p.parseBinaryExpr(nil, token.LowestPrec+1))
+	return stage
 }
 
 // ── Entry point ────────────────────────────────────────────────────────────

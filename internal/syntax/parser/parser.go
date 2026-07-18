@@ -1875,6 +1875,12 @@ func (p *parser) tokPrec() (token.Token, int) {
 	if p.inRhs && tok == token.ASSIGN {
 		tok = token.EQL
 	}
+	// gpp:begin — |> and >>> parse below every Go binary operator, so the
+	// stock precedence ladder returns without consuming them (see gpp.go).
+	if p.gppExtOp() {
+		return tok, token.LowestPrec
+	}
+	// gpp:end
 	return tok, tok.Precedence()
 }
 
@@ -1913,7 +1919,8 @@ func (p *parser) parseExpr() ast.Expr {
 		defer un(trace(p, "Expression"))
 	}
 
-	return p.parseBinaryExpr(nil, token.LowestPrec+1)
+	x := p.parseBinaryExpr(nil, token.LowestPrec+1)
+	return p.parseExtOps(x) // gpp: |> and >>> chains (v0.3.0)
 }
 
 func (p *parser) parseRhs() ast.Expr {

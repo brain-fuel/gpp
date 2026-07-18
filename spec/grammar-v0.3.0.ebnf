@@ -1,0 +1,85 @@
+(*
+  G++ grammar, v0.3.0 — expressed as a delta over the Go specification and
+  spec/grammar-v0.2.0.ebnf. Every production not listed here is exactly the
+  Go production; the v0.1.0 MethodDecl and v0.2.0 EnumType/MatchStmt
+  extensions are carried forward unchanged.
+
+  "|>" and ">>>" are token *sequences*, not new tokens: "|>" is "|"
+  immediately followed by ">" with no intervening whitespace or comments;
+  ">>>" is ">>" immediately followed by ">". Both sequences are invalid Go
+  in every expression position (">" can never begin an operand), so
+  claiming them preserves the strict superset. Spaced forms ("| >",
+  ">> >") are not claimed and remain the parse errors they are in Go, as
+  do "||>", "|>=", "|>>", ">>>=", and ">>>>".
+
+  This file and the Godog feature suite under features/ are together the
+  authoritative specification of G++.
+*)
+
+(* ----------------------- Pipeline & composition ------------------------- *)
+(* Go (for reference): Expression = UnaryExpr | Expression binary_op Expression . *)
+
+Expression   = PipeExpr .
+PipeExpr     = ComposeExpr { "|>" PipeStage } .
+PipeStage    = ComposeExpr | DotSegment .
+DotSegment   = "." identifier { Suffix } .
+Suffix       = TypeArgs | Arguments | "." identifier .
+ComposeExpr  = GoExpression { ">>>" GoExpression } .
+GoExpression = (* Go's Expression production, verbatim *) .
+TypeArgs     = "[" TypeList [ "," ] "]" .
+Arguments    = (* Go's production *) .
+
+(*
+  - Precedence: "|>" is the lowest-precedence operator in G++; ">>>" sits
+    between "|>" and "||". Both are left-associative. Every Go operator
+    binds tighter than either: `a + b |> f` is `(a + b) |> f`;
+    `x |> f && y` is `x |> (f && y)` (rejected at resolution unless the
+    stage is callable — the diagnostic suggests parenthesizing);
+    `a |> f >>> g` is `a |> (f >>> g)`; `a >>> b |> c` is
+    `(a >>> b) |> c`. Chains flatten: `x |> f |> g` is one pipeline with
+    two stages.
+  - A DotSegment may appear only immediately after "|>" and is the entire
+    stage. Its suffixes admit selector chains and calls
+    (`x |> .A().B(c)`), explicit instantiation (`.Map[string](f)`,
+    symmetric with v0.1.0 generic methods), and field paths (`.A.B`).
+  - A ComposeExpr operand or PipeExpr head/stage may be any Go
+    expression, including parenthesized pipelines; whether a stage or
+    operand is callable is a resolution-time question, not a grammar one.
+  - Newlines: ">" and ">>" do not trigger automatic semicolon insertion,
+    so multi-line chains are written with the operator at the end of the
+    line.
+*)
+
+(* --------------------------- Placeholders ------------------------------- *)
+
+(*
+  Placeholders need no grammar: `_` in a call argument position, e.g.
+  `add(1, _)` or `clamp(_, lo, hi)`, already parses as a blank-identifier
+  operand in Go (it is only *semantically* invalid there: "cannot use _
+  as value"). G++ claims that semantic space: a call expression with one
+  or more top-level `_` arguments denotes a partial application, lowered
+  to a function literal with one parameter per `_` in argument order,
+  capturing the callee and the fixed arguments once at creation. Inside a
+  pipeline segment, exactly one top-level `_` marks the slot that
+  receives the piped value. All other uses of the blank identifier keep
+  their Go meaning.
+
+  Semantic notes (normative, specified by the feature suite):
+
+  - Pipeline stages insert the piped value as the FIRST argument
+    (`x |> f(a)` is `f(x, a)`; bare `x |> f` is `f(x)`) unless a
+    placeholder chooses the slot. A bare-name stage resolves against the
+    piped value's members (full Go selector semantics plus G++ generic
+    and enum methods) and against functions/constructors in scope;
+    resolving to both is an error, fixed by writing `.Name(args)` for the
+    member or a placeholder call for the function. Builtins and type
+    conversions are valid function stages. Qualified stages always name
+    functions or constructors in the named package.
+  - A stage producing multiple results may feed a stage that takes
+    exactly those results and nothing else (Go's spread rule), uniformly
+    across stage forms.
+  - ">>>" composes left-to-right into a function value: the first
+    operand may take any parameters (one result); each later operand
+    takes exactly one parameter (one result). Operands are captured once
+    at composition time.
+*)

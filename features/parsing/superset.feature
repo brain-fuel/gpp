@@ -98,6 +98,41 @@ Feature: Strict superset — enum and match remain ordinary identifiers
     When I parse it
     Then parsing succeeds with 0 enums
 
+  Scenario: Spaced near-misses of |> and >>> stay ordinary Go
+    Given a G++ file "s.gpp":
+      """
+      package s
+
+      func f(a, b, c int) bool {
+      	x := (a | b) > c
+      	y := a | b
+      	z := a >> b
+      	w := a >> b >> c
+      	_, _, _ = y, z, w
+      	return x
+      }
+      """
+    When I parse it
+    Then parsing succeeds with 0 pipelines
+    And parsing succeeds with 0 compositions
+
+  Scenario: Blank identifiers in calls parse as plain Go
+    Given a G++ file "s.gpp":
+      """
+      package s
+
+      func g(x any) {}
+
+      func f() {
+      	g(nil)
+      	_ = 1
+      	for _ = range []int{1} {
+      	}
+      }
+      """
+    When I parse it
+    Then parsing succeeds with 0 pipelines
+
   Scenario: enum and match as parameters and struct fields
     Given a G++ file "s.gpp":
       """

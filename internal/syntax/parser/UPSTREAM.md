@@ -17,6 +17,11 @@ markers (or one-line `// gpp:` comments):
 6. `stringEnd`: computed as `pos + len(lit)` instead of the unreachable
    `go/internal/scannerhooks` backdoor. Exact except raw strings containing
    carriage returns; `ast.BasicLit.End()` applies the same fallback itself.
+7. `tokPrec`: adjacency-claimed `|>` / `>>>` sequences demote to
+   `token.LowestPrec`, so the stock precedence ladder returns without
+   consuming them (v0.3.0 pipelines/composition).
+8. `parseExpr`: tail-calls `parseExtOps` to consume claimed `|>` / `>>>`
+   chains at the bottom of the ladder.
 
 Everything new lives in `gpp.go` (grammar hooks) and `ext.go` (extension
 node types + `ParseFileExt`).
