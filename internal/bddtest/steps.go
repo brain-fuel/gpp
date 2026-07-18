@@ -17,16 +17,19 @@ func InitializeScenario(t *testing.T, sc *godog.ScenarioContext) {
 	var w *World
 	ps := &parseState{}
 	ns := &namingState{}
+	gs := &genState{}
 
 	sc.Before(func(ctx context.Context, _ *godog.Scenario) (context.Context, error) {
 		*ps = parseState{}
 		*ns = namingState{}
+		*gs = genState{}
 		var err error
 		w, err = newWorld(t)
 		return ctx, err
 	})
 	initParsingSteps(sc, func() *World { return w }, ps)
 	initNamingSteps(sc, func() *World { return w }, ns)
+	initGenSteps(sc, func() *World { return w }, gs)
 	sc.After(func(ctx context.Context, _ *godog.Scenario, _ error) (context.Context, error) {
 		if w != nil {
 			w.cleanup()
