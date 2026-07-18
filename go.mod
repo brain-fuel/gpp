@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/cucumber/godog v0.15.1
 	golang.org/x/tools v0.48.0
+	pgregory.net/rapid v1.3.0
 )
 
 require (

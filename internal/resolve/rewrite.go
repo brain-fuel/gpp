@@ -182,11 +182,7 @@ func (r *fileResolver) receiverArg(sel *ast.SelectorExpr, h *hit, tv types.TypeA
 		return "&" + text, true
 	}
 	if exprIsPtr {
-		derefText := "*" + text
-		if needsParen(sel.X) && len(h.path) == 0 {
-			derefText = "*" + text // already parenthesized above
-		}
-		return derefText, true
+		return "*" + text, true
 	}
 	return text, true
 }
