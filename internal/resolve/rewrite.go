@@ -69,6 +69,8 @@ func (r *fileResolver) resolve() ([]lower.Edit, []diag.Diagnostic) {
 			r.ctorCandidate(x)
 		case *ast.Ident:
 			r.ctorCandidate(x)
+		case *ast.TypeSwitchStmt:
+			r.matchCandidate(x)
 		}
 		return true
 	})

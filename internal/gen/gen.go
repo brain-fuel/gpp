@@ -279,11 +279,6 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 		if f.gpp == nil {
 			continue
 		}
-		// TODO(v0.2.0): removed when match lowering lands (phase 5).
-		if len(f.gpp.Matches) > 0 {
-			diags = append(diags, diag.At(idx.fset.Position(f.gpp.Matches[0].Match),
-				"match lowering is not implemented yet"))
-		}
 		// Enum receivers must be values: the lowered receiver type is the
 		// sealed interface.
 		for _, gm := range f.gpp.Methods {
@@ -358,6 +353,9 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 			if spec, ok := enums.specs[e]; ok {
 				edits = append(edits, lower.EnumEdits(f.gpp, e, spec)...)
 			}
+		}
+		for mi, m := range f.gpp.Matches {
+			edits = append(edits, lower.MatchSkeleton(f.gpp, m, mi)...)
 		}
 		for _, gm := range append(append([]*syntax.GenericMethod{}, f.gpp.Methods...), enumMethods[f]...) {
 			funcName := methodNames[gm]
