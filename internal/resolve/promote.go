@@ -20,6 +20,9 @@ type hit struct {
 	// finalPtr: the last embedded field is itself pointer-typed, so the
 	// path expression already denotes a pointer.
 	finalPtr bool
+	// viaEnum: the receiver is a variant struct and the method belongs to
+	// this enum (Some(41).Map(f)); named is the variant instance.
+	viaEnum *registry.Enum
 }
 
 const maxEmbedDepth = 10

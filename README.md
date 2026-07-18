@@ -7,6 +7,57 @@ Generated packages compile with the standard Go toolchain and may be
 distributed and consumed **without** G++ — the same interoperability story
 Kotlin, Scala, and Clojure have with Java.
 
+## v0.2.0 — Algebraic Data Types
+
+Sum types with exhaustive pattern matching, constructor generation, and
+initial GADT support — lowered to sealed interfaces plus variant structs
+that plain Go consumes with an ordinary type switch:
+
+```go
+// option.gpp
+package option
+
+type Option[T any] enum {
+	Some(value T)
+	None
+}
+
+func (o Option[T]) Map[U any](f func(T) U) Option[U] {
+	match o {
+	case Some(v):
+		return Some(f(v))
+	case None:
+		return None
+	}
+}
+```
+
+`match` is exhaustive: a missing variant is a compile error with a witness
+(`non-exhaustive match on Shape: missing Rect(_, _)`), checked by Maranget
+usefulness so nested patterns like `Add(Lit(a), Lit(b))` are covered
+correctly. Constructors infer their type arguments from arguments or the
+expected type (`var o Option[int] = None`), auto-wrap into closures in
+function position (`xs.Map(Some)`), and qualify (`Option[int].None`) when a
+name is genuinely ambiguous. GADT variants may pin their result type —
+`Lit(v int) Expr[int]` — excluding impossible arms and refining type
+parameters inside matching arms (the classic typed interpreter works).
+Emitted enums carry `//gpp:enum`/`//gpp:variant` markers, so importing
+packages get constructors, matching, and exhaustiveness from the committed
+Go artifact alone.
+
+```go
+// emitted
+type Option[T any] interface{ isOption(T) }
+
+type Some[T any] struct{ Value T }
+func (Some[T]) isOption(T) {}
+// … plain-Go consumer:
+switch v := o.(type) {
+case option.Some[int]:
+	fmt.Println(v.Value)
+}
+```
+
 ## v0.1.0 — Generic Methods
 
 Methods may introduce type parameters not present on their receivers:
@@ -82,9 +133,8 @@ verify-only variant for CI.
 ## Specification
 
 The spec is executable: the Godog/Cucumber feature suite under
-[`features/`](features/) plus the grammar delta in
-[`spec/grammar-v0.1.0.ebnf`](spec/grammar-v0.1.0.ebnf). Run it with
-`go test ./...`.
+[`features/`](features/) plus the grammar deltas in
+[`spec/`](spec/) (one EBNF per milestone). Run it with `go test ./...`.
 
 ## Limitations (by design)
 
@@ -93,15 +143,21 @@ The spec is executable: the Godog/Cucumber feature suite under
   interfaces cannot express generic methods) and will not change.
 - Uninstantiated generic method values (`f := s.Map`) are errors, matching
   Go's rule for uninstantiated generic function values.
+- Match subjects may not start with `(`, `[`, `{`, or `<-` (those spellings
+  stay valid Go); bind such subjects to a variable first. Literal patterns
+  and guards arrive with v0.4.0.
+- v0.2.0 GADT result-type arguments are the enum's own type parameter or a
+  ground named type per position; refinement applies to `T`-typed returns
+  (use `any(x).(T)` manually elsewhere).
 
 ## Roadmap
 
 | Version | Theme |
 | ------- | ----- |
-| v0.1.0  | Generic methods |
-| v0.2.0  | Algebraic data types, exhaustive matching |
+| v0.1.0  | Generic methods — shipped |
+| v0.2.0  | Algebraic data types, exhaustive matching — shipped |
 | v0.3.0  | Pipelines, composition, partial application |
-| v0.4.0  | Typed failure: Result/error propagation, expression-oriented control flow |
+| v0.4.0  | Typed failure: Result/error propagation, expression-oriented control flow, literal patterns and guards |
 | v0.5.0  | Derived APIs: derivation, delegation, folds/visitors |
 
 ## License

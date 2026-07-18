@@ -7,7 +7,10 @@
 // to the nearest preceding mapped line.
 package sourcemap
 
-import "go/token"
+import (
+	"go/token"
+	"strings"
+)
 
 // Map maps one emitted file's positions to its .gpp source.
 type Map struct {
@@ -64,10 +67,41 @@ func Build(gppPath string, gppSrc, emitted []byte) *Map {
 			j++ // line inserted in output
 		}
 	}
-	// Pair modified runs: an inserted output line directly after the last
-	// matched pair inherits the corresponding replaced source line when a
-	// deletion run aligns; approximate by attributing to the previous
-	// mapped line's successor region.
+	// Second alignment pass: lowering reindents arm bodies (nested-match
+	// chains, wrapped returns), so lines that differ only in leading
+	// whitespace still correspond. Between anchored exact matches, align
+	// remaining unmatched output lines to unmatched source lines that are
+	// equal modulo leading whitespace, in order.
+	srcUsed := make([]bool, len(a)+1)
+	for _, ln := range m.gppLine {
+		if ln > 0 {
+			srcUsed[ln] = true
+		}
+	}
+	si := 0
+	for j := range m.gppLine {
+		if m.gppLine[j] != 0 {
+			si = m.gppLine[j] // advance the source cursor past the anchor
+			continue
+		}
+		trimmed := strings.TrimLeft(b[j], " \t")
+		if trimmed == "" {
+			continue
+		}
+		for k := si + 1; k <= len(a) && k <= si+40; k++ {
+			if srcUsed[k] {
+				continue
+			}
+			if strings.TrimLeft(a[k-1], " \t") == trimmed {
+				m.gppLine[j] = k
+				srcUsed[k] = true
+				si = k
+				break
+			}
+		}
+	}
+	// Remaining inserted lines attribute to the previous mapped line's
+	// successor region (e.g. generated headers and prologues).
 	prev := 0
 	for j := range m.gppLine {
 		if m.gppLine[j] != 0 {
@@ -75,11 +109,7 @@ func Build(gppPath string, gppSrc, emitted []byte) *Map {
 			continue
 		}
 		if prev > 0 && prev < len(a) {
-			// best-effort: the line after the previous match
 			m.gppLine[j] = prev + 1
-			if m.gppLine[j] > len(a) {
-				m.gppLine[j] = len(a)
-			}
 		}
 	}
 	return m

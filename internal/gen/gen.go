@@ -102,8 +102,21 @@ func Run(opts Options) (*Result, error) {
 		if err != nil {
 			return nil, err
 		}
-		res.Diags = append(res.Diags, out.Diags...)
-		if len(res.Diags) > 0 {
+		if len(out.Diags) > 0 {
+			// Resolution diagnostics carry overlay-file positions; remap
+			// them onto the .gpp sources they lower from.
+			maps := map[string]*sourcemap.Map{}
+			for path, text := range out.Texts {
+				maps[path] = sourcemap.Build(gppPaths[path], gppSources[path], text)
+			}
+			for _, d := range out.Diags {
+				if m, ok := maps[d.Pos.Filename]; ok {
+					if mapped, mok := m.Map(d.Pos); mok {
+						d.Pos = mapped
+					}
+				}
+				res.Diags = append(res.Diags, d)
+			}
 			res.Diags = diag.Sort(res.Diags)
 			return res, nil
 		}

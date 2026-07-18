@@ -89,6 +89,56 @@ Feature: Diagnostics point at .gpp source
     And stderr contains "main.gpp:11:"
     And stderr contains "Mapp"
 
+  Scenario: Match diagnostics land on .gpp lines
+    Given a G++ file "main.gpp":
+      """
+      package main
+
+      type Coin enum {
+      	Heads
+      	Tails
+      }
+
+      func main() {
+      	var c Coin = Heads
+      	match c {
+      	case Heads:
+      	}
+      }
+      """
+    When I run gpp with arguments "gen ."
+    Then the exit code is 2
+    And stderr contains "main.gpp:9:"
+    And stderr contains "non-exhaustive match on Coin: missing Tails"
+
+  Scenario: A type error deep inside a nested match arm maps to its .gpp line
+    Given a G++ file "main.gpp":
+      """
+      package main
+
+      type Expr enum {
+      	Lit(v int)
+      	Add(l, r Expr)
+      }
+
+      func f(e Expr) int {
+      	match e {
+      	case Add(Lit(a), _):
+      		var wrong string = a
+      		_ = wrong
+      		return 0
+      	case _:
+      		return 1
+      	}
+      }
+
+      func main() {}
+      """
+    When I run gpp with arguments "gen ."
+    Then the exit code is 2
+    And stderr contains "main.gpp:11:"
+    And stderr contains "cannot use a"
+
   Scenario: Failed inference reads like a Go inference error
     Given a G++ file "main.gpp":
       """

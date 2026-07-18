@@ -115,12 +115,16 @@ func (r *fileResolver) candidate(sel *ast.SelectorExpr) {
 		return // receiver not yet typed; a later iteration will see it
 	}
 
-	// Find the method: directly on the receiver's type, or promoted
-	// through embedded fields.
+	// Find the method: directly on the receiver's type, on the enum a
+	// variant struct belongs to (Some(41).Map(f)), or promoted through
+	// embedded fields.
 	var h *hit
 	if m, named, ok := lookupDirect(r.reg, tv.Type, sel.Sel.Name); ok {
 		_, wasPtr := asNamed(tv.Type)
 		h = &hit{method: m, named: named, finalPtr: wasPtr}
+	} else if m, named, e, ok := r.lookupViaVariant(tv.Type, sel.Sel.Name); ok {
+		_, wasPtr := asNamed(tv.Type)
+		h = &hit{method: m, named: named, finalPtr: wasPtr, viaEnum: e}
 	} else {
 		promoted, perr := promote(r.reg, tv.Type, sel.Sel.Name)
 		if perr != nil {
@@ -238,11 +242,57 @@ func (r *fileResolver) rewriteCall(call *ast.CallExpr, sel *ast.SelectorExpr, ty
 	})
 }
 
+// lookupViaVariant finds an enum method when the receiver is a variant
+// struct (which implements the enum interface).
+func (r *fileResolver) lookupViaVariant(t types.Type, methodName string) (*registry.Method, *types.Named, *registry.Enum, bool) {
+	named, _ := asNamed(t)
+	if named == nil || named.Obj().Pkg() == nil {
+		return nil, nil, nil, false
+	}
+	e, ok := r.reg.EnumByVariantType(named.Obj().Pkg().Path(), named.Obj().Name())
+	if !ok {
+		return nil, nil, nil, false
+	}
+	m, ok := r.reg.Lookup(e.PkgPath, e.Name, methodName)
+	if !ok {
+		return nil, nil, nil, false
+	}
+	return m, named, e, true
+}
+
 // receiverTypeArgs renders the receiver's type arguments for prefix
 // instantiation.
 func (r *fileResolver) receiverTypeArgs(at token.Pos, h *hit) ([]string, bool) {
 	if h.method.NumRecvTParams == 0 {
 		return nil, true
+	}
+	if h.viaEnum != nil {
+		// Variant-struct receiver: rebuild the enum's type arguments from
+		// the variant's kept arguments plus its ground result positions.
+		v := variantByTypeName(h.viaEnum, h.named.Obj().Name())
+		if v == nil {
+			return nil, false
+		}
+		out := make([]string, len(h.viaEnum.TParams))
+		if v.ResultArgs != nil {
+			for i, arg := range v.ResultArgs {
+				out[i] = arg
+			}
+		}
+		kept := keptIndices(h.viaEnum, v)
+		ta := h.named.TypeArgs()
+		if ta == nil || ta.Len() != len(kept) {
+			return nil, false
+		}
+		for i, ki := range kept {
+			text, err := r.typeText(ta.At(i))
+			if err != nil {
+				r.errorf(at, "%v", err)
+				return nil, false
+			}
+			out[ki] = text
+		}
+		return out, true
 	}
 	targs := h.named.TypeArgs()
 	if targs == nil || targs.Len() != h.method.NumRecvTParams {

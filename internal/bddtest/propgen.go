@@ -51,9 +51,10 @@ func plainGoSource(rt *rapid.T) string {
 // gppPackage is a generated G++ package as separable declaration blocks,
 // so properties can permute declaration order.
 type gppPackage struct {
-	Header      string   // package clause + receiver type decl
-	Decls       []string // remaining top-level blocks
-	MethodNames []string // expected lowered function names
+	Header       string   // package clause + receiver type decl
+	Decls        []string // remaining top-level blocks
+	MethodNames  []string // expected lowered function names
+	VariantNames []string // expected lowered variant struct names
 }
 
 func (p gppPackage) Source(order []int) string {
@@ -86,6 +87,27 @@ func gppPackageGen(rt *rapid.T) gppPackage {
 		p.Decls = append(p.Decls, fmt.Sprintf("func Helper%d(a %s) %s {\n\treturn a\n}\n\n", i, t, t))
 	}
 
+	// Optionally an enum: unique variant names avoid collision randomness
+	// (collision behavior has its own scenarios).
+	if rapid.Bool().Draw(rt, "hasenum") {
+		enumName := rapid.SampledFrom([]string{"Signal", "Route", "state"}).Draw(rt, "ename")
+		nVars := rapid.IntRange(1, 3).Draw(rt, "nvars")
+		var b strings.Builder
+		fmt.Fprintf(&b, "type %s[T any] enum {\n", enumName)
+		for i := 0; i < nVars; i++ {
+			vname := fmt.Sprintf("%s%d", rapid.SampledFrom([]string{"Go", "Stop", "wait"}).Draw(rt, "vname"), i)
+			if rapid.Bool().Draw(rt, "vparams") {
+				t := rapid.SampledFrom(simpleTypes).Draw(rt, "vtype")
+				fmt.Fprintf(&b, "\t%s(payload %s, tag T)\n", vname, t)
+			} else {
+				fmt.Fprintf(&b, "\t%s\n", vname)
+			}
+			p.VariantNames = append(p.VariantNames, variantLoweredName(enumName, vname))
+		}
+		b.WriteString("}\n\n")
+		p.Decls = append(p.Decls, b.String())
+	}
+
 	nMethods := rapid.IntRange(1, 3).Draw(rt, "nmethods")
 	for i := 0; i < nMethods; i++ {
 		ptr := ""
@@ -113,6 +135,16 @@ func permutation(rt *rapid.T, n int) []int {
 		order[i], order[j] = order[j], order[i]
 	}
 	return order
+}
+
+// variantLoweredName mirrors naming.VariantTypeName for package-unique
+// variant names: the variant name itself, cased by combined visibility.
+func variantLoweredName(enum, variant string) string {
+	exported := enum[0] >= 'A' && enum[0] <= 'Z' && variant[0] >= 'A' && variant[0] <= 'Z'
+	if exported {
+		return strings.ToUpper(variant[:1]) + variant[1:]
+	}
+	return strings.ToLower(variant[:1]) + variant[1:]
 }
 
 func loweredName(recv, method string) string {

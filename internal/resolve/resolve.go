@@ -132,9 +132,13 @@ func Fixpoint(in *Input) (*Output, error) {
 		}
 	}
 
-	for path, text := range texts {
-		if formatted, err := format.Source(text); err == nil {
-			texts[path] = formatted
+	// Format only clean results: diagnostic positions refer to the
+	// unformatted texts, and gen remaps them against these bytes.
+	if len(diags) == 0 {
+		for path, text := range texts {
+			if formatted, err := format.Source(text); err == nil {
+				texts[path] = formatted
+			}
 		}
 	}
 	return &Output{Texts: texts, Diags: diags}, nil

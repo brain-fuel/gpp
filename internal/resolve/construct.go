@@ -247,6 +247,8 @@ func (r *fileResolver) isExprPosition(e ast.Expr) bool {
 		return r.isExprPosition(p)
 	case *ast.UnaryExpr:
 		return true
+	case *ast.SelectorExpr:
+		return p.X == e // receiver of a method call: Some(41).Map(f)
 	case *ast.IndexExpr:
 		return p.Index == e // only as an index expression
 	}

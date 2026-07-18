@@ -14,3 +14,6 @@ Feature: Generator invariants (property-based)
 
   Scenario: Lowered names are independent of declaration order
     Then for any G++ package, permuting declarations preserves the lowered function names
+
+  Scenario: Exhaustiveness matches the coverage oracle (sampled)
+    Then for sampled enums, generation succeeds exactly when the match covers every variant

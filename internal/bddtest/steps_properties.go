@@ -3,6 +3,7 @@ package bddtest
 import (
 	"fmt"
 	"go/token"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -87,7 +88,82 @@ func initPropertySteps(sc *godog.ScenarioContext, w func() *World) {
 					rt.Fatalf("expected lowered name %s missing from permuted order:\n%s", name, outB)
 				}
 			}
+			for _, name := range p.VariantNames {
+				needle := "type " + name
+				if !strings.Contains(outA, needle) || !strings.Contains(outB, needle) {
+					rt.Fatalf("expected variant struct %s missing under permutation", name)
+				}
+			}
 		})
+	})
+
+	sc.Step(`^for sampled enums, generation succeeds exactly when the match covers every variant$`, func() error {
+		world := w()
+		rng := rand.New(rand.NewSource(20260718))
+		for sample := 0; sample < 6; sample++ {
+			nVars := 2 + rng.Intn(3)
+			var names []string
+			for i := 0; i < nVars; i++ {
+				names = append(names, fmt.Sprintf("V%d", i))
+			}
+			covered := map[int]bool{}
+			for i := 0; i < nVars; i++ {
+				if rng.Intn(2) == 0 {
+					covered[i] = true
+				}
+			}
+			wildcard := rng.Intn(4) == 0
+			// Full coverage plus a wildcard makes the wildcard arm
+			// unreachable (a hard error), so the oracle is an XOR.
+			exhaustive := (len(covered) == nVars) != wildcard
+
+			var b strings.Builder
+			b.WriteString("package main\n\ntype E enum {\n")
+			for _, n := range names {
+				fmt.Fprintf(&b, "\t%s\n", n)
+			}
+			b.WriteString("}\n\nfunc classify(e E) int {\n\tout := -1\n\tmatch e {\n")
+			for i, n := range names {
+				if covered[i] {
+					fmt.Fprintf(&b, "\tcase %s:\n\t\tout = %d\n", n, i)
+				}
+			}
+			if wildcard {
+				b.WriteString("\tcase _:\n\t\tout = 99\n")
+			}
+			b.WriteString("\t}\n\treturn out\n}\n\nfunc main() { _ = classify(V0{}) }\n")
+
+			dir := filepath.Join(world.Dir, fmt.Sprintf("oracle%d", sample))
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/oracle\n\ngo 1.24\n"), 0o644); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(dir, "main.gpp"), []byte(b.String()), 0o644); err != nil {
+				return err
+			}
+			res, err := gen.Run(gen.Options{Dir: dir, Patterns: []string{"."}})
+			if err != nil {
+				return fmt.Errorf("sample %d: %v", sample, err)
+			}
+			// Degenerate all-covered-plus-wildcard cases still succeed; the
+			// oracle is exact for exhaustiveness itself.
+			if exhaustive != res.Ok() {
+				return fmt.Errorf("sample %d: covered %d/%d wildcard=%v — gen Ok=%v, oracle says %v\ndiags: %v",
+					sample, len(covered), nVars, wildcard, res.Ok(), exhaustive, res.Diags)
+			}
+			if res.Ok() {
+				out, rerr := os.ReadFile(filepath.Join(dir, "main_gpp.go"))
+				if rerr != nil {
+					return rerr
+				}
+				if strings.Contains(string(out), "//gpp:pattern") || strings.Contains(string(out), "case nil:") {
+					return fmt.Errorf("sample %d: emitted file contains unresolved match artifacts", sample)
+				}
+			}
+		}
+		return nil
 	})
 }
 
