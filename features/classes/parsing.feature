@@ -131,24 +131,3 @@ Feature: Parsing class and instance declarations
       """
     When I parse it
     Then parsing fails with an error containing "instance members must have a body"
-
-  Scenario: Class lowering is staged behind the frontend
-    Given a file "go.mod":
-      """
-      module example.com/demo
-
-      go 1.24
-      """
-    And a G++ file "main.gpp":
-      """
-      package main
-
-      type Magma[T any] class {
-      	Combine(a, b T) T
-      }
-
-      func main() {}
-      """
-    When I run gpp with arguments "gen ."
-    Then the exit code is 2
-    And stderr contains "class lowering is not implemented yet"

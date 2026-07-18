@@ -280,6 +280,7 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 	}
 	enums, ediags := planEnums(idx, pkgPath, tbl)
 	diags = append(diags, ediags...)
+	diags = append(diags, planClasses(idx, tbl)...)
 	enumNames := map[string]bool{}
 	for _, m := range enums.models {
 		enumNames[m.Name] = true
@@ -291,15 +292,6 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 	for _, f := range idx.files {
 		if f.gpp == nil {
 			continue
-		}
-		// TODO(v0.5.0): removed as class lowering lands (phase 2+).
-		if len(f.gpp.Classes) > 0 {
-			diags = append(diags, diag.At(idx.fset.Position(f.gpp.Classes[0].ClassPos),
-				"class lowering is not implemented yet"))
-		}
-		if len(f.gpp.Instances) > 0 {
-			diags = append(diags, diag.At(idx.fset.Position(f.gpp.Instances[0].InstancePos),
-				"instance lowering is not implemented yet"))
 		}
 		// Enum receivers must be values: the lowered receiver type is the
 		// sealed interface.
@@ -375,6 +367,12 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 			if spec, ok := enums.specs[e]; ok {
 				edits = append(edits, lower.EnumEdits(f.gpp, e, spec)...)
 			}
+		}
+		for _, c := range f.gpp.Classes {
+			edits = append(edits, lower.ClassEdits(f.gpp, c)...)
+		}
+		for _, d := range f.gpp.Instances {
+			edits = append(edits, lower.InstanceEdits(f.gpp, d)...)
 		}
 		hedits, hdiags := lower.NewHoister(f.gpp, len(f.gpp.Matches)).FileEdits()
 		diags = append(diags, hdiags...)
