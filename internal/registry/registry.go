@@ -36,10 +36,12 @@ func (m *Method) Origin() string {
 	return fmt.Sprintf("method (%s%s) %s", star, m.RecvTypeName, m.MethodName)
 }
 
-// Registry maps (package path, receiver type name, method name) to methods.
+// Registry maps (package path, receiver type name, method name) to methods
+// and indexes the enums visible to a compilation.
 type Registry struct {
 	methods     map[string]*Method
 	methodNames map[string]bool
+	enumIdx     *enumIndex
 }
 
 func New() *Registry {

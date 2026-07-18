@@ -7,6 +7,7 @@ import (
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"reflect"
 
 	"goforge.dev/gpp/internal/lower"
 	"goforge.dev/gpp/internal/syntax"
@@ -135,6 +136,94 @@ func renameTypeRefs(root ast.Node, rename map[string]string) {
 		if to, ok := rename[id.Name]; ok {
 			id.Name = to
 		}
+	})
+}
+
+// substituteTypeText replaces type-parameter references in a type
+// expression's source text with ground type texts (GADT variants fix some
+// enum type parameters, and their field types must follow). AST-driven:
+// selector members and field names that merely coincide lexically are
+// never touched.
+func substituteTypeText(text string, subst map[string]string) (string, error) {
+	if len(subst) == 0 {
+		return text, nil
+	}
+	expr, err := parser.ParseExpr(text)
+	if err != nil {
+		return "", fmt.Errorf("internal error: re-parsing type %q: %w", text, err)
+	}
+	replacements := map[string]ast.Expr{}
+	for from, to := range subst {
+		rexpr, rerr := parser.ParseExpr(to)
+		if rerr != nil {
+			return "", fmt.Errorf("internal error: re-parsing substitution %q: %w", to, rerr)
+		}
+		replacements[from] = rexpr
+	}
+	// Root may itself be a substituted ident.
+	if id, ok := expr.(*ast.Ident); ok {
+		if _, hit := replacements[id.Name]; hit {
+			return subst[id.Name], nil
+		}
+	}
+	skip := map[*ast.Ident]bool{}
+	ast.Inspect(expr, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.SelectorExpr:
+			skip[node.Sel] = true
+		case *ast.Field:
+			for _, name := range node.Names {
+				skip[name] = true
+			}
+		}
+		return true
+	})
+	replaceChildIdents(expr, replacements, skip)
+	var buf bytes.Buffer
+	if err := printer.Fprint(&buf, token.NewFileSet(), expr); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+// replaceChildIdents rewrites, via reflection, every child field of type
+// ast.Expr (or []ast.Expr) holding a matching *ast.Ident.
+func replaceChildIdents(root ast.Node, repl map[string]ast.Expr, skip map[*ast.Ident]bool) {
+	exprType := reflect.TypeOf((*ast.Expr)(nil)).Elem()
+	swap := func(v reflect.Value) {
+		if !v.CanSet() || v.IsNil() {
+			return
+		}
+		if id, ok := v.Interface().(*ast.Ident); ok && !skip[id] {
+			if r, hit := repl[id.Name]; hit {
+				v.Set(reflect.ValueOf(r))
+			}
+		}
+	}
+	ast.Inspect(root, func(n ast.Node) bool {
+		if n == nil {
+			return false
+		}
+		rv := reflect.ValueOf(n)
+		if rv.Kind() != reflect.Pointer || rv.IsNil() {
+			return true
+		}
+		rv = rv.Elem()
+		if rv.Kind() != reflect.Struct {
+			return true
+		}
+		for i := 0; i < rv.NumField(); i++ {
+			fv := rv.Field(i)
+			switch {
+			case fv.Type() == exprType:
+				swap(fv)
+			case fv.Kind() == reflect.Slice && fv.Type().Elem() == exprType:
+				for j := 0; j < fv.Len(); j++ {
+					swap(fv.Index(j))
+				}
+			}
+		}
+		return true
 	})
 }
 

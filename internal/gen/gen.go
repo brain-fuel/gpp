@@ -55,6 +55,7 @@ func Run(opts Options) (*Result, error) {
 	// Pass 1: parse and lower declarations per package.
 	outputs := map[string][]byte{}
 	methodsByDir := map[string][]*registry.Method{}
+	enumsByDir := map[string][]*registry.Enum{}
 	gppSources := map[string][]byte{} // output abs path -> .gpp source bytes
 	gppPaths := map[string]string{}   // output abs path -> .gpp path (relative)
 	var orphans []string
@@ -62,12 +63,13 @@ func Run(opts Options) (*Result, error) {
 		idx, diags := loadDir(dir)
 		res.Diags = append(res.Diags, diags...)
 		if idx != nil && len(diags) == 0 {
-			outs, methods, pdiags := processPackage(idx, pkgPath(pkgPathRoot, moduleRoot, dir))
+			outs, methods, enums, pdiags := processPackage(idx, pkgPath(pkgPathRoot, moduleRoot, dir))
 			res.Diags = append(res.Diags, pdiags...)
 			for path, content := range outs {
 				outputs[path] = content
 			}
 			methodsByDir[dir] = methods
+			enumsByDir[dir] = enums
 			for _, f := range idx.files {
 				if f.gpp != nil {
 					out := emit.OutputPath(f.path)
@@ -93,6 +95,7 @@ func Run(opts Options) (*Result, error) {
 			Patterns:     loadPatterns(opts.Patterns),
 			Texts:        outputs,
 			MethodsByDir: methodsByDir,
+			EnumsByDir:   enumsByDir,
 		}
 		out, err := resolve.Fixpoint(in)
 		if err != nil {
@@ -250,8 +253,9 @@ func loadDir(dir string) (*pkgIndex, []diag.Diagnostic) {
 }
 
 // processPackage lowers every .gpp file of one package to output bytes,
-// also returning the package's generic methods for the resolution registry.
-func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*registry.Method, []diag.Diagnostic) {
+// also returning the package's generic methods and enums for the
+// resolution registry.
+func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*registry.Method, []*registry.Enum, []diag.Diagnostic) {
 	var diags []diag.Diagnostic
 
 	tbl := naming.NewTable()
@@ -260,17 +264,16 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 			tbl.AddAuthored(d.Name, d.Position)
 		}
 	}
+	enums, ediags := planEnums(idx, pkgPath, tbl)
+	diags = append(diags, ediags...)
+
 	methodNames := map[*syntax.GenericMethod]string{}
 	var allMethods []*registry.Method
 	for _, f := range idx.files {
 		if f.gpp == nil {
 			continue
 		}
-		// TODO(v0.2.0): removed as enum/match lowering lands (phases 2–6).
-		if len(f.gpp.Enums) > 0 {
-			diags = append(diags, diag.At(idx.fset.Position(f.gpp.Enums[0].EnumPos),
-				"enum lowering is not implemented yet"))
-		}
+		// TODO(v0.2.0): removed when match lowering lands (phase 5).
 		if len(f.gpp.Matches) > 0 {
 			diags = append(diags, diag.At(idx.fset.Position(f.gpp.Matches[0].Match),
 				"match lowering is not implemented yet"))
@@ -291,7 +294,7 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 		}
 	}
 	if len(diags) > 0 {
-		return nil, nil, diags
+		return nil, nil, nil, diags
 	}
 
 	outputs := map[string][]byte{}
@@ -300,6 +303,11 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 			continue
 		}
 		var edits []lower.Edit
+		for _, e := range f.gpp.Enums {
+			if spec, ok := enums.specs[e]; ok {
+				edits = append(edits, lower.EnumEdits(f.gpp, e, spec)...)
+			}
+		}
 		for _, gm := range f.gpp.Methods {
 			funcName := methodNames[gm]
 			tparams, err := receiverTParams(idx, gm)
@@ -326,9 +334,9 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 		outputs[emit.OutputPath(f.path)] = out
 	}
 	if len(diags) > 0 {
-		return nil, nil, diags
+		return nil, nil, nil, diags
 	}
-	return outputs, allMethods, nil
+	return outputs, allMethods, enums.models, nil
 }
 
 // markerFor renders the //gpp:method marker comment for a lowered method.

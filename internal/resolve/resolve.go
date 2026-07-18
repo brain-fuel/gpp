@@ -35,6 +35,7 @@ type Input struct {
 	Patterns     []string                      // package patterns to load
 	Texts        map[string][]byte             // abs output path -> current shadow text
 	MethodsByDir map[string][]*registry.Method // dir -> generic methods declared there (PkgPath unset)
+	EnumsByDir   map[string][]*registry.Enum   // dir -> enums declared there (PkgPath provisional)
 }
 
 // Output is the fixpoint result.
@@ -70,7 +71,7 @@ func Fixpoint(in *Input) (*Output, error) {
 			return nil, fmt.Errorf("loading packages: %w", err)
 		}
 		if !regReady {
-			if err := buildRegistry(reg, pkgs, in.MethodsByDir); err != nil {
+			if err := buildRegistry(reg, pkgs, in); err != nil {
 				return nil, err
 			}
 			regReady = true
@@ -122,40 +123,55 @@ func Fixpoint(in *Input) (*Output, error) {
 	return &Output{Texts: texts, Diags: diags}, nil
 }
 
-// buildRegistry registers local methods under their real package paths and
-// discovers dependency methods from //gpp:method markers.
-func buildRegistry(reg *registry.Registry, roots []*packages.Package, methodsByDir map[string][]*registry.Method) error {
-	rootDirs := map[string]bool{}
+// buildRegistry registers local methods and enums under their real package
+// paths and discovers dependency methods/enums from marker comments in
+// distributed sources.
+func buildRegistry(reg *registry.Registry, roots []*packages.Package, in *Input) error {
 	var firstErr error
+	record := func(err error) {
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
 	packages.Visit(roots, nil, func(pkg *packages.Package) {
 		dir := pkgDir(pkg)
 		if dir == "" {
 			return
 		}
-		if methods, ok := methodsByDir[dir]; ok {
-			rootDirs[dir] = true
+		methods, isLocal := in.MethodsByDir[dir]
+		if isLocal {
 			for _, m := range methods {
 				clone := *m
 				clone.PkgPath = pkg.PkgPath
-				if err := reg.Add(&clone); err != nil && firstErr == nil {
-					firstErr = err
-				}
+				record(reg.Add(&clone))
+			}
+			for _, e := range in.EnumsByDir[dir] {
+				clone := *e
+				clone.PkgPath = pkg.PkgPath
+				record(reg.AddEnum(&clone))
 			}
 			return
 		}
 		// Dependency package: scan distributed sources for markers.
 		for _, file := range pkg.GoFiles {
 			src, err := os.ReadFile(file)
-			if err != nil || !strings.Contains(string(src), "//gpp:method") {
+			if err != nil {
 				continue
 			}
-			methods, err := registry.FromMarkers(pkg.PkgPath, file, src)
-			if err != nil {
-				continue // marker damage in a dep is not fatal; methods just stay invisible
+			if strings.Contains(string(src), "//gpp:method") {
+				methods, err := registry.FromMarkers(pkg.PkgPath, file, src)
+				if err == nil { // marker damage in a dep is not fatal
+					for _, m := range methods {
+						record(reg.Add(m))
+					}
+				}
 			}
-			for _, m := range methods {
-				if err := reg.Add(m); err != nil && firstErr == nil {
-					firstErr = err
+			if strings.Contains(string(src), "//gpp:enum") {
+				enums, err := registry.EnumsFromMarkers(pkg.PkgPath, file, src)
+				if err == nil {
+					for _, e := range enums {
+						record(reg.AddEnum(e))
+					}
 				}
 			}
 		}
