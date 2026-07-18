@@ -127,6 +127,25 @@ func (r *fileResolver) pipeCandidate(call *ast.CallExpr) {
 		}
 		insertion := text + "." + name + brackets + "(" + segArgsText + ")"
 		r.edits = append(r.edits, lower.Edit{Start: r.off(call.Pos()), End: r.off(call.End()), New: insertion})
+	case fn && !ctor && func() bool {
+		// Railway: a plain-function stage on a Result head lifts by shape.
+		T, E, isRes := r.isResult(tv.Type)
+		if !isRes {
+			return false
+		}
+		var sig *types.Signature
+		switch o := fnObj.(type) {
+		case *types.Func:
+			sig, _ = o.Type().(*types.Signature)
+		case *types.Var:
+			sig, _ = types.Unalias(o.Type().Underlying()).(*types.Signature)
+		}
+		if sig == nil {
+			return false // builtin or conversion: direct
+		}
+		return r.railwayBare(call, name, brackets, T, E, sig)
+	}():
+		// handled by railwayBare (edit or diagnostic already recorded)
 	case fn || ctor:
 		insertion := name + brackets + "(" + headText
 		if segArgsText != "" {

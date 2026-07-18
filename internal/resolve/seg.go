@@ -39,8 +39,8 @@ func (r *fileResolver) segCandidate(call *ast.CallExpr) {
 		if r.railwaySeg(call, insertAt, T, E) {
 			return
 		}
-		// Railway lowering not yet active: fall through to a direct call
-		// (the backstop reports any type mismatch).
+		// A stage that accepts the Result itself (or a non-function
+		// callee) collapses to the direct call.
 	}
 
 	// Non-Result head: direct v0.3-shaped call.
@@ -113,9 +113,3 @@ const (
 	resultPkgPath  = "goforge.dev/gpp/std/result"
 	resultTypeName = "Result"
 )
-
-// railwaySeg lifts a segment onto the railway (phase 6). It reports
-// whether it handled the carrier.
-func (r *fileResolver) railwaySeg(call *ast.CallExpr, insertAt int, T, E types.Type) bool {
-	return false // Result heads collapse directly until railway lowering lands
-}
