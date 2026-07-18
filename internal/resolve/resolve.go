@@ -78,39 +78,56 @@ func Fixpoint(in *Input) (*Output, error) {
 		}
 		typesByPath := indexTypesPackages(pkgs)
 
-		diags = nil
-		editCount := 0
-		for _, pkg := range pkgs {
-			for i, fileAST := range pkg.Syntax {
-				if i >= len(pkg.CompiledGoFiles) {
-					break
-				}
-				path := pkg.CompiledGoFiles[i]
-				src, ours := texts[path]
-				if !ours {
-					continue
-				}
-				r := &fileResolver{
-					pkg:         pkg,
-					typesByPath: typesByPath,
-					file:        fileAST,
-					src:         src,
-					reg:         reg,
-					tokFile:     pkg.Fset.File(fileAST.Pos()),
-				}
-				edits, fdiags := r.resolve()
-				diags = append(diags, fdiags...)
-				if len(edits) > 0 {
-					applied, err := lower.Apply(src, edits)
-					if err != nil {
-						return nil, err
+		runPass := func(report bool) (int, []diag.Diagnostic, error) {
+			var passDiags []diag.Diagnostic
+			editCount := 0
+			for _, pkg := range pkgs {
+				for i, fileAST := range pkg.Syntax {
+					if i >= len(pkg.CompiledGoFiles) {
+						break
 					}
-					texts[path] = applied
-					editCount += len(edits)
+					path := pkg.CompiledGoFiles[i]
+					src, ours := texts[path]
+					if !ours {
+						continue
+					}
+					r := &fileResolver{
+						pkg:         pkg,
+						typesByPath: typesByPath,
+						file:        fileAST,
+						src:         src,
+						reg:         reg,
+						tokFile:     pkg.Fset.File(fileAST.Pos()),
+						report:      report,
+					}
+					edits, fdiags := r.resolve()
+					passDiags = append(passDiags, fdiags...)
+					if !report && len(edits) > 0 {
+						applied, err := lower.Apply(src, edits)
+						if err != nil {
+							return 0, nil, err
+						}
+						texts[path] = applied
+						editCount += len(edits)
+					}
 				}
 			}
+			return editCount, passDiags, nil
 		}
+		editCount, passDiags, err := runPass(false)
+		if err != nil {
+			return nil, err
+		}
+		diags = passDiags
 		if editCount == 0 {
+			// Converged: one audit pass surfaces precise diagnostics for
+			// anything left unresolvable (uninferable constructors,
+			// ambiguity requiring qualification).
+			_, auditDiags, err := runPass(true)
+			if err != nil {
+				return nil, err
+			}
+			diags = auditDiags
 			break
 		}
 	}

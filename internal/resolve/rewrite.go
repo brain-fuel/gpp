@@ -27,6 +27,11 @@ type fileResolver struct {
 	parents map[ast.Node]ast.Node
 	diags   []diag.Diagnostic
 	edits   []lower.Edit
+
+	// report enables give-up diagnostics. It is set only on the audit
+	// pass after the fixpoint converges, so transient can't-resolve-yet
+	// states never surface to the user.
+	report bool
 }
 
 func (r *fileResolver) off(pos token.Pos) int { return r.tokFile.Offset(pos) }
@@ -58,8 +63,12 @@ func (r *fileResolver) resolve() ([]lower.Edit, []diag.Diagnostic) {
 	})
 
 	ast.Inspect(r.file, func(n ast.Node) bool {
-		if sel, ok := n.(*ast.SelectorExpr); ok {
-			r.candidate(sel)
+		switch x := n.(type) {
+		case *ast.SelectorExpr:
+			r.candidate(x)
+			r.ctorCandidate(x)
+		case *ast.Ident:
+			r.ctorCandidate(x)
 		}
 		return true
 	})
