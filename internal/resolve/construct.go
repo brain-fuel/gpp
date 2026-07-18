@@ -39,11 +39,18 @@ type ctorUse struct {
 // ctorCandidate inspects an identifier or selector that may name a
 // variant constructor; inference picks among candidate enums.
 func (r *fileResolver) ctorCandidate(name ast.Expr) {
-	// Compose carriers own their constructor operands (they infer from
-	// the incoming type and rewrite the whole chain).
+	// Compose carriers own their constructor operands, and segment
+	// carriers own their callee argument (they infer from the flowing
+	// type and rewrite the whole span).
 	if parent, ok := r.parents[name].(*ast.CallExpr); ok {
-		if fn, isID := parent.Fun.(*ast.Ident); isID && fn.Name == lower.ComposeCarrier {
-			return
+		if fn, isID := parent.Fun.(*ast.Ident); isID {
+			if fn.Name == lower.ComposeCarrier {
+				return
+			}
+			if strings.HasPrefix(fn.Name, lower.SegCarrierPrefix) &&
+				len(parent.Args) >= 2 && parent.Args[1] == name {
+				return
+			}
 		}
 	}
 	cands := r.recognizeCtors(name)

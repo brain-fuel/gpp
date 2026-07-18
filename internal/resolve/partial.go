@@ -26,7 +26,7 @@ func (r *fileResolver) partialCandidate(call *ast.CallExpr) {
 		return
 	}
 	// Carriers and constructors have their own owners.
-	if _, _, isCarrier := carrierParts(r, call.Fun); isCarrier {
+	if isCarrierCallee(call.Fun) {
 		return
 	}
 	if r.calleeIsCtor(call.Fun) {
@@ -135,6 +135,19 @@ func (r *fileResolver) partialCandidate(call *ast.CallExpr) {
 	}
 
 	r.emitPartial(call, sig, placeholders, calleeText, pureRef)
+}
+
+// isCarrierCallee reports whether a callee is any gpp carrier family.
+func isCarrierCallee(fun ast.Expr) bool {
+	base := fun
+	switch fn := fun.(type) {
+	case *ast.IndexExpr:
+		base = fn.X
+	case *ast.IndexListExpr:
+		base = fn.X
+	}
+	id, ok := base.(*ast.Ident)
+	return ok && strings.HasPrefix(id.Name, "__gpp_")
 }
 
 // isPureFuncRef reports whether a callee expression is a side-effect-free

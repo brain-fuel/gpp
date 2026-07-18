@@ -8,6 +8,7 @@ package lower
 // operand signatures need types).
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"strings"
@@ -20,6 +21,12 @@ const (
 	// BareCarrierPrefix marks a pipeline segment awaiting member-vs-
 	// function resolution: __gpp_bare_Map(head, args…).
 	BareCarrierPrefix = "__gpp_bare_"
+	// SegCarrierPrefix marks a direct-callee segment awaiting the flowing
+	// type (railway lifting): __gpp_seg1(head, callee, fixedArgs…) — the
+	// digit is the piped value's insertion index among the final args.
+	SegCarrierPrefix = "__gpp_seg"
+	// DotCarrier wraps a dot-segment's receiver: __gpp_dot(head).Suffix…
+	DotCarrier = "__gpp_dot"
 	// ComposeCarrier marks a composition awaiting operand types:
 	// __gpp_comp(f, g, …).
 	ComposeCarrier = "__gpp_comp"
@@ -145,12 +152,10 @@ func f2Stage(f *syntax.File, st *syntax.PipeStage, cur string, headNode ast.Expr
 	errAt := func(pos token.Pos, format string, args ...any) []diag.Diagnostic {
 		return []diag.Diagnostic{diag.At(f.Fset.Position(pos), format, args...)}
 	}
-	curForSelector := cur
-	if headNode != nil && exprNeedsParen(headNode) {
-		curForSelector = "(" + cur + ")"
-	}
+	_ = headNode // parenthesization happens at resolve time (carrier args)
 
-	// Dot-segment: hand the whole chain to the existing selector engine.
+	// Dot-segment: the __gpp_dot marker wraps the receiver so the whole
+	// suffix chain waits for the flowing type.
 	if st.Dot.IsValid() {
 		if ph := topLevelPlaceholder(st.Expr); ph != nil {
 			return "", errAt(ph.Pos(), "a dot segment receives the piped value as its receiver; _ is not allowed here")
@@ -159,7 +164,7 @@ func f2Stage(f *syntax.File, st *syntax.PipeStage, cur string, headNode ast.Expr
 		if len(ds) > 0 {
 			return "", ds
 		}
-		return curForSelector + "." + text, nil
+		return DotCarrier + "(" + cur + ")." + text, nil
 	}
 
 	switch seg := st.Expr.(type) {
@@ -175,7 +180,7 @@ func f2Stage(f *syntax.File, st *syntax.PipeStage, cur string, headNode ast.Expr
 		if len(ds) > 0 {
 			return "", ds
 		}
-		return text + "(" + cur + ")", nil
+		return SegCarrierPrefix + "0(" + cur + ", " + text + ")", nil
 	case *ast.IndexExpr, *ast.IndexListExpr:
 		// Bare instantiated name (Map[string]) or indexed value (fs[0]):
 		// carrier preserves the bracket text; resolution decides.
@@ -186,7 +191,7 @@ func f2Stage(f *syntax.File, st *syntax.PipeStage, cur string, headNode ast.Expr
 		if len(ds) > 0 {
 			return "", ds
 		}
-		return "(" + text + ")(" + cur + ")", nil
+		return SegCarrierPrefix + "0(" + cur + ", (" + text + "))", nil
 	case *ast.BinaryExpr:
 		switch seg.Op {
 		case token.LAND, token.LOR, token.EQL, token.NEQ,
@@ -199,13 +204,13 @@ func f2Stage(f *syntax.File, st *syntax.PipeStage, cur string, headNode ast.Expr
 		if len(ds) > 0 {
 			return "", ds
 		}
-		return "(" + text + ")(" + cur + ")", nil
+		return SegCarrierPrefix + "0(" + cur + ", (" + text + "))", nil
 	default:
 		text, ds := ExprText(f, st.Expr)
 		if len(ds) > 0 {
 			return "", ds
 		}
-		return "(" + text + ")(" + cur + ")", nil
+		return SegCarrierPrefix + "0(" + cur + ", (" + text + "))", nil
 	}
 }
 
@@ -227,60 +232,45 @@ func lowerCallSegment(f *syntax.File, st *syntax.PipeStage, call *ast.CallExpr, 
 			"a pipeline segment must contain exactly one _; found %d (use a partial application outside the pipeline or a closure)", len(placeholders))
 	}
 
-	renderArgs := func() (string, []diag.Diagnostic) {
-		var parts []string
-		for _, a := range call.Args {
-			if id, ok := a.(*ast.Ident); ok && id.Name == "_" {
-				parts = append(parts, cur)
-				continue
-			}
-			text, ds := ExprText(f, a)
-			if len(ds) > 0 {
-				return "", ds
-			}
-			parts = append(parts, text)
+	// Fixed args (placeholders excluded) and the piped value's insertion
+	// index among the FINAL call arguments.
+	insertAt := 0
+	var fixed []string
+	for i, a := range call.Args {
+		if id, ok := a.(*ast.Ident); ok && id.Name == "_" {
+			insertAt = i
+			continue
 		}
-		if call.Ellipsis.IsValid() {
-			parts[len(parts)-1] += "..."
+		text, ds := ExprText(f, a)
+		if len(ds) > 0 {
+			return "", ds
 		}
-		return strings.Join(parts, ", "), nil
+		if call.Ellipsis.IsValid() && i == len(call.Args)-1 {
+			text += "..."
+		}
+		fixed = append(fixed, text)
 	}
 
 	calleeBare, brackets, isBare := bareCallee(f, call.Fun)
-	if len(placeholders) == 1 {
-		// Explicit slot: always the function/constructor reading.
-		args, ds := renderArgs()
-		if len(ds) > 0 {
-			return "", ds
+	if isBare && len(placeholders) == 0 {
+		insertion := cur
+		if len(fixed) > 0 {
+			insertion = cur + ", " + strings.Join(fixed, ", ")
 		}
-		calleeText, ds := ExprText(f, call.Fun)
-		if len(ds) > 0 {
-			return "", ds
-		}
-		return calleeText + "(" + args + ")", nil
-	}
-
-	args, ds := renderArgs()
-	if len(ds) > 0 {
-		return "", ds
-	}
-	insertion := cur
-	if args != "" {
-		insertion = cur + ", " + args
-	}
-	if isBare {
 		return BareCarrierPrefix + calleeBare + brackets + "(" + insertion + ")", nil
 	}
+
 	calleeText, ds := ExprText(f, call.Fun)
 	if len(ds) > 0 {
 		return "", ds
 	}
 	switch call.Fun.(type) {
-	case *ast.SelectorExpr, *ast.IndexExpr, *ast.IndexListExpr:
-		return calleeText + "(" + insertion + ")", nil
+	case *ast.Ident, *ast.SelectorExpr, *ast.IndexExpr, *ast.IndexListExpr:
 	default:
-		return "(" + calleeText + ")(" + insertion + ")", nil
+		calleeText = "(" + calleeText + ")"
 	}
+	parts := append([]string{cur, calleeText}, fixed...)
+	return fmt.Sprintf("%s%d(%s)", SegCarrierPrefix, insertAt, strings.Join(parts, ", ")), nil
 }
 
 // bareCallee reports whether a callee is a bare identifier, possibly
