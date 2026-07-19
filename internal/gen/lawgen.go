@@ -85,13 +85,31 @@ func planLawTests(reg *registry.Registry, pkgPath, dir, outRel string, instances
 		fmt.Fprintf(&b, "package %s\n\n", pkgName)
 		fmt.Fprintf(&b, "import (\n\t\"testing\"\n%s\n\t\"pgregory.net/rapid\"\n)\n", extraImport)
 
+		neededGens := map[string]bool{}
 		for _, e := range byFile[srcPath] {
-			text, terr := lawTestFunc(reg, pkgPath, qual, e.inst, e.mode)
+			text, terr := lawTestFunc(reg, pkgPath, qual, e.inst, e.mode, neededGens)
 			if terr != nil {
 				diags = append(diags, diag.Errorf("%s: %v", srcPath, terr))
 				continue
 			}
 			b.WriteString("\n" + text)
+		}
+		if len(neededGens) > 0 {
+			siblings := GenSiblings(reg.EnumsInPkg(pkgPath))
+			names := make([]string, 0, len(neededGens))
+			for n := range neededGens {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+			for _, n := range names {
+				e, ok := reg.LookupEnum(pkgPath, n)
+				if !ok {
+					continue
+				}
+				if text, gok := RenderEnumGen(e, siblings, qual); gok {
+					b.WriteString("\n" + text)
+				}
+			}
 		}
 		formatted, err := format.Source([]byte(b.String()))
 		if err != nil {
@@ -153,7 +171,7 @@ func parseLawsMode(raw string) lawsMode {
 }
 
 // lawTestFunc renders one instance's Test<Name>Laws function.
-func lawTestFunc(reg *registry.Registry, pkgPath, qual string, inst *registry.Instance, mode lawsMode) (string, error) {
+func lawTestFunc(reg *registry.Registry, pkgPath, qual string, inst *registry.Instance, mode lawsMode, neededGens map[string]bool) (string, error) {
 	ref := inst.Class
 	if ref.PkgPath == "" {
 		ref.PkgPath = pkgPath
@@ -198,6 +216,11 @@ func lawTestFunc(reg *registry.Registry, pkgPath, qual string, inst *registry.In
 			for _, p := range params {
 				if mode.gen != "" {
 					fmt.Fprintf(&b, "\t\t\t%s := %s.Draw(rt, %q)\n", p.Name, qual+mode.gen, p.Name)
+				} else if e, isEnum := reg.LookupEnum(pkgPath, p.Type); isEnum && len(e.TParams) == 0 && len(e.Indices) == 0 {
+					// Enum-typed law parameter: rapid.Make cannot invent
+					// interface values; the derived generator can.
+					neededGens[p.Type] = true
+					fmt.Fprintf(&b, "\t\t\t%s := Gen%s(rt)\n", p.Name, p.Type)
 				} else {
 					fmt.Fprintf(&b, "\t\t\t%s := rapid.Make[%s]().Draw(rt, %q)\n", p.Name, p.Type, p.Name)
 				}

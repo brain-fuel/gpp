@@ -580,3 +580,14 @@ func substWords(text string, subst map[string]string) string {
 	}
 	return text
 }
+
+// EnumsInPkg lists a package's registered enums.
+func (r *Registry) EnumsInPkg(pkgPath string) []*Enum {
+	var out []*Enum
+	for _, e := range r.AllEnums() {
+		if e.PkgPath == pkgPath {
+			out = append(out, e)
+		}
+	}
+	return out
+}

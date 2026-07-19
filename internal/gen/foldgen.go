@@ -28,22 +28,27 @@ import (
 // undetermined under the identity instantiation silently derives
 // nothing (the same erasure wall as unmatchable arms).
 
-// deriveMode reads the enum's //gpp:derive directive.
-func deriveMode(e *syntax.EnumDecl) (off bool, unknown string) {
+// deriveMode reads the enum's //gpp:derive directive. "off" suppresses
+// all derivation; "gen" (v0.10.0) additionally opts the enum into a
+// standalone generator test file.
+func deriveMode(e *syntax.EnumDecl) (off bool, genOptIn bool, unknown string) {
 	if e.Gen == nil || e.Gen.Doc == nil {
-		return false, ""
+		return false, false, ""
 	}
 	for _, c := range e.Gen.Doc.List {
 		arg, ok := directive.ParseDeriveMarker(c.Text)
 		if !ok {
 			continue
 		}
-		if arg == "off" {
-			return true, ""
+		switch arg {
+		case "off":
+			return true, false, ""
+		case "gen":
+			return false, true, ""
 		}
-		return false, arg
+		return false, false, arg
 	}
-	return false, ""
+	return false, false, ""
 }
 
 // foldHeadArgs computes the identity-instantiation head arguments for a
@@ -89,9 +94,9 @@ func planFolds(idx *pkgIndex, plan *enumPlan, tbl *naming.Table, shared map[stri
 	for _, e := range plan.order {
 		spec := plan.specs[e]
 		model := plan.model[e]
-		off, unknown := deriveMode(e)
+		off, _, unknown := deriveMode(e)
 		if unknown != "" {
-			errs = append(errs, fmt.Errorf("%s: unknown //gpp:derive argument %q; v0.6.0 supports 'off'",
+			errs = append(errs, fmt.Errorf("%s: unknown //gpp:derive argument %q; supported arguments: 'off', 'gen'",
 				idx.fset.Position(e.Spec.Pos()), unknown))
 			continue
 		}

@@ -189,4 +189,4 @@ Feature: Derived folds
     When I run gpp with arguments "gen ."
     Then the exit code is 2
     And stderr contains "unknown //gpp:derive argument"
-    And stderr contains "v0.6.0 supports 'off'"
+    And stderr contains "supported arguments: 'off', 'gen'"

@@ -528,6 +528,15 @@ func processPackage(idx *pkgIndex, pkgPath string, probe domainProbeFn) (map[str
 	}
 
 	outputs := map[string][]byte{}
+	genDir := ""
+	if len(idx.files) > 0 {
+		genDir = filepath.Dir(idx.files[0].path)
+	}
+	genOuts, gdiags := planGenTests(idx, enums, pkgPath, genDir)
+	diags = append(diags, gdiags...)
+	for p, c := range genOuts {
+		outputs[p] = c
+	}
 	for _, f := range idx.files {
 		if f.gpp == nil {
 			continue
