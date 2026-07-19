@@ -452,6 +452,12 @@ func processPackage(idx *pkgIndex, pkgPath string, probe domainProbeFn) (map[str
 	for _, err := range planTraversals(idx, enums, tbl) {
 		diags = append(diags, diag.Errorf("%s", err))
 	}
+	// Structural equality (v0.11.0): monomorphic enums derive
+	// Equal/EqualWith/EqOverrides unless func/map/chan content makes
+	// them underivable (transitively through referenced enums).
+	for _, err := range planEquality(idx, enums, tbl) {
+		diags = append(diags, diag.Errorf("%s", err))
+	}
 
 	// Total functions (v0.7.0): every total's key is known before any
 	// file is processed so cross-file same-package calls check.

@@ -18,6 +18,7 @@ type EnumSpec struct {
 	Variants    []EnumVariantSpec
 	FoldText    string // derived Cases struct + Fold function (v0.6.0); "" = none
 	TraversalText string // derived Children/Universe/Transform (v0.11.0); "" = none
+	EqualText     string // derived Equal/EqualWith/EqOverrides (v0.11.0); "" = none
 }
 
 // EnumVariantSpec is one variant ready to render.
@@ -83,6 +84,9 @@ func EnumEdits(f *syntax.File, e *syntax.EnumDecl, spec *EnumSpec) []Edit {
 	}
 	if spec.TraversalText != "" {
 		b.WriteString("\n" + spec.TraversalText)
+	}
+	if spec.EqualText != "" {
+		b.WriteString("\n" + spec.EqualText)
 	}
 	edits = append(edits, Edit{Start: declStart, End: declEnd, New: strings.TrimSuffix(b.String(), "\n")})
 	return edits
