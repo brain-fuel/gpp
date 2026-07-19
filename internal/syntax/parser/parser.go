@@ -834,6 +834,32 @@ func (p *parser) parseParamDecl(name *ast.Ident, typeSetsOK bool) (f field) {
 	}
 
 	switch p.tok {
+	// gpp:begin — QTT quantity prefixes (v0.7.0). A leading integer
+	// literal in a parameter declaration is invalid Go (the default arm
+	// below errors), so `0 n int` / `1 f *os.File` is a strict-superset
+	// claim. Only 0 and 1 are quantity literals; anything else errors.
+	case token.INT:
+		if name == nil && (p.lit == "0" || p.lit == "1") {
+			qlit, qpos := p.lit, p.pos
+			p.next()
+			if p.tok != token.IDENT {
+				p.errorExpected(p.pos, "parameter name after quantity "+qlit)
+				p.advance(exprEnd)
+				return
+			}
+			f = p.parseParamDecl(nil, typeSetsOK)
+			if f.name == nil || f.typ == nil {
+				// `0 int` would otherwise distribute as a type-only param.
+				p.error(qpos, "a quantity annotation requires a named parameter with a type")
+				return
+			}
+			p.ext.Quantities = append(p.ext.Quantities, &QuantityParam{Quantity: qlit, QPos: qpos, Name: f.name})
+			return
+		}
+		p.errorExpected(p.pos, "')'")
+		p.advance(exprEnd)
+		return
+	// gpp:end
 	case token.IDENT:
 		// name
 		if name != nil {
@@ -846,6 +872,25 @@ func (p *parser) parseParamDecl(name *ast.Ident, typeSetsOK bool) (f field) {
 		case token.IDENT, token.MUL, token.ARROW, token.FUNC, token.CHAN, token.MAP, token.STRUCT, token.INTERFACE, token.LPAREN:
 			// name type
 			f.typ = p.parseType()
+			// gpp:begin — multiplicity-variable quantities (v0.7.0).
+			// `m x T`: after a name-type pair, another type-start token is
+			// invalid Go, so when the parsed "type" is a bare identifier it
+			// was really a quantity variable followed by the name; the real
+			// type follows. Strict-superset claim.
+			if qname, bare := f.typ.(*ast.Ident); bare {
+				switch p.tok {
+				case token.IDENT, token.MUL, token.ARROW, token.FUNC, token.CHAN, token.MAP, token.STRUCT, token.INTERFACE, token.LPAREN, token.LBRACK:
+					p.ext.Quantities = append(p.ext.Quantities, &QuantityParam{Quantity: f.name.Name, QPos: f.name.Pos(), Name: qname})
+					f.name = qname
+					f.typ = p.parseType()
+				case token.ELLIPSIS:
+					p.ext.Quantities = append(p.ext.Quantities, &QuantityParam{Quantity: f.name.Name, QPos: f.name.Pos(), Name: qname})
+					f.name = qname
+					f.typ = p.parseDotsType()
+					return
+				}
+			}
+			// gpp:end
 
 		case token.LBRACK:
 			// name "[" type1, ..., typeN "]" or name "[" n "]" type
@@ -2912,6 +2957,18 @@ func (p *parser) parseDecl(sync map[token.Token]bool) ast.Decl {
 	// so this claim is a strict superset.
 	if p.tok == token.IDENT && p.lit == "instance" && p.peekNonComment() == token.IDENT {
 		return p.parseInstanceDecl()
+	}
+	// gpp:end
+
+	// gpp:begin — total functions (v0.7.0). `total` before func is invalid
+	// Go at the top level (the default arm below errors), so this claim is
+	// a strict superset. `total` stays an ordinary identifier elsewhere.
+	if p.tok == token.IDENT && p.lit == "total" && p.peekNonComment() == token.FUNC {
+		totalPos := p.pos
+		p.next()
+		fd := p.parseFuncDecl()
+		p.ext.Totals = append(p.ext.Totals, &TotalFunc{Decl: fd, TotalPos: totalPos})
+		return fd
 	}
 	// gpp:end
 

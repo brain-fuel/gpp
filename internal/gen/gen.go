@@ -444,6 +444,12 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 		for _, d := range f.gpp.Delegates {
 			edits = append(edits, lower.DelegateEdits(f.gpp, d)...)
 		}
+		for _, q := range f.gpp.Quantities {
+			edits = append(edits, lower.QuantityEdits(f.gpp, q)...)
+		}
+		for _, t := range f.gpp.Totals {
+			edits = append(edits, lower.TotalEdits(f.gpp, t)...)
+		}
 		hedits, hdiags := lower.NewHoister(f.gpp, len(f.gpp.Matches)).FileEdits()
 		diags = append(diags, hdiags...)
 		edits = append(edits, hedits...)

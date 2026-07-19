@@ -38,6 +38,23 @@ type DelegateField struct {
 	DelegatePos token.Pos
 }
 
+// QuantityParam is one parameter carrying a QTT quantity prefix
+// (v0.7.0): `0 n int` (erased), `1 f *os.File` (linear), or `m x T`
+// where m names a multiplicity type parameter. The prefix spans
+// [QPos, Name.Pos) in the source and is stripped by lowering.
+type QuantityParam struct {
+	Quantity string     // "0", "1", or a multiplicity variable name
+	QPos     token.Pos  // start of the quantity token
+	Name     *ast.Ident // the parameter name the quantity annotates
+}
+
+// TotalFunc is one `total func` declaration (v0.7.0): the function is
+// checked for structural termination and becomes callable in types.
+type TotalFunc struct {
+	Decl     *ast.FuncDecl
+	TotalPos token.Pos // position of the `total` keyword
+}
+
 // ClassDecl is one `type Name[T any] class { … }` declaration (v0.5.0).
 type ClassDecl struct {
 	Gen      *ast.GenDecl  // enclosing declaration; filled by syntax.ParseFile
@@ -261,6 +278,9 @@ type Extensions struct {
 	Instances []*InstanceDecl
 	// v0.6.0 — source order.
 	Delegates []*DelegateField
+	// v0.7.0 — source order.
+	Quantities []*QuantityParam
+	Totals     []*TotalFunc
 }
 
 // ParseFileExt parses G++ source: stock Go grammar plus enum declarations,
