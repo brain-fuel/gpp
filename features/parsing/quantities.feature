@@ -26,7 +26,6 @@ Feature: Quantity prefixes and total functions parse and strip
       }
 
       func join(0 n int, x string, 1 s string) string {
-      	_ = n
       	return x + s
       }
 
@@ -54,7 +53,8 @@ Feature: Quantity prefixes and total functions parse and strip
       """
     And the file "main_gpp.go" contains:
       """
-      func join(n int, x string, s string) string {
+      //gpp:dep join(0 n int, x string, 1 s string) string
+      func join(x string, s string) string {
       """
     And the file "main_gpp.go" contains:
       """

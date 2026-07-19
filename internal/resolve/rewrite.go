@@ -83,6 +83,7 @@ func (r *fileResolver) resolve() ([]lower.Edit, []diag.Diagnostic) {
 			r.partialCandidate(x)
 			r.tryCandidate(x)
 			r.dictCallCandidate(x)
+			r.depCallCandidate(x)
 			r.opCallCandidate(x)
 			r.opSugarCandidate(x)
 		case *ast.IndexExpr:

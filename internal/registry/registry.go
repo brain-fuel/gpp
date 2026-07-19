@@ -44,6 +44,7 @@ type Registry struct {
 	enumIdx     *enumIndex
 	classIdxV   *classIndex
 	totalIdx    *totalIndex
+	depIdx      *depIndex
 }
 
 func New() *Registry {

@@ -41,6 +41,7 @@ type Input struct {
 	ClassesByDir   map[string][]*registry.Class
 	InstancesByDir map[string][]*registry.Instance
 	TotalsByDir    map[string][]*registry.Total
+	DepsByDir      map[string][]*registry.DepFn
 }
 
 // Output is the fixpoint result.
@@ -195,6 +196,11 @@ func buildRegistry(reg *registry.Registry, roots []*packages.Package, in *Input)
 				clone.PkgPath = pkg.PkgPath
 				record(reg.AddTotal(&clone))
 			}
+			for _, d := range in.DepsByDir[dir] {
+				clone := *d
+				clone.PkgPath = pkg.PkgPath
+				record(reg.AddDepFn(&clone))
+			}
 			return
 		}
 		// Dependency package: scan distributed sources for markers.
@@ -224,6 +230,14 @@ func buildRegistry(reg *registry.Registry, roots []*packages.Package, in *Input)
 				if err == nil { // marker damage in a dep is not fatal
 					for _, t := range totals {
 						record(reg.AddTotal(t))
+					}
+				}
+			}
+			if strings.Contains(string(src), registry.DepPrefix) {
+				deps, err := registry.DepFnsFromMarkers(pkg.PkgPath, file, src)
+				if err == nil { // marker damage in a dep is not fatal
+					for _, d := range deps {
+						record(reg.AddDepFn(d))
 					}
 				}
 			}

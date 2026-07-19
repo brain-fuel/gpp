@@ -61,6 +61,7 @@ func Run(opts Options) (*Result, error) {
 	classesByDir := map[string][]*registry.Class{}
 	instancesByDir := map[string][]*registry.Instance{}
 	totalsByDir := map[string][]*registry.Total{}
+	depsByDir := map[string][]*registry.DepFn{}
 	lawsOutByDir := map[string]string{}
 	gppSources := map[string][]byte{} // output abs path -> .gpp source bytes
 	gppPaths := map[string]string{}   // output abs path -> .gpp path (relative)
@@ -69,7 +70,7 @@ func Run(opts Options) (*Result, error) {
 		idx, diags := loadDir(dir)
 		res.Diags = append(res.Diags, diags...)
 		if idx != nil && len(diags) == 0 {
-			outs, methods, enums, classes, instances, totals, lawsOut, pdiags := processPackage(idx, pkgPath(pkgPathRoot, moduleRoot, dir))
+			outs, methods, enums, classes, instances, totals, deps, lawsOut, pdiags := processPackage(idx, pkgPath(pkgPathRoot, moduleRoot, dir))
 			res.Diags = append(res.Diags, pdiags...)
 			for path, content := range outs {
 				outputs[path] = content
@@ -79,6 +80,7 @@ func Run(opts Options) (*Result, error) {
 			classesByDir[dir] = classes
 			instancesByDir[dir] = instances
 			totalsByDir[dir] = totals
+			depsByDir[dir] = deps
 			lawsOutByDir[dir] = lawsOut
 			for _, f := range idx.files {
 				if f.gpp != nil {
@@ -109,6 +111,7 @@ func Run(opts Options) (*Result, error) {
 			ClassesByDir:   classesByDir,
 			InstancesByDir: instancesByDir,
 			TotalsByDir:    totalsByDir,
+			DepsByDir:      depsByDir,
 		}
 		out, err := resolve.Fixpoint(in)
 		if err != nil {
@@ -302,7 +305,7 @@ func loadDir(dir string) (*pkgIndex, []diag.Diagnostic) {
 // processPackage lowers every .gpp file of one package to output bytes,
 // also returning the package's generic methods and enums for the
 // resolution registry.
-func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*registry.Method, []*registry.Enum, []*registry.Class, []*registry.Instance, []*registry.Total, string, []diag.Diagnostic) {
+func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*registry.Method, []*registry.Enum, []*registry.Class, []*registry.Instance, []*registry.Total, []*registry.DepFn, string, []diag.Diagnostic) {
 	var diags []diag.Diagnostic
 
 	tbl := naming.NewTable()
@@ -370,6 +373,7 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 	}
 	totalDefs := core.Defs{}
 	var allTotals []*registry.Total
+	var allDeps []*registry.DepFn
 
 	methodNames := map[*syntax.GenericMethod]string{}
 	enumMethods := map[*sourceFile][]*syntax.GenericMethod{}
@@ -439,7 +443,7 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 		}
 	}
 	if len(diags) > 0 {
-		return nil, nil, nil, nil, nil, nil, "", diags
+		return nil, nil, nil, nil, nil, nil, nil, "", diags
 	}
 
 	outputs := map[string][]byte{}
@@ -462,10 +466,15 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 		for _, d := range f.gpp.Delegates {
 			edits = append(edits, lower.DelegateEdits(f.gpp, d)...)
 		}
-		for _, q := range f.gpp.Quantities {
-			edits = append(edits, lower.QuantityEdits(f.gpp, q)...)
-		}
 		edits = append(edits, eraseOrdinaryIndexUses(f, enums.isIndexed)...)
+		totalDecls := map[*ast.FuncDecl]bool{}
+		for _, t := range f.gpp.Totals {
+			totalDecls[t.Decl] = true
+		}
+		dedits, dfns, ddiags := processDeps(f, pkgPath, totalDecls)
+		edits = append(edits, dedits...)
+		allDeps = append(allDeps, dfns...)
+		diags = append(diags, ddiags...)
 		tedits, ttotals, tdiags := processTotals(f, pkgPath, totalLocals, totalDefs)
 		edits = append(edits, tedits...)
 		allTotals = append(allTotals, ttotals...)
@@ -499,9 +508,9 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 		outputs[emit.OutputPath(f.path)] = out
 	}
 	if len(diags) > 0 {
-		return nil, nil, nil, nil, nil, nil, "", diags
+		return nil, nil, nil, nil, nil, nil, nil, "", diags
 	}
-	return outputs, allMethods, enums.models, classModels, instModels, allTotals, lawsOut, nil
+	return outputs, allMethods, enums.models, classModels, instModels, allTotals, allDeps, lawsOut, nil
 }
 
 // markerFor renders the //gpp:method marker comment for a lowered method.
