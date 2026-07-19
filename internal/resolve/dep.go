@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"strings"
 
+	"goforge.dev/gpp/internal/core"
 	"goforge.dev/gpp/internal/lower"
 	"goforge.dev/gpp/internal/registry"
 )
@@ -44,13 +45,52 @@ func (r *fileResolver) depCallCandidate(call *ast.CallExpr) {
 			return
 		}
 	}
+	// Proof parameters (Eq[a, b]) discharge by refl through the decider
+	// BEFORE anything drops: an unprovable equality leaves the call
+	// intact for the audit pass to report.
+	for i, a := range call.Args {
+		if !dropped[i] {
+			continue
+		}
+		base, eqArgs := instantiationBase(d.Params[i].Type)
+		if base != "Eq" || len(eqArgs) != 2 {
+			continue
+		}
+		id, isIdent := a.(*ast.Ident)
+		if !isIdent || id.Name != "refl" {
+			if r.report {
+				r.errorf(a.Pos(), "the proof argument for %s of %s must be refl in v0.7.0", d.Params[i].Name, d.Name)
+			}
+			return
+		}
+		sub := map[string]core.Term{}
+		for j, p := range d.Params {
+			if j == i || j >= len(call.Args) {
+				continue
+			}
+			argText := string(r.src[r.off(call.Args[j].Pos()):r.off(call.Args[j].End())])
+			if t, err := core.ParseIndexTerm(argText, nil); err == nil {
+				sub[p.Name] = t
+			}
+		}
+		ok, err := core.DecideEqTexts(eqArgs[0], eqArgs[1], sub)
+		if err != nil || !ok {
+			if r.report {
+				r.errorf(a.Pos(), "cannot prove %s = %s at this call to %s; the arithmetic decider could not discharge refl (rephrase the indices or pass values that make the equality manifest)",
+					substText(eqArgs[0], sub), substText(eqArgs[1], sub), d.Name)
+			}
+			return
+		}
+	}
 	for i, a := range call.Args {
 		if !dropped[i] {
 			continue
 		}
 		if i+1 < len(call.Args) {
 			r.edits = append(r.edits, lower.Edit{Start: r.off(a.Pos()), End: r.off(call.Args[i+1].Pos()), New: ""})
-		} else if i > 0 {
+		} else if i > 0 && !dropped[i-1] {
+			// Last argument: consume the preceding comma — unless the
+			// previous argument's own edit already did.
 			r.edits = append(r.edits, lower.Edit{Start: r.off(call.Args[i-1].End()), End: r.off(a.End()), New: ""})
 		} else {
 			r.edits = append(r.edits, lower.Edit{Start: r.off(a.Pos()), End: r.off(a.End()), New: ""})
@@ -170,4 +210,14 @@ func splitArgsTopLevel(s string) []string {
 		}
 	}
 	return append(out, s[start:])
+}
+
+// substText renders an index text after parameter substitution (for
+// diagnostics; falls back to the raw text).
+func substText(text string, sub map[string]core.Term) string {
+	t, err := core.ParseIndexTerm(text, nil)
+	if err != nil {
+		return text
+	}
+	return core.SubstVars(t, sub).String()
 }

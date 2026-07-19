@@ -99,6 +99,9 @@ func eraseOrdinaryIndexUses(f *sourceFile, isIndexed registry.IndexArity) []lowe
 			if !ok || handled[n] {
 				return true
 			}
+			if baseName(base) == "Eq" {
+				return true // proof propositions live only in dropped params
+			}
 			if _, _, known := isIndexed(baseName(base)); known {
 				return true // walk 1's business (arity mismatch = already erased)
 			}

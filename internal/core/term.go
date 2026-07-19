@@ -228,3 +228,57 @@ func ResolveTags(t Term, tagOf func(name string) (enum string, ok bool)) Term {
 	}
 	return t
 }
+
+// SubstVars replaces free variables by terms (capture-safe: the core's
+// only binders are match arms, whose binds shadow).
+func SubstVars(t Term, sub map[string]Term) Term {
+	switch x := t.(type) {
+	case Var:
+		if r, ok := sub[x.Name]; ok {
+			return r
+		}
+		return x
+	case Prim:
+		args := make([]Term, len(x.Args))
+		for i, a := range x.Args {
+			args[i] = SubstVars(a, sub)
+		}
+		return Prim{Op: x.Op, Args: args}
+	case Ctor:
+		args := make([]Term, len(x.Args))
+		for i, a := range x.Args {
+			args[i] = SubstVars(a, sub)
+		}
+		return Ctor{Type: x.Type, Name: x.Name, Args: args}
+	case Call:
+		args := make([]Term, len(x.Args))
+		for i, a := range x.Args {
+			args[i] = SubstVars(a, sub)
+		}
+		return Call{Fn: x.Fn, Args: args}
+	case If:
+		return If{Op: x.Op, L: SubstVars(x.L, sub), R: SubstVars(x.R, sub),
+			Then: SubstVars(x.Then, sub), Else: SubstVars(x.Else, sub)}
+	}
+	return t
+}
+
+// DecideEqTexts parses two index terms, substitutes caller argument
+// terms for callee parameter names, and asks the decider whether the
+// equality holds symbolically (free variables as non-negative nats).
+func DecideEqTexts(aText, bText string, sub map[string]Term) (bool, error) {
+	a, err := ParseIndexTerm(aText, permissiveResolver)
+	if err != nil {
+		return false, err
+	}
+	b, err := ParseIndexTerm(bText, permissiveResolver)
+	if err != nil {
+		return false, err
+	}
+	a, b = SubstVars(a, sub), SubstVars(b, sub)
+	av, bv := symbolicValue(a), symbolicValue(b)
+	if av == nil || bv == nil {
+		return false, nil
+	}
+	return Decide(MkEq(av, bv), nil), nil
+}

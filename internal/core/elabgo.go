@@ -176,6 +176,9 @@ func ElabIndexExpr(x ast.Expr, resolve CallResolver) (Term, error) {
 // reconstruction: terms cannot round-trip through go/parser in type
 // position, but stand alone they are ordinary expressions).
 func ParseIndexTerm(text string, resolve CallResolver) (Term, error) {
+	if resolve == nil {
+		resolve = permissiveResolver
+	}
 	x, err := parser.ParseExpr(text)
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse index term %q: %v", text, err)

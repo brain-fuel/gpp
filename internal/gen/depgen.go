@@ -114,6 +114,16 @@ func processDeps(f *sourceFile, pkgPath string, totals map[*ast.FuncDecl]bool, p
 			errf(fd, "a dependent signature cannot have a receiver in v0.7.0")
 			continue
 		}
+		eqOK := true
+		for _, p := range params {
+			if base, _ := instantiationOf(p.typeText); base == "Eq" && p.quantity != "0" {
+				errf(p.name, "a proof parameter (%s) must be erased: give %s quantity 0", p.typeText, p.name.Name)
+				eqOK = false
+			}
+		}
+		if !eqOK {
+			continue
+		}
 
 		// Marker: flattened original signature with quantities.
 		var parts []string
@@ -147,6 +157,12 @@ func processDeps(f *sourceFile, pkgPath string, totals map[*ast.FuncDecl]bool, p
 		// 0-params: delete the whole parameter (with its comma). Other
 		// quantities strip via the shared quantity edit below.
 		droppedFields := map[*ast.Field]bool{}
+		droppedIdx := map[int]bool{}
+		for i, p := range params {
+			if p.quantity == "0" {
+				droppedIdx[i] = true
+			}
+		}
 		for i, p := range params {
 			if p.quantity != "0" {
 				continue
@@ -172,7 +188,10 @@ func processDeps(f *sourceFile, pkgPath string, totals map[*ast.FuncDecl]bool, p
 						end = src.Offset(q.QPos)
 					}
 				}
-			} else if i > 0 {
+			} else if i > 0 && !droppedIdx[i-1] {
+				// Last parameter: consume the preceding comma — unless
+				// the previous parameter is also dropped (its own edit
+				// already consumed the separator).
 				start = src.Offset(params[i-1].field.End())
 			}
 			edits = append(edits, lower.Edit{Start: start, End: end, New: ""})
