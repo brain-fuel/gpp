@@ -1,0 +1,279 @@
+// Package parsec is a parser-combinator library with parsec-style
+// consumed/empty semantics over streaming input: Or commits once a
+// branch has consumed; Try restores the lookahead explicitly. A
+// Parser[T] is a function from Input to a four-way Reply — gpp's own
+// enum, matched throughout.
+package parsec
+
+import (
+	"fmt"
+	"io"
+	"strings"
+)
+
+// Reply is the outcome of running a parser: did it succeed, and did it
+// consume input? The distinction drives Or's commit discipline.
+type Reply[T any] enum {
+	ConsumedOk(Value T, Rest Input)
+	ConsumedErr(Err ParseError)
+	EmptyOk(Value T, Rest Input)
+	EmptyErr(Err ParseError)
+}
+
+// Parser consumes input and replies.
+type Parser[T any] func(Input) Reply[T]
+
+// ParseError is a position plus what was seen and what would have been
+// accepted.
+type ParseError struct {
+	Line       int
+	Col        int
+	Off        int
+	Unexpected string
+	Expected   []string
+}
+
+func (e ParseError) Error() string {
+	msg := fmt.Sprintf("%d:%d: unexpected %s", e.Line, e.Col, e.Unexpected)
+	if len(e.Expected) > 0 {
+		msg += ", expecting " + strings.Join(e.Expected, " or ")
+	}
+	return msg
+}
+
+func errAt(in Input, unexpected string, expected []string) ParseError {
+	return ParseError{Line: in.Line, Col: in.Col, Off: in.Off, Unexpected: unexpected, Expected: expected}
+}
+
+// Return succeeds with v, consuming nothing.
+func Return[T any](v T) Parser[T] {
+	return func(in Input) Reply[T] {
+		return EmptyOk(v, in)
+	}
+}
+
+// Fail fails without consuming, reporting what was expected.
+func Fail[T any](expected string) Parser[T] {
+	return func(in Input) Reply[T] {
+		return EmptyErr[T](errAt(in, "input here", []string{expected}))
+	}
+}
+
+// Bind sequences: run p, feed its value to f, run the result.
+// Consumption is contagious — if either side consumed, the whole reply
+// is consumed.
+func Bind[T any, U any](p Parser[T], f func(T) Parser[U]) Parser[U] {
+	return func(in Input) Reply[U] {
+		match p(in) {
+		case ConsumedOk(v, rest):
+			match f(v)(rest) {
+			case EmptyOk(v2, rest2):
+				return ConsumedOk(v2, rest2)
+			case EmptyErr(e):
+				return ConsumedErr[U](e)
+			case ConsumedOk(v2, rest2):
+				return ConsumedOk(v2, rest2)
+			case ConsumedErr(e):
+				return ConsumedErr[U](e)
+			}
+		case EmptyOk(v, rest):
+			return f(v)(rest)
+		case ConsumedErr(e):
+			return ConsumedErr[U](e)
+		case EmptyErr(e):
+			return EmptyErr[U](e)
+		}
+		panic("unreachable")
+	}
+}
+
+// Map transforms the value, preserving the reply's consumption.
+func Map[T any, U any](p Parser[T], f func(T) U) Parser[U] {
+	return func(in Input) Reply[U] {
+		match p(in) {
+		case ConsumedOk(v, rest):
+			return ConsumedOk(f(v), rest)
+		case EmptyOk(v, rest):
+			return EmptyOk(f(v), rest)
+		case ConsumedErr(e):
+			return ConsumedErr[U](e)
+		case EmptyErr(e):
+			return EmptyErr[U](e)
+		}
+		panic("unreachable")
+	}
+}
+
+// Or tries q only when p failed WITHOUT consuming: consumption commits.
+func Or[T any](p Parser[T], q Parser[T]) Parser[T] {
+	return func(in Input) Reply[T] {
+		match p(in) {
+		case EmptyErr(e):
+			_ = e
+			return q(in)
+		case ConsumedOk(v, rest):
+			return ConsumedOk(v, rest)
+		case EmptyOk(v, rest):
+			return EmptyOk(v, rest)
+		case ConsumedErr(e):
+			return ConsumedErr[T](e)
+		}
+		panic("unreachable")
+	}
+}
+
+// Try runs p with the lookahead pinned: a consumed failure becomes an
+// empty failure, so an enclosing Or may still take its next branch.
+func Try[T any](p Parser[T]) Parser[T] {
+	return func(in Input) Reply[T] {
+		unpin := in.Pin()
+		r := p(in)
+		unpin()
+		match r {
+		case ConsumedErr(e):
+			return EmptyErr[T](e)
+		case ConsumedOk(v, rest):
+			return ConsumedOk(v, rest)
+		case EmptyOk(v, rest):
+			return EmptyOk(v, rest)
+		case EmptyErr(e):
+			return EmptyErr[T](e)
+		}
+		panic("unreachable")
+	}
+}
+
+// Label names what an empty failure expected (parsec's <?>).
+func Label[T any](p Parser[T], name string) Parser[T] {
+	return func(in Input) Reply[T] {
+		match p(in) {
+		case EmptyErr(e):
+			e.Expected = []string{name}
+			return EmptyErr[T](e)
+		case ConsumedOk(v, rest):
+			return ConsumedOk(v, rest)
+		case EmptyOk(v, rest):
+			return EmptyOk(v, rest)
+		case ConsumedErr(e):
+			return ConsumedErr[T](e)
+		}
+		panic("unreachable")
+	}
+}
+
+// RuneWhen accepts one rune satisfying pred, described for errors.
+func RuneWhen(pred func(rune) bool, desc string) Parser[rune] {
+	return func(in Input) Reply[rune] {
+		r, size, eof, err := in.PeekRune()
+		if err != nil {
+			return EmptyErr[rune](errAt(in, "read error: "+err.Error(), nil))
+		}
+		if eof {
+			return EmptyErr[rune](errAt(in, "end of input", []string{desc}))
+		}
+		if !pred(r) {
+			return EmptyErr[rune](errAt(in, fmt.Sprintf("%q", r), []string{desc}))
+		}
+		return ConsumedOk(r, in.Advance(r, size))
+	}
+}
+
+// Rune accepts exactly r.
+func Rune(want rune) Parser[rune] {
+	return RuneWhen(func(r rune) bool { return r == want }, fmt.Sprintf("%q", want))
+}
+
+// Str accepts exactly s. A first-rune mismatch is an empty failure; a
+// later mismatch has consumed and commits (wrap in Try for lookahead).
+func Str(s string) Parser[string] {
+	return func(in Input) Reply[string] {
+		cur := in
+		first := true
+		for _, want := range s {
+			r, size, eof, err := cur.PeekRune()
+			if err != nil {
+				return EmptyErr[string](errAt(cur, "read error: "+err.Error(), nil))
+			}
+			bad := ""
+			if eof {
+				bad = "end of input"
+			} else if r != want {
+				bad = fmt.Sprintf("%q", r)
+			}
+			if bad != "" {
+				e := errAt(cur, bad, []string{fmt.Sprintf("%q", s)})
+				if first {
+					return EmptyErr[string](e)
+				}
+				return ConsumedErr[string](e)
+			}
+			cur = cur.Advance(r, size)
+			first = false
+		}
+		if s == "" {
+			return EmptyOk(s, cur)
+		}
+		return ConsumedOk(s, cur)
+	}
+}
+
+// TakeWhile consumes the longest (possibly empty) run satisfying pred.
+// It never fails.
+func TakeWhile(pred func(rune) bool) Parser[string] {
+	return func(in Input) Reply[string] {
+		var b strings.Builder
+		cur := in
+		for {
+			r, size, eof, err := cur.PeekRune()
+			if err != nil {
+				return EmptyErr[string](errAt(cur, "read error: "+err.Error(), nil))
+			}
+			if eof || !pred(r) {
+				if b.Len() == 0 {
+					return EmptyOk("", cur)
+				}
+				return ConsumedOk(b.String(), cur)
+			}
+			b.WriteRune(r)
+			cur = cur.Advance(r, size)
+		}
+	}
+}
+
+// EOF succeeds only at end of input.
+func EOF() Parser[struct{}] {
+	return func(in Input) Reply[struct{}] {
+		r, _, eof, err := in.PeekRune()
+		if err != nil {
+			return EmptyErr[struct{}](errAt(in, "read error: "+err.Error(), nil))
+		}
+		if !eof {
+			return EmptyErr[struct{}](errAt(in, fmt.Sprintf("%q", r), []string{"end of input"}))
+		}
+		return EmptyOk(struct{}{}, in)
+	}
+}
+
+// Run parses a reader from the start.
+func Run[T any](p Parser[T], r io.Reader) (T, error) {
+	match p(StartInput(NewStream(r))) {
+	case ConsumedOk(v, rest):
+		_ = rest
+		return v, nil
+	case EmptyOk(v, rest):
+		_ = rest
+		return v, nil
+	case ConsumedErr(e):
+		var zero T
+		return zero, e
+	case EmptyErr(e):
+		var zero T
+		return zero, e
+	}
+	panic("unreachable")
+}
+
+// RunString parses a string from the start.
+func RunString[T any](p Parser[T], s string) (T, error) {
+	return Run(p, strings.NewReader(s))
+}
