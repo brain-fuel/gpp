@@ -5,7 +5,7 @@ Feature: gpp version
   Scenario: Reporting the toolchain version
     When I run gpp with arguments "version"
     Then the exit code is 0
-    And stdout contains "gpp version v0.7.0"
+    And stdout contains "gpp version v0.8.0"
 
   Scenario: Unknown commands fail with usage guidance
     When I run gpp with arguments "frobnicate"

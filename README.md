@@ -7,6 +7,38 @@ Generated packages compile with the standard Go toolchain and may be
 distributed and consumed **without** G++ — the same interoperability story
 Kotlin, Scala, and Clojure have with Java.
 
+## v0.8.0 — Parser Combinators (std/parsec)
+
+```go
+import "goforge.dev/gpp/std/parsec"
+
+// A complete arithmetic evaluator: precedence, parens, whitespace.
+func grammar() parsec.Parser[int] {
+	var expr parsec.Parser[int]
+	factor := parsec.Label(parsec.Or(number(), parsec.Between(parsec.Symbol("("), parsec.Defer(&expr), parsec.Symbol(")"))), "expression")
+	term := parsec.Chainl1(factor, mulOp())
+	expr = parsec.Chainl1(term, addOp())
+	return parsec.Then(parsec.Spaces(), parsec.Before(expr, parsec.EOF()))
+}
+
+v, err := parsec.RunString(grammar(), "(1+2)*3")   // 9
+// errors carry positions and labels:
+// 1:3: unexpected '*', expecting expression
+```
+
+Parsec-style consumed/empty semantics: `Or` commits once a branch has
+consumed input, `Try` restores the lookahead — the discipline that
+keeps performance predictable and errors precise. Input STREAMS from
+any io.Reader: the buffer retains only what a live `Try` could rewind
+to, split UTF-8 runes decode across read boundaries, and a
+byte-at-a-time reader parses identically to a string (rapid-tested,
+along with the monad identities, Or associativity, and
+Try-never-consumes). The library is gpp eating its own cooking: Reply
+is a gpp enum matched in every combinator, its derived Fold consumes
+replies without a match, and Run's output rides the v0.4 railway.
+Also in this release: the linear-value cell is atomic
+(`CompareAndSwap`), so even racing double-users get exactly one winner.
+
 ## v0.7.0 — The Dependent Core
 
 ```go
@@ -405,7 +437,7 @@ The spec is executable: the Godog/Cucumber feature suite under
 | v0.5.0  | Typeclasses: classes, instances, implicit dispatch, laws, std/algebra — shipped |
 | v0.6.0  | Folds, structural GADTs, bounded existentials, delegation — shipped |
 | v0.7.0  | The dependent core: QTT quantities, total functions, indexed enums, Eq, linearity, std/vec — shipped |
-| v0.8.0  | std/parsec: parser combinators |
+| v0.8.0  | std/parsec: streaming parser combinators — shipped |
 
 ## License
 
