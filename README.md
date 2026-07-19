@@ -7,6 +7,45 @@ Generated packages compile with the standard Go toolchain and may be
 distributed and consumed **without** G++ — the same interoperability story
 Kotlin, Scala, and Clojure have with Java.
 
+## v0.6.0 — Folds, Full GADTs, Existentials, Delegation
+
+```go
+// Structural GADT result types — any type expression per position:
+type Expr[T any] enum {
+	Wrap(inner Expr[T]) Expr[[]T]
+	Flipped(a A, b B) Duo[B, A]      // cross-position
+}
+
+// Bounded existentials, erased at the boundary:
+type Row[T any] enum {
+	Packed[A fmt.Stringer](x A, tag string)
+}
+
+// Every enum derives a one-level fold (opt out: //gpp:derive off):
+n := Fold(Some(7), OptionCases[int, string]{
+	Some: strconv.Itoa,
+	None: func() string { return "-" },
+})
+
+// Kotlin-style interface delegation:
+type Logged struct {
+	inner Store delegate   // Logged implements Store; override by declaring
+	log   *log.Logger
+}
+```
+
+GADT result arguments are now arbitrary type expressions, resolved by
+structural unification: possibility filtering, case heads, constructor
+inference, and refinement all work through composites and cross-position
+uses, and refinement wraps EVERY mismatched conversion boundary in an
+arm (naked returns included) — only actual mismatches wrap. Where Go's
+erasure cannot name a case head (a composite argument matched at a bare
+type parameter), the arm is a guided error and `case _:` covers it.
+Existential type variables must carry an interface bound — Go cannot
+express a match arm generic in a hidden type — and erase to that bound
+in fields, constructors, and binders. `std/result` now ships a derived
+`result.Fold(r, result.ResultCases[T, E, R]{Ok: …, Err: …})`.
+
 ## v0.5.0 — Typeclasses
 
 Lean-flavored classes, named instances, implicit dispatch, and a
@@ -312,7 +351,7 @@ The spec is executable: the Godog/Cucumber feature suite under
 | v0.3.0  | Pipelines, composition, partial application — shipped |
 | v0.4.0  | Typed failure: std/result, railway pipes, Kleisli `>=>`, postfix `?`, expression-oriented control flow — shipped |
 | v0.5.0  | Typeclasses: classes, instances, implicit dispatch, laws, std/algebra — shipped |
-| v0.6.0  | Folds/visitors, full GADTs incl. existentials, delegation |
+| v0.6.0  | Folds, structural GADTs, bounded existentials, delegation — shipped |
 | v0.7.0  | std/parsec: parser combinators |
 
 ## License

@@ -24,6 +24,24 @@ type Err[T any, E error] struct {
 
 func (Err[T, E]) isResult(T, E) {}
 
+// ResultCases selects one handler per Result variant for Fold.
+type ResultCases[T any, E error, R any] struct {
+	Ok  func(value T) R
+	Err func(err E) R
+}
+
+// Fold reduces Result[T, E] by one-level case analysis.
+func Fold[T any, E error, R any](v Result[T, E], cs ResultCases[T, E, R]) R {
+	switch m := any(v).(type) {
+	case Ok[T, E]:
+		return cs.Ok(m.Value)
+	case Err[T, E]:
+		return cs.Err(m.Err)
+	default:
+		panic("gpp: impossible enum value in Fold")
+	}
+}
+
 // Of enters the railway from a Go-shaped pair.
 func Of[T any](v T, err error) Result[T, error] {
 	if err != nil {

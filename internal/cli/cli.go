@@ -8,7 +8,7 @@ import (
 )
 
 // Version is the gpp toolchain version reported by `gpp version`.
-const Version = "v0.5.1"
+const Version = "v0.6.0"
 
 const usageText = `gpp is the G++ toolchain: a strict superset of Go that emits portable Go.
 
