@@ -278,3 +278,37 @@ Feature: Lowering enum declarations
     And I run gpp with arguments "gen ."
     Then the generated files are unchanged
     And running gpp with arguments "gen -check ." exits with 0
+
+  Scenario: Variant doc comments survive lowering onto the generated structs
+    Given a G++ file "term.gpp":
+      """
+      package demo
+
+      // Tm is a core term.
+      type Tm enum {
+      	// Var is a bound variable, a de Bruijn index.
+      	Var(idx int)
+      	// Lit is a literal.
+      	//
+      	// It documents across multiple lines.
+      	Lit(n int)
+      }
+      """
+    When I run gpp with arguments "gen ."
+    Then the exit code is 0
+    And the file "term_gpp.go" contains:
+      """
+      // Var is a bound variable, a de Bruijn index.
+      //
+      //gpp:variant (Tm) Var(idx int)
+      type Var struct {
+      """
+    And the file "term_gpp.go" contains:
+      """
+      // Lit is a literal.
+      //
+      // It documents across multiple lines.
+      //
+      //gpp:variant (Tm) Lit(n int)
+      type Lit struct {
+      """

@@ -24,6 +24,7 @@ type EnumSpec struct {
 // EnumVariantSpec is one variant ready to render.
 type EnumVariantSpec struct {
 	GppName     string   // constructor name as written, e.g. "Some"
+	Doc         string   // variant doc comment, newline-terminated lines; "" = none
 	TypeName    string   // lowered struct name
 	TParamsSrc  string   // kept tparams with constraints; "" for ground variants
 	TParamNames []string // kept tparam names
@@ -65,6 +66,11 @@ func EnumEdits(f *syntax.File, e *syntax.EnumDecl, spec *EnumSpec) []Edit {
 
 	for _, v := range spec.Variants {
 		b.WriteString("\n")
+		// The variant's doc comment survives lowering: it documents the
+		// generated struct (v0.11.0).
+		if v.Doc != "" {
+			b.WriteString(v.Doc)
+		}
 		b.WriteString(v.Marker + "\n")
 		if len(v.Fields) == 0 {
 			fmt.Fprintf(&b, "type %s%s struct{}\n", v.TypeName, bracket(v.TParamsSrc))

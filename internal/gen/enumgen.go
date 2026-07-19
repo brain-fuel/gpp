@@ -337,6 +337,14 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table, probe domainPro
 			}
 
 			vs := lower.EnumVariantSpec{GppName: vName, TypeName: typeName, MarkerArgs: markerArgs}
+			if v.Doc != nil {
+				var db strings.Builder
+				for _, c := range v.Doc.List {
+					db.WriteString(c.Text)
+					db.WriteString("\n")
+				}
+				vs.Doc = db.String()
+			}
 			var keptSrcs []string
 			for _, ki := range occurs {
 				keptSrcs = append(keptSrcs, tparamNames[ki]+" "+tparamConstraints[ki])

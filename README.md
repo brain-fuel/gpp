@@ -7,6 +7,35 @@ Generated packages compile with the standard Go toolchain and may be
 distributed and consumed **without** G++ — the same interoperability story
 Kotlin, Scala, and Clojure have with Java.
 
+## v0.11.0 — Deep Structure
+
+The release that arms the rune kernel rewrite: every enum's recursive
+structure is now derivable, not hand-rolled.
+
+```go
+// Self-recursive enums derive deep traversals (descent sees through
+// binder wrappers like Scope{Name string; Body Tm} and slices):
+for sub := range TmUniverse(t) { … }        // t + all subterms, preorder
+t2 := TmTransform(t, simplify)              // bottom-up rewrite, copies slices
+
+// Monomorphic enums derive structural equality with per-variant hooks —
+// proof irrelevance is an override on a derived base, not a hand-written
+// walk (handled=false falls through to the derived comparison):
+irrelevant := TmEqOverrides{Cast: func(x, y Cast) (bool, bool) {
+	return TmEqual(x.A, y.A) && TmEqual(x.B, y.B) && TmEqual(x.X, y.X), true
+}}
+TmEqualWith(a, b, irrelevant)
+
+// std/option joins std/result: Of/Get at the comma-ok boundary,
+// IsSome/IsNone, Map, Bind, UnwrapOr, OrElse.
+```
+
+Traversals and equality are nil-tolerant (optional fields like an
+elective type annotation pass through untouched), func/map/chan content
+makes equality silently underivable (closures have no structure), and
+variant doc comments now survive lowering onto the generated structs —
+generated Go documents itself on pkg.go.dev.
+
 ## v0.10.0 — The Dogfood Rewrite
 
 [goforge.dev/cadence](https://goforge.dev/cadence) v0.2.0 is authored
@@ -498,6 +527,7 @@ The spec is executable: the Godog/Cucumber feature suite under
 | v0.8.0  | std/parsec: streaming parser combinators — shipped |
 | v0.9.0  | Tooling: gpp lsp + four editors, go generate canonical, cross-package hardening — shipped |
 | v0.10.0 | The dogfood rewrite: cadence v0.2.0 in G++; derived generators, laws over enums, multi-result ops, G++ tests — shipped |
+| v0.11.0 | Deep structure: derived traversals (Children/Universe/Transform), derived structural equality with overrides, std/option, variant doc preservation — shipped |
 
 ## License
 
