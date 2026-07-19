@@ -1,0 +1,11 @@
+<idea-plugin>
+    <id>dev.goforge.gpp</id>
+    <name>G++ (gpp)</name>
+    <vendor url="https://goforge.dev">goforge.dev</vendor>
+    <description>G++ language support: the gpp language server (diagnostics, hover, definition, completion) over the platform LSP API. Requires GoLand or another paid IDE (2023.2+).</description>
+    <depends>com.intellij.modules.platform</depends>
+    <extensions defaultExtensionNs="com.intellij">
+        <fileType name="G++" implementationClass="dev.goforge.gpp.GppFileType" fieldName="INSTANCE" language="gpp" extensions="gpp"/>
+        <platform.lsp.serverSupportProvider implementation="dev.goforge.gpp.GppLspServerSupportProvider"/>
+    </extensions>
+</idea-plugin>

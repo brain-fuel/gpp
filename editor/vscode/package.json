@@ -1,0 +1,43 @@
+{
+  "name": "gpp",
+  "displayName": "G++ (gpp)",
+  "description": "G++ language support: syntax highlighting and the gpp language server (diagnostics, hover, definition, completion).",
+  "version": "0.9.0",
+  "publisher": "goforge-dev",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Programming Languages"],
+  "repository": { "type": "git", "url": "https://github.com/brain-fuel/gpp" },
+  "main": "./out/extension.js",
+  "activationEvents": ["onLanguage:gpp"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "gpp",
+        "aliases": ["G++", "gpp"],
+        "extensions": [".gpp"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "gpp",
+        "scopeName": "source.gpp",
+        "path": "./syntaxes/gpp.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0",
+    "@vscode/vsce": "^2.24.0"
+  }
+}

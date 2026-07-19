@@ -1,0 +1,15 @@
+id = "gpp"
+name = "G++"
+description = "G++ language support: gpp language server and syntax."
+version = "0.9.0"
+schema_version = 1
+authors = ["Matt Laine"]
+repository = "https://github.com/brain-fuel/gpp"
+
+[language_servers.gpp]
+name = "gpp language server"
+languages = ["G++"]
+
+[language_servers.gpp.binary]
+path = "gpp"
+arguments = ["lsp"]
