@@ -297,7 +297,7 @@ func (r *fileResolver) dictCallCandidate(call *ast.CallExpr) {
 		return
 	}
 	origParams := sig.Params().Len() - len(fn.Dicts)
-	if dictAlreadyPassed(r, call, fn, sig) {
+	if r.witnessesPassed(call, fn) {
 		return
 	}
 	if !sig.Variadic() && len(call.Args) != origParams {
@@ -386,7 +386,7 @@ func (r *fileResolver) constrainedSignature(fn *registry.ConstrainedFn) *types.S
 	return sig
 }
 
-// isWitnessType reports whether t is the witness struct of a class.
+// isWitnessType reports whether t is the witness struct of one class.
 func isWitnessType(t types.Type, ref registry.ClassRef) bool {
 	named, _ := types.Unalias(t).(*types.Named)
 	if named == nil || named.Obj().Pkg() == nil {
@@ -395,23 +395,57 @@ func isWitnessType(t types.Type, ref registry.ClassRef) bool {
 	return named.Obj().Pkg().Path() == ref.PkgPath && named.Obj().Name() == ref.Name
 }
 
-// dictAlreadyPassed reports whether the call's first arguments already
-// carry the witnesses (explicit passing, or an earlier iteration's edit).
-func dictAlreadyPassed(r *fileResolver, call *ast.CallExpr, fn *registry.ConstrainedFn, sig *types.Signature) bool {
+// witnessesPassed reports whether the call's first arguments already
+// carry the witnesses (explicit passing, or an earlier iteration's
+// edit). A witness of a STRONGER class in a dictionary position gets its
+// upcast appended — explicit passing subsumes exactly like implicit
+// dispatch, so algebra.Accumulate(algebra.IntAdd, xs) works without
+// spelling AsMonoid().
+func (r *fileResolver) witnessesPassed(call *ast.CallExpr, fn *registry.ConstrainedFn) bool {
 	if len(call.Args) < len(fn.Dicts) {
 		return false
 	}
 	info := r.pkg.TypesInfo
+	type upcast struct {
+		arg ast.Expr
+		as  string
+	}
+	var ups []upcast
 	for i, d := range fn.Dicts {
 		tv, ok := info.Types[call.Args[i]]
 		if !ok || tv.Type == nil {
 			return false
 		}
-		if !isWitnessType(tv.Type, d.Class) {
+		have, isW := witnessClassOf(r, tv.Type)
+		if !isW {
 			return false
 		}
+		if have == d.Class {
+			continue
+		}
+		if !r.reg.SubsumesRef(have, d.Class) {
+			return false // wrong witness; the backstop reports the mismatch
+		}
+		ups = append(ups, upcast{arg: call.Args[i], as: d.Class.Name})
+	}
+	for _, u := range ups {
+		at := r.off(u.arg.End())
+		r.edits = append(r.edits, lower.Edit{Start: at, End: at, New: ".As" + u.as + "()"})
 	}
 	return true
+}
+
+// witnessClassOf resolves an argument's type to the class it witnesses.
+func witnessClassOf(r *fileResolver, t types.Type) (registry.ClassRef, bool) {
+	named, _ := types.Unalias(t).(*types.Named)
+	if named == nil || named.Obj().Pkg() == nil {
+		return registry.ClassRef{}, false
+	}
+	ref := registry.ClassRef{PkgPath: named.Obj().Pkg().Path(), Name: named.Obj().Name()}
+	if _, ok := r.reg.LookupClass(ref); !ok {
+		return registry.ClassRef{}, false
+	}
+	return ref, true
 }
 
 // typeArgsFor determines the concrete (or type-param) type argument for

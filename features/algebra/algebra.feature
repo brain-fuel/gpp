@@ -109,7 +109,7 @@ Feature: The std/algebra hierarchy
       )
 
       func main() {
-      	fmt.Println(algebra.Accumulate(algebra.IntAdd.AsMonoid(), []int{2, 3, 4}))
+      	fmt.Println(algebra.Accumulate(algebra.IntAdd, []int{2, 3, 4}))
       	fmt.Println(algebra.Accumulate(algebra.IntMul, []int{2, 3, 4}))
       }
       """
@@ -119,6 +119,11 @@ Feature: The std/algebra hierarchy
       """
       9
       24
+      """
+    And the file "main_gpp.go" contains:
+      """
+      	fmt.Println(algebra.Accumulate(algebra.IntAdd.AsMonoid(), []int{2, 3, 4}))
+      	fmt.Println(algebra.Accumulate(algebra.IntMul, []int{2, 3, 4}))
       """
 
   Scenario: MinInt and MaxInt are ambiguous for a bare Semigroup constraint

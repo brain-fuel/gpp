@@ -303,3 +303,45 @@ Feature: Constraint lowering and implicit instance dispatch
     When I run gpp with arguments "gen ."
     Then the exit code is 2
     And stderr contains "no instance of Monoid[float64] is in scope for this call; declare one, import a package that provides one, or pass a witness explicitly"
+
+  Scenario: An explicit witness of a stronger class upcasts automatically
+    Given a G++ file "main.gpp":
+      """
+      package main
+
+      import "fmt"
+
+      type Semigroup[T any] class {
+      	Combine(a, b T) T
+      }
+
+      type Monoid[T any] class {
+      	Semigroup[T]
+      	Empty() T
+      }
+
+      instance IntAdd Monoid[int] {
+      	Combine(a, b int) int { return a + b }
+      	Empty() int { return 0 }
+      }
+
+      instance IntMul Monoid[int] {
+      	Combine(a, b int) int { return a * b }
+      	Empty() int { return 1 }
+      }
+
+      func Squash[T Semigroup](a, b, c T) T {
+      	return Combine(Combine(a, b), c)
+      }
+
+      func main() {
+      	fmt.Println(Squash(IntAdd, 2, 3, 4), Squash(IntMul, 2, 3, 4))
+      }
+      """
+    When I run gpp with arguments "run ."
+    Then the exit code is 0
+    And stdout contains "9 24"
+    And the file "main_gpp.go" contains:
+      """
+      	fmt.Println(Squash(IntAdd.AsSemigroup(), 2, 3, 4), Squash(IntMul.AsSemigroup(), 2, 3, 4))
+      """

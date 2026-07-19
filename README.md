@@ -87,9 +87,14 @@ by subsumption) and `IntMul`, and the error names both. You disambiguate
 by naming the structure you mean:
 
 ```go
-algebra.Accumulate(algebra.IntAdd.AsMonoid(), []int{2, 3, 4})  // 9  — the additive monoid
-algebra.Accumulate(algebra.IntMul, []int{2, 3, 4})             // 24 — the multiplicative monoid
+algebra.Accumulate(algebra.IntAdd, []int{2, 3, 4})  // 9  — the additive monoid
+algebra.Accumulate(algebra.IntMul, []int{2, 3, 4})  // 24 — the multiplicative monoid
 ```
+
+Explicit witnesses subsume exactly like implicit dispatch (v0.6.1):
+`IntAdd` is a `Group` instance, `Accumulate` wants a `Monoid`, and the
+compiler inserts the upcast — you name the structure, never the
+coercion.
 
 A class lowers to a flat witness struct (`Monoid[T]` with `func` fields);
 an instance to a package value; a class constraint to a leading witness
