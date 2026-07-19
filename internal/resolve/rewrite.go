@@ -66,6 +66,7 @@ func (r *fileResolver) resolve() ([]lower.Edit, []diag.Diagnostic) {
 		return true
 	})
 
+	r.refineCandidates()
 	ast.Inspect(r.file, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.SelectorExpr:

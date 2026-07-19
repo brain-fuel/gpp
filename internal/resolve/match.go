@@ -170,35 +170,17 @@ func (r *fileResolver) matchCandidate(sw *ast.TypeSwitchStmt) {
 		return
 	}
 
-	// Refinement: wrap T-typed returns; reject naked returns in refined arms.
-	resultIdents := r.enclosingResultIdents(sw)
+	// Refinement: leave a //gpp:refine carrier at the top of each refined
+	// arm; a later fixpoint iteration applies type-directed wraps at every
+	// mismatched conversion boundary (refine.go), once the arm's bindings
+	// have made its body typable.
 	for _, a := range arms {
 		if len(a.refined) == 0 {
 			continue
 		}
-		wraps, nakedPos := r.refinementWraps(a, resultIdents)
-		if nakedPos != token.NoPos {
-			fail(nakedPos, "naked return inside a refined match arm is not supported in v0.2.0")
-			continue
-		}
 		if anyNested {
-			// Chain mode consumes body text: apply wraps relative to it.
-			bodyStart := a.carrier[1]
-			var rel []lower.Edit
-			for _, w := range wraps {
-				rel = append(rel, lower.Edit{Start: w.Start - bodyStart, End: w.End - bodyStart, New: w.New})
-			}
-			if len(rel) > 0 {
-				if applied, err := lower.Apply([]byte(a.body), rel); err == nil {
-					a.body = string(applied)
-				}
-			}
-		} else {
-			r.edits = append(r.edits, wraps...)
+			a.body = refineCarrierLine(a.refined) + "\n" + a.body
 		}
-	}
-	if failed {
-		return
 	}
 
 	subjText := r.text(subj.Pos(), subj.End())
@@ -252,6 +234,9 @@ func (r *fileResolver) matchCandidate(sw *ast.TypeSwitchStmt) {
 			New:   head,
 		})
 		repl := ""
+		if len(p.arm.refined) > 0 {
+			repl += refineCarrierLine(p.arm.refined) + "\n"
+		}
 		for _, b := range p.bindings {
 			repl += b + "\n"
 		}
@@ -365,110 +350,6 @@ func (r *fileResolver) refineFromPat(pat ast.Expr, actual types.Type, tset map[s
 	}
 }
 
-// enclosingResultIdents finds the enclosing function's result types that
-// are plain identifiers, by result index.
-func (r *fileResolver) enclosingResultIdents(sw *ast.TypeSwitchStmt) []string {
-	var node ast.Node = sw
-	for node != nil {
-		node = r.parents[node]
-		var ftype *ast.FuncType
-		switch fn := node.(type) {
-		case *ast.FuncDecl:
-			ftype = fn.Type
-		case *ast.FuncLit:
-			ftype = fn.Type
-		default:
-			continue
-		}
-		if ftype.Results == nil {
-			return nil
-		}
-		var out []string
-		for _, field := range ftype.Results.List {
-			name := ""
-			if id, ok := field.Type.(*ast.Ident); ok {
-				name = id.Name
-			}
-			n := len(field.Names)
-			if n == 0 {
-				n = 1
-			}
-			for i := 0; i < n; i++ {
-				out = append(out, name)
-			}
-		}
-		return out
-	}
-	return nil
-}
-
-// refinementWraps builds any(expr).(T) edits for returns inside a refined
-// arm whose enclosing result type is a refined type parameter. Returns
-// inside nested function literals are untouched.
-func (r *fileResolver) refinementWraps(a *armAnalysis, resultIdents []string) ([]lower.Edit, token.Pos) {
-	var edits []lower.Edit
-	naked := token.NoPos
-	var walk func(n ast.Node)
-	walk = func(n ast.Node) {
-		ast.Inspect(n, func(x ast.Node) bool {
-			switch st := x.(type) {
-			case *ast.FuncLit:
-				return false
-			case *ast.AssignStmt:
-				// Expression-form arm assignment whose temp is (or will
-				// be) typed by a refined type parameter.
-				if st.Tok != token.ASSIGN || len(st.Lhs) != 1 || len(st.Rhs) != 1 {
-					return true
-				}
-				id, isID := st.Lhs[0].(*ast.Ident)
-				if !isID || !valTempName.MatchString(id.Name) {
-					return true
-				}
-				tp, isTP := r.tempTargetType(id.Name).(*types.TypeParam)
-				if !isTP {
-					return true
-				}
-				if _, refined := a.refined[tp.Obj().Name()]; !refined {
-					return true
-				}
-				rhs := st.Rhs[0]
-				edits = append(edits, lower.Edit{
-					Start: r.off(rhs.Pos()),
-					End:   r.off(rhs.End()),
-					New:   fmt.Sprintf("any(%s).(%s)", r.text(rhs.Pos(), rhs.End()), tp.Obj().Name()),
-				})
-			case *ast.ReturnStmt:
-				if len(st.Results) == 0 {
-					for _, ri := range resultIdents {
-						if _, refined := a.refined[ri]; refined {
-							naked = st.Pos()
-						}
-					}
-					return true
-				}
-				for i, res := range st.Results {
-					if i >= len(resultIdents) {
-						break
-					}
-					if _, refined := a.refined[resultIdents[i]]; !refined {
-						continue
-					}
-					edits = append(edits, lower.Edit{
-						Start: r.off(res.Pos()),
-						End:   r.off(res.End()),
-						New:   fmt.Sprintf("any(%s).(%s)", r.text(res.Pos(), res.End()), resultIdents[i]),
-					})
-				}
-			}
-			return true
-		})
-	}
-	for _, st := range a.clause.Body {
-		walk(st)
-	}
-	return edits, naked
-}
-
 // matchArm is one clause of a skeleton match, textually collected.
 type matchArm struct {
 	clause  *ast.CaseClause
@@ -561,6 +442,10 @@ func (r *fileResolver) variantPossible(e *registry.Enum, v *registry.EnumVariant
 		gb := r.evalInPkg(e.PkgPath, b)
 		return ga != nil && gb != nil && types.Identical(ga, gb)
 	}
+	argWild := map[string]bool{}
+	for _, t := range targTypes {
+		collectTypeParams(t, argWild)
+	}
 	for i, arg := range v.ResultArgs {
 		if i >= len(targTypes) {
 			return false
@@ -568,11 +453,44 @@ func (r *fileResolver) variantPossible(e *registry.Enum, v *registry.EnumVariant
 		if _, isTP := targTypes[i].(*types.TypeParam); isTP {
 			continue // refinable (or unmatchable) at this position
 		}
-		if !laxCompatible(arg, targTexts[i], patWild, nil, groundEq) {
+		if !laxCompatible(arg, targTexts[i], patWild, argWild, groundEq) {
 			return false
 		}
 	}
 	return true
+}
+
+// collectTypeParams gathers type-parameter names occurring anywhere in a
+// type.
+func collectTypeParams(t types.Type, out map[string]bool) {
+	switch x := types.Unalias(t).(type) {
+	case *types.TypeParam:
+		out[x.Obj().Name()] = true
+	case *types.Pointer:
+		collectTypeParams(x.Elem(), out)
+	case *types.Slice:
+		collectTypeParams(x.Elem(), out)
+	case *types.Array:
+		collectTypeParams(x.Elem(), out)
+	case *types.Map:
+		collectTypeParams(x.Key(), out)
+		collectTypeParams(x.Elem(), out)
+	case *types.Chan:
+		collectTypeParams(x.Elem(), out)
+	case *types.Signature:
+		for i := 0; i < x.Params().Len(); i++ {
+			collectTypeParams(x.Params().At(i).Type(), out)
+		}
+		for i := 0; i < x.Results().Len(); i++ {
+			collectTypeParams(x.Results().At(i).Type(), out)
+		}
+	case *types.Named:
+		if ta := x.TypeArgs(); ta != nil {
+			for i := 0; i < ta.Len(); i++ {
+				collectTypeParams(ta.At(i), out)
+			}
+		}
+	}
 }
 
 // evalInPkg evaluates a type expression in another package's scope.

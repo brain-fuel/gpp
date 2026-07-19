@@ -179,31 +179,45 @@ Feature: Nested patterns and GADT refinement
     Then the exit code is 2
     And stderr contains "unreachable match arm: Add(Lit(_), _) is already covered by the arms above"
 
-  Scenario: A naked return inside a refined arm is rejected
-    Given a G++ file "main.gpp":
+  Scenario: A naked return inside a refined arm works via named results
+    Given a file "go.mod":
+      """
+      module example.com/demo
+
+      go 1.24
+      """
+    And a G++ file "main.gpp":
       """
       package main
 
+      import "fmt"
+
       type Expr[T any] enum {
       	Lit(v int) Expr[int]
-      	Other(t T)
+      	Other
       }
 
-      func Eval[T any](e Expr[T]) (out T) {
+      func eval[T any](e Expr[T]) (out T) {
       	match e {
       	case Lit(v):
-      		out = any(v).(T)
+      		out = v
       		return
-      	case Other(t):
-      		return t
+      	case Other:
+      		return
       	}
       }
 
-      func main() {}
+      func main() {
+      	fmt.Println(eval(Lit(9)))
+      }
       """
-    When I run gpp with arguments "gen ."
-    Then the exit code is 2
-    And stderr contains "naked return inside a refined match arm is not supported in v0.2.0"
+    When I run gpp with arguments "run ."
+    Then the exit code is 0
+    And stdout contains "9"
+    And the file "main_gpp.go" contains:
+      """
+      		out = any(v).(T)
+      """
 
   Scenario: Refinement composes with match inside generic enum methods
     Given a G++ file "main.gpp":
