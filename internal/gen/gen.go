@@ -360,10 +360,13 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 		if f.gpp == nil {
 			continue
 		}
-		// TODO(v0.6.0): removed as delegation (phase 6) lands.
-		if len(f.gpp.Delegates) > 0 {
-			diags = append(diags, diag.At(idx.fset.Position(f.gpp.Delegates[0].DelegatePos),
-				"delegation is not implemented yet"))
+		for _, d := range f.gpp.Delegates {
+			for _, n := range d.Field.Names {
+				if n.Name == "_" {
+					diags = append(diags, diag.At(idx.fset.Position(n.Pos()),
+						"a delegate field must be named"))
+				}
+			}
 		}
 		// Enum receivers must be values: the lowered receiver type is the
 		// sealed interface.
@@ -437,6 +440,9 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 		}
 		for _, d := range f.gpp.Instances {
 			edits = append(edits, lower.InstanceEdits(f.gpp, d)...)
+		}
+		for _, d := range f.gpp.Delegates {
+			edits = append(edits, lower.DelegateEdits(f.gpp, d)...)
 		}
 		hedits, hdiags := lower.NewHoister(f.gpp, len(f.gpp.Matches)).FileEdits()
 		diags = append(diags, hdiags...)

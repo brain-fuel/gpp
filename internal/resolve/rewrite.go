@@ -92,6 +92,7 @@ func (r *fileResolver) resolve() ([]lower.Edit, []diag.Diagnostic) {
 		case *ast.GenDecl:
 			r.classCandidate(x)
 			r.instanceCandidate(x, x.Doc)
+			r.delegateCandidate(x)
 		case *ast.FuncDecl:
 			r.dictDeclCandidate(x)
 			r.instanceCandidate(x, x.Doc)
