@@ -736,6 +736,18 @@ func (p *parser) parseFieldDecl() *ast.Field {
 		typ = &ast.BadExpr{From: pos, To: p.pos}
 	}
 
+	// gpp:begin — trailing contextual `delegate` on struct fields (v0.6.0).
+	// A bare identifier after a NAMED field's type is invalid Go in every
+	// continuation, so the claim is a strict superset; `x delegate` (a
+	// field of type delegate) and `Store delegate` (a field Store of type
+	// delegate) never reach here with the identifier pending.
+	var delegatePos token.Pos
+	if len(names) > 0 && p.tok == token.IDENT && p.lit == "delegate" {
+		delegatePos = p.pos
+		p.next()
+	}
+	// gpp:end
+
 	var tag *ast.BasicLit
 	if p.tok == token.STRING {
 		tag = &ast.BasicLit{ValuePos: p.pos, ValueEnd: p.stringEnd, Kind: p.tok, Value: p.lit}
@@ -745,6 +757,11 @@ func (p *parser) parseFieldDecl() *ast.Field {
 	comment := p.expectSemi()
 
 	field := &ast.Field{Doc: doc, Names: names, Type: typ, Tag: tag, Comment: comment}
+	// gpp:begin — register the delegate field (v0.6.0).
+	if delegatePos.IsValid() {
+		p.ext.Delegates = append(p.ext.Delegates, &DelegateField{Field: field, DelegatePos: delegatePos})
+	}
+	// gpp:end
 	return field
 }
 

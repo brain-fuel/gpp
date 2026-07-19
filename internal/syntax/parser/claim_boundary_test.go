@@ -337,3 +337,78 @@ instance SliceConcat[T any] Monoid[[]T] {
 		}
 	})
 }
+
+// TestDelegateClaimBoundary pins the v0.6.0 trailing-delegate claim: every
+// valid Go reading of `delegate` in struct fields survives untouched.
+func TestDelegateClaimBoundary(t *testing.T) {
+	t.Run("valid Go stays Go", func(t *testing.T) {
+		for _, src := range []string{
+			"package b\n\ntype delegate int\n\ntype S struct {\n\tx delegate\n}\n",
+			"package b\n\ntype delegate int\n\ntype S struct {\n\tStore delegate\n}\n",
+			"package b\n\ntype S struct {\n\tinner string `json:\"i\"`\n}\n",
+			"package b\n\ntype delegate int\n\nfunc f(delegate int) int { return delegate }\n",
+		} {
+			stockErr, forkErr, ext := parseBoth(t, src)
+			if (stockErr == nil) != (forkErr == nil) {
+				t.Errorf("%q: error presence mismatch:\nstock: %v\nfork:  %v", src, stockErr, forkErr)
+				continue
+			}
+			if stockErr != nil && forkErr.Error() != stockErr.Error() {
+				t.Errorf("%q: error parity broken:\nstock: %v\nfork:  %v", src, stockErr, forkErr)
+			}
+			if ext != nil && len(ext.Delegates) > 0 {
+				t.Errorf("%q: valid Go was claimed", src)
+			}
+		}
+	})
+
+	t.Run("claimed forms", func(t *testing.T) {
+		src := `package b
+
+type S struct {
+	inner Store delegate
+	tagged Store delegate ` + "`json:\"t\"`" + `
+	a, b Store delegate
+	q pkg.Store delegate
+	plain int
+}
+`
+		_, forkErr, ext := parseBoth(t, src)
+		if forkErr != nil {
+			t.Fatalf("fork parse: %v", forkErr)
+		}
+		if len(ext.Delegates) != 4 {
+			t.Fatalf("delegates = %d, want 4", len(ext.Delegates))
+		}
+		if ext.Delegates[1].Field.Tag == nil {
+			t.Fatalf("tag after delegate not kept")
+		}
+		if len(ext.Delegates[2].Field.Names) != 2 {
+			t.Fatalf("multi-name delegate field lost names")
+		}
+	})
+
+	t.Run("existential variant tparams parse", func(t *testing.T) {
+		src := `package b
+
+type Row[T any] enum {
+	Cell(v T)
+	Packed[A fmt.Stringer, B error](x A, y A, e B) Row[T]
+}
+`
+		_, forkErr, ext := parseBoth(t, src)
+		if forkErr != nil {
+			t.Fatalf("fork parse: %v", forkErr)
+		}
+		if len(ext.Enums) != 1 || len(ext.Enums[0].Variants) != 2 {
+			t.Fatalf("enum shape wrong")
+		}
+		p := ext.Enums[0].Variants[1]
+		if p.TParams == nil || len(p.TParams.List) != 2 {
+			t.Fatalf("existential tparams not captured: %+v", p.TParams)
+		}
+		if p.Result == nil {
+			t.Fatalf("result type lost after tparams")
+		}
+	})
+}

@@ -87,6 +87,9 @@ func (p *parser) parseEnumType(spec *ast.TypeSpec) {
 func (p *parser) parseVariant() *Variant {
 	v := &Variant{Doc: p.leadComment}
 	v.Name = p.parseIdent()
+	if p.tok == token.LBRACK {
+		v.TParams = p.parseTypeParameters()
+	}
 	if p.tok == token.LPAREN {
 		v.Params = p.parseParameters(false)
 		for _, f := range v.Params.List {

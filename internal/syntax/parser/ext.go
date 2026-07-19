@@ -22,11 +22,20 @@ type EnumDecl struct {
 
 // Variant is one constructor declaration inside an enum body.
 type Variant struct {
-	Doc          *ast.CommentGroup
-	Name         *ast.Ident
-	Params       *ast.FieldList // nil for a bare variant (Point); (…) may be empty
-	Result       ast.Expr       // GADT result type; nil ⇒ enum applied to its own type parameters
-	Comment      *ast.CommentGroup
+	Doc     *ast.CommentGroup
+	Name    *ast.Ident
+	TParams *ast.FieldList // bounded existential type parameters (v0.6.0); nil otherwise
+	Params  *ast.FieldList // nil for a bare variant (Point); (…) may be empty
+	Result  ast.Expr       // GADT result type; nil ⇒ enum applied to its own type parameters
+	Comment *ast.CommentGroup
+}
+
+// DelegateField is one struct field marked with the trailing `delegate`
+// contextual keyword (v0.6.0): the outer type gains generated forwarders
+// for the field's interface methods.
+type DelegateField struct {
+	Field       *ast.Field
+	DelegatePos token.Pos
 }
 
 // ClassDecl is one `type Name[T any] class { … }` declaration (v0.5.0).
@@ -250,6 +259,8 @@ type Extensions struct {
 	// v0.5.0 — source order.
 	Classes   []*ClassDecl
 	Instances []*InstanceDecl
+	// v0.6.0 — source order.
+	Delegates []*DelegateField
 }
 
 // ParseFileExt parses G++ source: stock Go grammar plus enum declarations,

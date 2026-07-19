@@ -43,10 +43,12 @@ func ParseEnumMarker(line string) (EnumMarker, bool) {
 //
 //	//gpp:variant (Option[T]) Some(value T)
 //	//gpp:variant (Expr[T]) Lit(v int) Expr[int]
+//	//gpp:variant (Row[T]) Packed[A fmt.Stringer](x A) Row[T]
 type VariantMarker struct {
 	EnumName    string // "Option"
 	EnumTParams string // tparam names only, e.g. "T"; "" if none
 	Name        string // variant name as written in G++, e.g. "Some"
+	TParams     string // bounded existential tparams verbatim (v0.6.0); "" if none
 	Params      string // constructor params verbatim, e.g. "value T"; "" if nullary
 	HasParams   bool   // distinguishes None from None()
 	Result      string // GADT result type verbatim, e.g. "Expr[int]"; "" if defaulted
@@ -62,6 +64,9 @@ func (m VariantMarker) String() string {
 	}
 	b.WriteString(") ")
 	b.WriteString(m.Name)
+	if m.TParams != "" {
+		fmt.Fprintf(&b, "[%s]", m.TParams)
+	}
 	if m.HasParams {
 		fmt.Fprintf(&b, "(%s)", m.Params)
 	}
@@ -91,9 +96,9 @@ func ParseVariantMarker(line string) (VariantMarker, bool) {
 	}
 	rest = strings.TrimSpace(rest[close+1:])
 
-	// Variant name up to '(' or whitespace.
+	// Variant name up to '[', '(' or whitespace.
 	end := len(rest)
-	if i := strings.IndexAny(rest, "( \t"); i >= 0 {
+	if i := strings.IndexAny(rest, "[( \t"); i >= 0 {
 		end = i
 	}
 	m.Name = rest[:end]
@@ -101,6 +106,26 @@ func ParseVariantMarker(line string) (VariantMarker, bool) {
 		return VariantMarker{}, false
 	}
 	rest = rest[end:]
+	if strings.HasPrefix(rest, "[") {
+		// Bounded existential tparams: balanced bracket group (v0.6.0).
+		depth := 0
+		for i, r := range rest {
+			if r == '[' {
+				depth++
+			}
+			if r == ']' {
+				depth--
+				if depth == 0 {
+					m.TParams = strings.TrimSpace(rest[1:i])
+					rest = rest[i+1:]
+					break
+				}
+			}
+		}
+		if m.TParams == "" {
+			return VariantMarker{}, false
+		}
+	}
 	if strings.HasPrefix(rest, "(") {
 		// Params run to the matching close paren (params may nest parens
 		// in func types).
@@ -135,3 +160,20 @@ func cutDirective(line, prefix string) (string, bool) {
 	}
 	return strings.TrimSpace(rest), true
 }
+
+// DeriveMarker is the //gpp:derive directive on an enum declaration.
+// v0.6.0 recognizes only `off` (suppress fold derivation).
+const derivePrefix = "//gpp:derive"
+
+// ParseDeriveMarker parses a //gpp:derive line, returning its argument.
+func ParseDeriveMarker(line string) (string, bool) {
+	rest, ok := cutDirective(line, derivePrefix)
+	if !ok {
+		return "", false
+	}
+	return rest, true
+}
+
+// DelegatePrefix marks generated delegation forwarders and pass-1
+// delegate fields (v0.6.0).
+const DelegatePrefix = "//gpp:delegate"
