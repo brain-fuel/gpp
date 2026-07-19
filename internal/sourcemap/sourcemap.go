@@ -28,7 +28,12 @@ func Build(gppPath string, gppSrc, emitted []byte) *Map {
 	b := splitLines(emitted)
 	m := &Map{GppPath: gppPath, gppLine: make([]int, len(b)), exact: make([]bool, len(b))}
 
-	// LCS over lines; DP is fine at source-file scale.
+	// Patience-style anchoring: only lines whose text is UNIQUE in both
+	// files anchor (then the longest increasing chain of those pairs).
+	// Plain line-LCS mis-anchors when generated-only blocks (derived
+	// folds, delegation forwarders) contain lines textually identical to
+	// source lines — `case Heads:`, closing braces — dragging the map
+	// off the real correspondence.
 	const cap = 5000
 	if len(a) > cap || len(b) > cap {
 		for i := range b {
@@ -38,35 +43,90 @@ func Build(gppPath string, gppSrc, emitted []byte) *Map {
 		}
 		return m
 	}
-	lcs := make([][]int32, len(a)+1)
-	for i := range lcs {
-		lcs[i] = make([]int32, len(b)+1)
+	countA := map[string]int{}
+	countB := map[string]int{}
+	posA := map[string]int{}
+	for i, l := range a {
+		countA[l]++
+		posA[l] = i
 	}
-	for i := len(a) - 1; i >= 0; i-- {
-		for j := len(b) - 1; j >= 0; j-- {
-			if a[i] == b[j] {
-				lcs[i][j] = lcs[i+1][j+1] + 1
-			} else if lcs[i+1][j] >= lcs[i][j+1] {
-				lcs[i][j] = lcs[i+1][j]
+	for _, l := range b {
+		countB[l]++
+	}
+	type pair struct{ ai, bj int }
+	var pairs []pair
+	for j, l := range b {
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		if countA[l] == 1 && countB[l] == 1 {
+			pairs = append(pairs, pair{ai: posA[l], bj: j})
+		}
+	}
+	// pairs are increasing in bj; take the longest increasing subsequence
+	// in ai (patience sorting).
+	if len(pairs) > 0 {
+		tails := []int{} // indices into pairs: last element of each pile chain
+		links := make([]int, len(pairs))
+		for idx := range links {
+			links[idx] = -1
+		}
+		for idx, pr := range pairs {
+			lo, hi := 0, len(tails)
+			for lo < hi {
+				mid := (lo + hi) / 2
+				if pairs[tails[mid]].ai < pr.ai {
+					lo = mid + 1
+				} else {
+					hi = mid
+				}
+			}
+			if lo > 0 {
+				links[idx] = tails[lo-1]
+			}
+			if lo == len(tails) {
+				tails = append(tails, idx)
 			} else {
-				lcs[i][j] = lcs[i][j+1]
+				tails[lo] = idx
 			}
 		}
-	}
-	i, j := 0, 0
-	for i < len(a) && j < len(b) {
-		switch {
-		case a[i] == b[j]:
-			m.gppLine[j] = i + 1
-			m.exact[j] = true
-			i++
-			j++
-		case lcs[i+1][j] >= lcs[i][j+1]:
-			i++ // line deleted from source
-		default:
-			j++ // line inserted in output
+		for at := tails[len(tails)-1]; at >= 0; at = links[at] {
+			m.gppLine[pairs[at].bj] = pairs[at].ai + 1
+			m.exact[pairs[at].bj] = true
 		}
 	}
+	// Fill runs between anchors with exact matches (non-unique lines like
+	// braces still correspond when sandwiched between anchors).
+	prevA, prevB := 0, 0
+	for j := 0; j <= len(b); j++ {
+		if j < len(b) && m.gppLine[j] == 0 {
+			continue
+		}
+		endA := len(a)
+		endB := len(b)
+		if j < len(b) {
+			endA = m.gppLine[j] - 1
+			endB = j
+		}
+		ai, bj := prevA, prevB
+		for ai < endA && bj < endB {
+			if a[ai] == b[bj] {
+				m.gppLine[bj] = ai + 1
+				m.exact[bj] = true
+				ai++
+				bj++
+				continue
+			}
+			// Advance the generated side first: generated-only blocks are
+			// the common insertion.
+			bj++
+		}
+		if j < len(b) {
+			prevA = m.gppLine[j]
+			prevB = j + 1
+		}
+	}
+
 	// Second alignment pass: lowering reindents arm bodies (nested-match
 	// chains, wrapped returns), so lines that differ only in leading
 	// whitespace still correspond. Between anchored exact matches, align

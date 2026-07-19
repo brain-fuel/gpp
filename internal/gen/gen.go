@@ -347,6 +347,12 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 		}
 	}
 
+	// Fold derivation (v0.6.0): planFolds seeds the shared counts with
+	// the deriving enums' Fold candidates itself.
+	for _, err := range planFolds(idx, enums, tbl, shared) {
+		diags = append(diags, diag.Errorf("%s", err))
+	}
+
 	methodNames := map[*syntax.GenericMethod]string{}
 	enumMethods := map[*sourceFile][]*syntax.GenericMethod{}
 	var allMethods []*registry.Method

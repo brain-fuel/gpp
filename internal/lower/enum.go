@@ -16,16 +16,19 @@ type EnumSpec struct {
 	MarkerName  string // sealed marker method, e.g. "isOption"
 	EnumMarker  string // "//gpp:enum Option[T any]"
 	Variants    []EnumVariantSpec
+	FoldText    string // derived Cases struct + Fold function (v0.6.0); "" = none
 }
 
 // EnumVariantSpec is one variant ready to render.
 type EnumVariantSpec struct {
+	GppName     string   // constructor name as written, e.g. "Some"
 	TypeName    string   // lowered struct name
 	TParamsSrc  string   // kept tparams with constraints; "" for ground variants
 	TParamNames []string // kept tparam names
 	MarkerArgs  []string // sealed-method parameter types (result type args)
 	Fields      []FieldSpec
-	Marker      string // "//gpp:variant (Option[T]) Some(value T)"
+	ParamNames  []string // original parameter names, aligned with Fields
+	Marker      string   // "//gpp:variant (Option[T]) Some(value T)"
 }
 
 // FieldSpec is one struct field of a variant.
@@ -74,6 +77,9 @@ func EnumEdits(f *syntax.File, e *syntax.EnumDecl, spec *EnumSpec) []Edit {
 			v.TypeName, bracket(strings.Join(v.TParamNames, ", ")), spec.MarkerName, strings.Join(v.MarkerArgs, ", "))
 	}
 
+	if spec.FoldText != "" {
+		b.WriteString("\n" + spec.FoldText)
+	}
 	edits = append(edits, Edit{Start: declStart, End: declEnd, New: strings.TrimSuffix(b.String(), "\n")})
 	return edits
 }

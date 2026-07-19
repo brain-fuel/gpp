@@ -19,13 +19,15 @@ import (
 type enumPlan struct {
 	specs  map[*syntax.EnumDecl]*lower.EnumSpec
 	models []*registry.Enum
+	order  []*syntax.EnumDecl              // declaration order
+	model  map[*syntax.EnumDecl]*registry.Enum
 }
 
 // planEnums assigns lowered names (detecting variant names shared across
 // enums, which force enum-prefixed struct names), validates GADT result
 // types, and builds render specs. Generated names are reserved in tbl.
 func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table) (*enumPlan, []diag.Diagnostic) {
-	plan := &enumPlan{specs: map[*syntax.EnumDecl]*lower.EnumSpec{}}
+	plan := &enumPlan{specs: map[*syntax.EnumDecl]*lower.EnumSpec{}, model: map[*syntax.EnumDecl]*registry.Enum{}}
 	var diags []diag.Diagnostic
 
 	type located struct {
@@ -175,7 +177,7 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table) (*enumPlan, []d
 				}
 			}
 
-			vs := lower.EnumVariantSpec{TypeName: typeName, MarkerArgs: markerArgs}
+			vs := lower.EnumVariantSpec{GppName: vName, TypeName: typeName, MarkerArgs: markerArgs}
 			var keptSrcs []string
 			for _, ki := range occurs {
 				keptSrcs = append(keptSrcs, tparamNames[ki]+" "+tparamConstraints[ki])
@@ -249,6 +251,7 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table) (*enumPlan, []d
 							Name: naming.FieldName(n.Name, exported),
 							Type: fieldType,
 						})
+						vs.ParamNames = append(vs.ParamNames, n.Name)
 					}
 				}
 			}
@@ -274,6 +277,8 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table) (*enumPlan, []d
 		}
 		plan.specs[e] = spec
 		plan.models = append(plan.models, model)
+		plan.order = append(plan.order, e)
+		plan.model[e] = model
 	}
 	return plan, diags
 }
