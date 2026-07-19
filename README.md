@@ -7,6 +7,52 @@ Generated packages compile with the standard Go toolchain and may be
 distributed and consumed **without** G++ — the same interoperability story
 Kotlin, Scala, and Clojure have with Java.
 
+## v0.5.0 — Typeclasses
+
+Lean-flavored classes, named instances, implicit dispatch, and a
+law-tested algebraic hierarchy — all lowering to plain Go witness
+structs a Go consumer can call directly:
+
+```go
+type Monoid[T any] class {
+	Semigroup[T]
+	Empty() T
+	law LeftId(a T) { return reflect.DeepEqual(Combine(Empty(), a), a) }
+}
+
+instance IntAdd Group[int] {
+	Combine(a, b int) int { return a + b }
+	Empty() int { return 0 }
+	Invert(a int) int { return -a }
+}
+
+func Accumulate[T Monoid](xs []T) T {
+	acc := Empty()
+	for _, x := range xs {
+		acc = Combine(acc, x)
+	}
+	return acc
+}
+
+Accumulate([]int{1, 2, 3})        // instance found implicitly
+Accumulate(IntMul, []int{1, 2})   // or passed explicitly
+```
+
+A class lowers to a flat witness struct (`Monoid[T]` with `func` fields);
+an instance to a package value; a class constraint to a leading witness
+parameter that call sites receive implicitly. Classes embed to form
+hierarchies (diamonds collapse; upcasts are generated), operations may
+carry **default bodies** instances can omit, and a **stronger instance
+satisfies a weaker constraint** (a `Group[int]` instance answers a
+`[T Monoid]` call). Ambiguity is a hard error naming the candidates; the
+escape hatch is calling the lowered signature directly. `law` members
+declare boolean properties over the operations, and **law tests generate
+by default** for every concrete instance (rapid properties, inherited
+laws included) with `//gpp:laws` knobs (`off`, `[int] [string]`
+instantiations for generic instances, `gen=`, package-level `out=`).
+`goforge.dev/gpp/std/algebra` ships the Magma→Group hierarchy, stock
+instances, and `Accumulate`/`FoldMap`.
+
 ## v0.4.0 — Typed Failure
 
 Railway-Oriented error handling in the Wlaschin style: a shipped
@@ -251,7 +297,9 @@ The spec is executable: the Godog/Cucumber feature suite under
 | v0.2.0  | Algebraic data types, exhaustive matching — shipped |
 | v0.3.0  | Pipelines, composition, partial application — shipped |
 | v0.4.0  | Typed failure: std/result, railway pipes, Kleisli `>=>`, postfix `?`, expression-oriented control flow — shipped |
-| v0.5.0  | Derived APIs: derivation, delegation, folds/visitors |
+| v0.5.0  | Typeclasses: classes, instances, implicit dispatch, laws, std/algebra — shipped |
+| v0.6.0  | Folds/visitors, full GADTs incl. existentials, delegation |
+| v0.7.0  | std/parsec: parser combinators |
 
 ## License
 
