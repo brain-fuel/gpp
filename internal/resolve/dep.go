@@ -23,11 +23,40 @@ func (r *fileResolver) depCallCandidate(call *ast.CallExpr) {
 		return
 	}
 	d, ok := r.reg.LookupDepFn(pkgPath, fnIdent.Name)
-	if !ok || len(d.Dropped) == 0 {
+	if !ok {
+		return
+	}
+	hasLinear := false
+	for _, p := range d.Params {
+		if p.Quantity == "1" {
+			hasLinear = true
+		}
+	}
+	if len(d.Dropped) == 0 && !hasLinear {
 		return
 	}
 	if len(call.Args) != len(d.Params) {
 		return // already erased (or an arity error for the backstop)
+	}
+
+	// Linear positions: wrap the argument in the callee package's
+	// use-once constructor (LinOf / pkg.LinOf), once.
+	linOf := "LinOf"
+	if pkgPath != r.pkg.PkgPath {
+		if alias, found := importAliasFor(r.file, pkgPath); found {
+			linOf = alias + ".LinOf"
+		}
+	}
+	for i, a := range call.Args {
+		if d.Params[i].Quantity != "1" || isLinOfCall(a) {
+			continue
+		}
+		r.edits = append(r.edits,
+			lower.Edit{Start: r.off(a.Pos()), End: r.off(a.Pos()), New: linOf + "("},
+			lower.Edit{Start: r.off(a.End()), End: r.off(a.End()), New: ")"})
+	}
+	if len(d.Dropped) == 0 {
+		return
 	}
 	dropped := map[int]bool{}
 	for _, i := range d.Dropped {
@@ -220,4 +249,34 @@ func substText(text string, sub map[string]core.Term) string {
 		return text
 	}
 	return core.SubstVars(t, sub).String()
+}
+
+// isLinOfCall reports whether an argument is already wrapped.
+func isLinOfCall(e ast.Expr) bool {
+	call, ok := e.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	switch f := call.Fun.(type) {
+	case *ast.Ident:
+		return f.Name == "LinOf"
+	case *ast.SelectorExpr:
+		return f.Sel.Name == "LinOf"
+	}
+	return false
+}
+
+// importAliasFor finds the file's alias for an import path.
+func importAliasFor(file *ast.File, path string) (string, bool) {
+	for _, imp := range file.Imports {
+		p := strings.Trim(imp.Path.Value, "\"")
+		if p != path {
+			continue
+		}
+		if imp.Name != nil {
+			return imp.Name.Name, true
+		}
+		return p[strings.LastIndex(p, "/")+1:], true
+	}
+	return "", false
 }

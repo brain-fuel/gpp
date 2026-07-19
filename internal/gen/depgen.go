@@ -21,6 +21,7 @@ import (
 // processDeps lowers one file's dependent signatures and quantity
 // prefixes.
 func processDeps(f *sourceFile, pkgPath string, totals map[*ast.FuncDecl]bool, plan *enumPlan) ([]lower.Edit, []*registry.DepFn, []diag.Diagnostic) {
+	fileHasLinear := false
 	var edits []lower.Edit
 	var deps []*registry.DepFn
 	var diags []diag.Diagnostic
@@ -175,6 +176,31 @@ func processDeps(f *sourceFile, pkgPath string, totals map[*ast.FuncDecl]bool, p
 			errf(fd, "%v", qerr)
 		}
 
+		// Linear params (quantity 1): the erased parameter travels as a
+		// use-once cell (`1 f T` becomes `f Lin[T]`) and every value use
+		// in the body takes through it — the static checker proved
+		// exactly-once per path, so whichever occurrence executes is the
+		// single take.
+		for _, p := range params {
+			if p.quantity != "1" {
+				continue
+			}
+			if _, variadic := p.field.Type.(*ast.Ellipsis); variadic {
+				errf(p.name, "a variadic parameter cannot be linear in v0.7.0 (each element would need its own cell); use a slice or a multiplicity variable")
+				continue
+			}
+			fileHasLinear = true
+			edits = append(edits,
+				lower.Edit{Start: src.Offset(p.field.Type.Pos()), End: src.Offset(p.field.Type.Pos()), New: "Lin["},
+				lower.Edit{Start: src.Offset(p.field.Type.End()), End: src.Offset(p.field.Type.End()), New: "]"})
+			if fd.Body != nil {
+				for _, use := range valueUses(fd.Body, p.name.Name) {
+					at := src.Offset(use.End())
+					edits = append(edits, lower.Edit{Start: at, End: at, New: ".Use()"})
+				}
+			}
+		}
+
 		// Marker: flattened original signature with quantities.
 		var parts []string
 		for _, p := range params {
@@ -277,6 +303,10 @@ func processDeps(f *sourceFile, pkgPath string, totals map[*ast.FuncDecl]bool, p
 			continue
 		}
 		edits = append(edits, lower.QuantityEdits(f.gpp, q)...)
+	}
+	if fileHasLinear {
+		end := len(src.Src)
+		edits = append(edits, lower.Edit{Start: end, End: end, New: linCellText})
 	}
 	return edits, deps, diags
 }
@@ -425,4 +455,64 @@ func planTagOf(plan *enumPlan) func(string) (string, bool) {
 		}
 		return "", false
 	}
+}
+
+// linCellText is the per-file use-once cell backing linear values in
+// erased Go. Plain-Go callers construct with LinOf and are policed; gpp
+// callers proved the discipline statically. The cell is a bool, not an
+// atomic: racing it requires two concurrent consumers — already a
+// discipline violation — and sequential double use panics
+// deterministically.
+const linCellText = `
+
+//gpp:once
+// Lin carries a linear (use-exactly-once) value across the erased
+// boundary; Use panics on reuse.
+type Lin[T any] struct {
+	v     T
+	taken *bool
+}
+
+// LinOf wraps a value for a linear parameter.
+func LinOf[T any](v T) Lin[T] { return Lin[T]{v: v, taken: new(bool)} }
+
+// Use consumes the value; a second Use panics.
+func (c Lin[T]) Use() T {
+	if *c.taken {
+		panic("gpp: linear value used more than once")
+	}
+	*c.taken = true
+	return c.v
+}
+`
+
+// valueUses collects value-position occurrences of name in a body
+// (types and instantiation arguments are skipped — they erase).
+func valueUses(body *ast.BlockStmt, name string) []*ast.Ident {
+	var out []*ast.Ident
+	var walk func(n ast.Node) bool
+	walk = func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.ValueSpec:
+			for _, v := range x.Values {
+				ast.Inspect(v, walk)
+			}
+			return false
+		case *ast.CompositeLit:
+			for _, e := range x.Elts {
+				ast.Inspect(e, walk)
+			}
+			return false
+		case *ast.TypeAssertExpr:
+			ast.Inspect(x.X, walk)
+			return false
+		case *ast.Ident:
+			if x.Name == name {
+				out = append(out, x)
+			}
+		}
+		return true
+	}
+	ast.Inspect(body, walk)
+	return out
 }

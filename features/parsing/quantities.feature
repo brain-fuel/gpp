@@ -54,39 +54,32 @@ Feature: Quantity prefixes and total functions parse and strip
     And the file "main_gpp.go" contains:
       """
       //gpp:dep join(0 n int, x string, 1 s string) string
-      func join(x string, s string) string {
+      func join(x string, s Lin[string]) string {
+      	return x + s.Use()
+      """
+    And the file "main_gpp.go" contains:
+      """
+      	fmt.Println(join("a", LinOf("b")))
       """
     And the file "main_gpp.go" contains:
       """
       func through(f func() int) int {
       """
 
-  Scenario: A quantity variadic parameter strips
+  Scenario: A variadic parameter cannot be linear
     Given a G++ file "main.gpp":
       """
       package main
 
-      import "fmt"
-
       func sum(1 xs ...int) int {
-      	t := 0
-      	for _, x := range xs {
-      		t += x
-      	}
-      	return t
+      	return len(xs)
       }
 
-      func main() {
-      	fmt.Println(sum(1, 2, 3))
-      }
+      func main() {}
       """
-    When I run gpp with arguments "run ."
-    Then the exit code is 0
-    And stdout contains "6"
-    And the file "main_gpp.go" contains:
-      """
-      func sum(xs ...int) int {
-      """
+    When I run gpp with arguments "gen ."
+    Then the exit code is 2
+    And stderr contains "a variadic parameter cannot be linear in v0.7.0"
 
   Scenario: Valid Go parameter forms keep their Go meaning
     Given a G++ file "main.gpp":
