@@ -85,6 +85,10 @@ func (r *fileResolver) resolve() ([]lower.Edit, []diag.Diagnostic) {
 			r.dictCallCandidate(x)
 			r.opCallCandidate(x)
 			r.opSugarCandidate(x)
+		case *ast.IndexExpr:
+			r.indexEraseCandidate(x.X, []ast.Expr{x.Index}, r.off(x.Lbrack), r.off(x.Rbrack))
+		case *ast.IndexListExpr:
+			r.indexEraseCandidate(x.X, x.Indices, r.off(x.Lbrack), r.off(x.Rbrack))
 		case *ast.AssignStmt:
 			r.exprformCandidate(x)
 		case *ast.TypeSwitchStmt:

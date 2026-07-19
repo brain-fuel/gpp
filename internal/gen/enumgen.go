@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"strings"
 
+	"goforge.dev/gpp/internal/core"
 	"goforge.dev/gpp/internal/diag"
 	"goforge.dev/gpp/internal/directive"
 	"goforge.dev/gpp/internal/lower"
@@ -17,10 +18,11 @@ import (
 // enumPlan is the package-wide enum analysis: render-ready specs plus the
 // registry model used by resolution.
 type enumPlan struct {
-	specs  map[*syntax.EnumDecl]*lower.EnumSpec
-	models []*registry.Enum
-	order  []*syntax.EnumDecl              // declaration order
-	model  map[*syntax.EnumDecl]*registry.Enum
+	specs     map[*syntax.EnumDecl]*lower.EnumSpec
+	models    []*registry.Enum
+	order     []*syntax.EnumDecl // declaration order
+	model     map[*syntax.EnumDecl]*registry.Enum
+	isIndexed registry.IndexArity
 }
 
 // planEnums assigns lowered names (detecting variant names shared across
@@ -48,6 +50,41 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table) (*enumPlan, []d
 		}
 	}
 
+	// Indexed enums (v0.7.0): which package enums carry value indices,
+	// and at which argument positions. Erasure and validation consult
+	// this for every instantiation text (same-package references only;
+	// cross-package indexed fields are a documented v1 restriction).
+	type indexInfo struct {
+		idx   map[int]bool
+		arity int
+	}
+	indexedArity := map[string]indexInfo{}
+	for _, le := range all {
+		tp := le.e.Spec.TypeParams
+		if tp == nil {
+			continue
+		}
+		src := le.f.gpp
+		pos, idxSet := 0, map[int]bool{}
+		for _, field := range tp.List {
+			ctext := string(src.Src[src.Offset(field.Type.Pos()):src.Offset(field.Type.End())])
+			for range field.Names {
+				if ctext == "nat" {
+					idxSet[pos] = true
+				}
+				pos++
+			}
+		}
+		if len(idxSet) > 0 {
+			indexedArity[le.e.Spec.Name.Name] = indexInfo{idx: idxSet, arity: pos}
+		}
+	}
+	isIndexed := func(name string) (map[int]bool, int, bool) {
+		info, ok := indexedArity[name]
+		return info.idx, info.arity, ok
+	}
+	plan.isIndexed = isIndexed
+
 	for _, le := range all {
 		f, e := le.f, le.e
 		src := f.gpp
@@ -65,28 +102,51 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table) (*enumPlan, []d
 			continue
 		}
 
-		var tparamNames []string
+		// Partition binders: type parameters survive erasure; `n nat`
+		// binders are value indices that exist only at check time.
+		var tparamNames []string      // ERASED type-parameter names
 		var tparamConstraints []string
-		tparamsSrc := ""
+		var indices []registry.IndexBinder
+		indexNames := map[string]bool{}
+		kindIndex := []bool{} // per ORIGINAL binder position
+		origTParamsSrc := ""
 		if tp := e.Spec.TypeParams; tp != nil {
-			tparamsSrc = string(src.Src[src.Offset(tp.Opening)+1 : src.Offset(tp.Closing)])
+			origTParamsSrc = string(src.Src[src.Offset(tp.Opening)+1 : src.Offset(tp.Closing)])
+			pos := 0
 			for _, field := range tp.List {
 				ctext := string(src.Src[src.Offset(field.Type.Pos()):src.Offset(field.Type.End())])
 				for _, n := range field.Names {
-					tparamNames = append(tparamNames, n.Name)
-					tparamConstraints = append(tparamConstraints, ctext)
+					if ctext == "nat" {
+						indices = append(indices, registry.IndexBinder{Name: n.Name, Sort: "nat", Pos: pos})
+						indexNames[n.Name] = true
+						kindIndex = append(kindIndex, true)
+					} else {
+						tparamNames = append(tparamNames, n.Name)
+						tparamConstraints = append(tparamConstraints, ctext)
+						kindIndex = append(kindIndex, false)
+					}
+					pos++
 				}
 			}
 		}
+		tparamsSrc := origTParamsSrc
+		if len(indices) > 0 {
+			var kept []string
+			for i, n := range tparamNames {
+				kept = append(kept, n+" "+tparamConstraints[i])
+			}
+			tparamsSrc = strings.Join(kept, ", ")
+		}
+		indexResolver := gppCallResolver(pkgPath, f.gpp.AST)
 
 		spec := &lower.EnumSpec{
 			Name:        enumName,
 			TParamsSrc:  tparamsSrc,
 			TParamNames: tparamNames,
 			MarkerName:  naming.MarkerMethodName(enumName),
-			EnumMarker:  directive.EnumMarker{Name: enumName, TParams: tparamsSrc}.String(),
+			EnumMarker:  directive.EnumMarker{Name: enumName, TParams: origTParamsSrc}.String(),
 		}
-		model := &registry.Enum{PkgPath: pkgPath, Name: enumName, TParams: tparamNames}
+		model := &registry.Enum{PkgPath: pkgPath, Name: enumName, TParams: tparamNames, Indices: indices}
 		ok := true
 
 		for _, v := range e.Variants {
@@ -99,7 +159,7 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table) (*enumPlan, []d
 				continue
 			}
 
-			occurs, markerArgs, subst, resultArgs, rerr := analyzeResult(src, e, v, tparamNames)
+			occurs, markerArgs, subst, resultArgs, indexArgs, rerr := analyzeResult(src, e, v, tparamNames, kindIndex, indexNames, isIndexed, indexResolver)
 			if rerr != nil {
 				errAt(v.Name.Pos(), "%v", rerr)
 				ok = false
@@ -190,6 +250,7 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table) (*enumPlan, []d
 				TypeName:   typeName,
 				HasParams:  v.Params != nil,
 				ResultArgs: resultArgs,
+				IndexArgs:  indexArgs,
 				Occurs:     occurs,
 				Exist:      existTPs,
 			}
@@ -220,10 +281,21 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table) (*enumPlan, []d
 							}
 						}
 					}
-					erased := declType
+					erased, droppedTerms, ierr := registry.EraseCollectIndexArgs(declType, isIndexed)
+					if ierr != nil {
+						errAt(field.Type.Pos(), "%v", ierr)
+						ok = false
+						continue
+					}
+					for _, dt := range droppedTerms {
+						if verr := validIndexTerm(dt, indexNames, indexResolver); verr != nil {
+							errAt(field.Type.Pos(), "variant %s: %v", vName, verr)
+							ok = false
+						}
+					}
 					if len(existSubst) > 0 {
 						var eerr error
-						erased, eerr = substituteTypeText(declType, existSubst)
+						erased, eerr = substituteTypeText(erased, existSubst)
 						if eerr != nil {
 							errAt(field.Type.Pos(), "%v", eerr)
 							ok = false
@@ -246,6 +318,7 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table) (*enumPlan, []d
 							Name:      n.Name,
 							FieldName: naming.FieldName(n.Name, exported),
 							Type:      erased,
+							RawType:   declType,
 						})
 						vs.Fields = append(vs.Fields, lower.FieldSpec{
 							Name: naming.FieldName(n.Name, exported),
@@ -291,8 +364,9 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table) (*enumPlan, []d
 // argument texts (verbatim), the ground substitution for eliminated
 // parameters (a fully ground position whose own parameter occurs
 // nowhere), and the raw result argument texts (nil if defaulted).
-func analyzeResult(src *syntax.File, e *syntax.EnumDecl, v *syntax.Variant, tparamNames []string) (
-	occurs []int, markerArgs []string, subst map[string]string, resultArgs []string, err error) {
+func analyzeResult(src *syntax.File, e *syntax.EnumDecl, v *syntax.Variant, tparamNames []string,
+	kindIndex []bool, indexNames map[string]bool, isIndexed registry.IndexArity, indexResolver core.CallResolver) (
+	occurs []int, markerArgs []string, subst map[string]string, resultArgs []string, indexArgs []string, err error) {
 
 	enumName := e.Spec.Name.Name
 	if v.Result == nil {
@@ -300,28 +374,65 @@ func analyzeResult(src *syntax.File, e *syntax.EnumDecl, v *syntax.Variant, tpar
 			occurs = append(occurs, i)
 			markerArgs = append(markerArgs, n)
 		}
-		return occurs, markerArgs, nil, nil, nil
+		// A defaulted result leaves every index unconstrained: the index
+		// argument is the binder itself.
+		pos := 0
+		for _, isIdx := range kindIndex {
+			if isIdx {
+				indexArgs = append(indexArgs, indexBinderNameAt(kindIndex, indexNames, e, src, pos))
+			}
+			pos++
+		}
+		return occurs, markerArgs, nil, nil, indexArgs, nil
 	}
 
 	base, args := decomposeResult(v.Result)
 	if base == nil || base.Name != enumName {
-		return nil, nil, nil, nil, fmt.Errorf("variant %s: result type must be %s applied to type arguments", v.Name.Name, enumName)
+		return nil, nil, nil, nil, nil, fmt.Errorf("variant %s: result type must be %s applied to type arguments", v.Name.Name, enumName)
 	}
-	if len(args) != len(tparamNames) {
-		return nil, nil, nil, nil, fmt.Errorf("variant %s: result type has %d type arguments but %s declares %d type parameters",
-			v.Name.Name, len(args), enumName, len(tparamNames))
+	if len(args) != len(kindIndex) {
+		return nil, nil, nil, nil, nil, fmt.Errorf("variant %s: result type has %d arguments but %s declares %d parameters",
+			v.Name.Name, len(args), enumName, len(kindIndex))
 	}
+
+	// Partition the result arguments by binder kind.
+	var typeArgs []ast.Expr
+	for i, arg := range args {
+		text := string(src.Src[src.Offset(arg.Pos()):src.Offset(arg.End())])
+		if kindIndex[i] {
+			if verr := validIndexTerm(text, indexNames, indexResolver); verr != nil {
+				return nil, nil, nil, nil, nil, fmt.Errorf("variant %s: %v", v.Name.Name, verr)
+			}
+			indexArgs = append(indexArgs, text)
+			continue
+		}
+		for _, name := range tparamOccurrences(arg) {
+			if indexNames[name] {
+				return nil, nil, nil, nil, nil, fmt.Errorf("variant %s: index parameter %s cannot be used as a type", v.Name.Name, name)
+			}
+		}
+		typeArgs = append(typeArgs, arg)
+	}
+
 	tparamSet := map[string]int{}
 	for i, n := range tparamNames {
 		tparamSet[n] = i
 	}
-
 	occursSet := map[int]bool{}
-	ground := make([]bool, len(args))
-	for i, arg := range args {
+	ground := make([]bool, len(typeArgs))
+	for i, arg := range typeArgs {
 		text := string(src.Src[src.Offset(arg.Pos()):src.Offset(arg.End())])
-		markerArgs = append(markerArgs, text)
-		resultArgs = append(resultArgs, text)
+		erased, dropped, eerr := registry.EraseCollectIndexArgs(text, isIndexed)
+		if eerr != nil {
+			return nil, nil, nil, nil, nil, fmt.Errorf("variant %s: %v", v.Name.Name, eerr)
+		}
+		for _, dt := range dropped {
+			if verr := validIndexTerm(dt, indexNames, indexResolver); verr != nil {
+				return nil, nil, nil, nil, nil, fmt.Errorf("variant %s: %v", v.Name.Name, verr)
+			}
+		}
+		markerArgs = append(markerArgs, erased)
+		resultArgs = append(resultArgs, erased)
 		ground[i] = true
 		for _, name := range tparamOccurrences(arg) {
 			if _, isTP := tparamSet[name]; isTP {
@@ -336,12 +447,42 @@ func analyzeResult(src *syntax.File, e *syntax.EnumDecl, v *syntax.Variant, tpar
 		}
 	}
 	subst = map[string]string{}
-	for i := range args {
+	for i := range typeArgs {
 		if ground[i] && !occursSet[i] {
 			subst[tparamNames[i]] = resultArgs[i]
 		}
 	}
-	return occurs, markerArgs, subst, resultArgs, nil
+	return occurs, markerArgs, subst, resultArgs, indexArgs, nil
+}
+
+// indexBinderNameAt recovers the binder name at an original tparam
+// position (defaulted-result variants of indexed enums).
+func indexBinderNameAt(kindIndex []bool, indexNames map[string]bool, e *syntax.EnumDecl, src *syntax.File, pos int) string {
+	i := 0
+	for _, field := range e.Spec.TypeParams.List {
+		for _, n := range field.Names {
+			if i == pos {
+				return n.Name
+			}
+			i++
+		}
+	}
+	return "_"
+}
+
+// validIndexTerm checks an index argument elaborates as a nat term over
+// the enum's index binders (and total-function calls).
+func validIndexTerm(text string, indexNames map[string]bool, resolve core.CallResolver) error {
+	term, err := core.ParseIndexTerm(text, resolve)
+	if err != nil {
+		return fmt.Errorf("index argument %s must be a nat expression: %v", text, err)
+	}
+	for _, fv := range core.FreeVars(term) {
+		if !indexNames[fv] {
+			return fmt.Errorf("index argument %s uses %s, which is not an index parameter of the enum", text, fv)
+		}
+	}
+	return nil
 }
 
 // tparamOccurrences lists identifier names occurring free in a type

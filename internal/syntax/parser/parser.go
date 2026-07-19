@@ -1421,7 +1421,19 @@ func (p *parser) parseTypeInstance(typ ast.Expr) ast.Expr {
 	p.exprLev++
 	var list []ast.Expr
 	for p.tok != token.RBRACK && p.tok != token.EOF {
-		list = append(list, p.parseType())
+		// gpp:begin — index terms in type instances (v0.7.0). An
+		// instantiation argument may be a nat TERM (`0`, `n+1`,
+		// `Plus(n, m)`); composite-type starts still parse as types.
+		// Valid Go never has terms in type-argument position, and
+		// ident-led type args parse to identical AST shapes through the
+		// expression path, so the leniency is a strict superset.
+		switch p.tok {
+		case token.LBRACK, token.MUL, token.MAP, token.CHAN, token.FUNC, token.STRUCT, token.INTERFACE, token.ARROW, token.LPAREN:
+			list = append(list, p.parseType())
+		default:
+			list = append(list, p.parseBinaryExpr(nil, token.LowestPrec+1))
+		}
+		// gpp:end
 		if !p.atComma("type argument list", token.RBRACK) {
 			break
 		}

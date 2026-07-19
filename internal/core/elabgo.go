@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"math/big"
 )
@@ -158,4 +159,22 @@ func (e *elaborator) expr(x ast.Expr) (Term, error) {
 		return Call{Fn: key, Args: args}, nil
 	}
 	return nil, fmt.Errorf("%T is outside the total fragment (v0.7.0 allows nat expressions: parameters, literals, + - *, and total calls)", x)
+}
+
+// ElabIndexExpr elaborates a standalone index-term expression (a result
+// or field index argument of an indexed enum).
+func ElabIndexExpr(x ast.Expr, resolve CallResolver) (Term, error) {
+	e := &elaborator{resolve: resolve}
+	return e.expr(x)
+}
+
+// ParseIndexTerm elaborates an index term from its source text (marker
+// reconstruction: terms cannot round-trip through go/parser in type
+// position, but stand alone they are ordinary expressions).
+func ParseIndexTerm(text string, resolve CallResolver) (Term, error) {
+	x, err := parser.ParseExpr(text)
+	if err != nil {
+		return nil, fmt.Errorf("cannot parse index term %q: %v", text, err)
+	}
+	return ElabIndexExpr(x, resolve)
 }

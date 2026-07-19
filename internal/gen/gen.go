@@ -465,6 +465,7 @@ func processPackage(idx *pkgIndex, pkgPath string) (map[string][]byte, []*regist
 		for _, q := range f.gpp.Quantities {
 			edits = append(edits, lower.QuantityEdits(f.gpp, q)...)
 		}
+		edits = append(edits, eraseOrdinaryIndexUses(f, enums.isIndexed)...)
 		tedits, ttotals, tdiags := processTotals(f, pkgPath, totalLocals, totalDefs)
 		edits = append(edits, tedits...)
 		allTotals = append(allTotals, ttotals...)

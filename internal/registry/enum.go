@@ -15,7 +15,8 @@ import (
 type EnumParam struct {
 	Name      string // parameter name as written in G++, e.g. "value"
 	FieldName string // Go struct field name, e.g. "Value"
-	Type      string // type text in G++ terms, e.g. "T" or "func(T) U"
+	Type      string // ERASED type text, e.g. "T" or "Vec[T]"
+	RawType   string // unerased type text ("Vec[T, n]"); == Type without indices
 }
 
 // EnumVariant is one variant of an enum.
@@ -29,7 +30,8 @@ type EnumVariant struct {
 	TypeName   string      // lowered Go struct type name, e.g. "Some" or "OptionNone"
 	Params     []EnumParam // nil for a bare variant; types ERASED for existentials
 	HasParams  bool        // distinguishes None from None()
-	ResultArgs []string    // GADT result type arguments; nil when defaulted
+	ResultArgs []string    // ERASED GADT result type arguments; nil when defaulted
+	IndexArgs  []string    // index-position result terms, in Indices order (v0.7.0)
 	Exist      []ExistTP   // bounded existential tparams (v0.6.0); nil otherwise
 }
 
@@ -98,8 +100,9 @@ func typeIdentNames(e ast.Expr) []string {
 // Enum is a sealed sum type visible to a compilation.
 type Enum struct {
 	PkgPath  string
-	Name     string   // enum (interface) type name
-	TParams  []string // type parameter names
+	Name     string        // enum (interface) type name
+	TParams  []string      // ERASED type parameter names
+	Indices  []IndexBinder // value-index binders (v0.7.0); nil otherwise
 	Variants []*EnumVariant
 }
 
@@ -213,7 +216,8 @@ func EnumsFromMarkers(pkgPath, filename string, src []byte) ([]*Enum, error) {
 		}
 		for _, c := range docLines(gd.Doc) {
 			if m, ok := directive.ParseEnumMarker(c); ok {
-				e := &Enum{PkgPath: pkgPath, Name: m.Name, TParams: tparamNames(m.TParams)}
+				typeNames, indices := SplitBinders(m.TParams)
+				e := &Enum{PkgPath: pkgPath, Name: m.Name, TParams: typeNames, Indices: indices}
 				enums[m.Name] = e
 				order = append(order, m.Name)
 			}
@@ -244,8 +248,41 @@ func EnumsFromMarkers(pkgPath, filename string, src []byte) ([]*Enum, error) {
 				continue
 			}
 			v := &EnumVariant{Name: m.Name, TypeName: ts.Name.Name, HasParams: m.HasParams}
+			isIndexed := func(name string) (map[int]bool, int, bool) {
+				ie, ok := enums[name]
+				if !ok || len(ie.Indices) == 0 {
+					return nil, 0, false
+				}
+				pos := map[int]bool{}
+				for _, ib := range ie.Indices {
+					pos[ib.Pos] = true
+				}
+				return pos, len(ie.TParams) + len(ie.Indices), true
+			}
 			if m.Result != "" {
-				v.ResultArgs = resultArgsOf(m.Result)
+				full := resultArgsOf(m.Result)
+				idxPos := map[int]bool{}
+				for _, ib := range e.Indices {
+					idxPos[ib.Pos] = true
+				}
+				var typeArgs, indexArgs []string
+				for i, a := range full {
+					if idxPos[i] {
+						indexArgs = append(indexArgs, a)
+						continue
+					}
+					ea, eerr := EraseIndexArgs(a, isIndexed)
+					if eerr != nil {
+						return nil, fmt.Errorf("%s: variant %s: %v", filename, m.Name, eerr)
+					}
+					typeArgs = append(typeArgs, ea)
+				}
+				v.ResultArgs = typeArgs
+				v.IndexArgs = indexArgs
+			} else if len(e.Indices) > 0 {
+				for _, ib := range e.Indices {
+					v.IndexArgs = append(v.IndexArgs, ib.Name)
+				}
 			}
 			existSubst := map[string]string{}
 			for _, tp := range parseParamList(m.TParams) {
@@ -259,7 +296,11 @@ func EnumsFromMarkers(pkgPath, filename string, src []byte) ([]*Enum, error) {
 				if i < len(fields) {
 					fieldName = fields[i]
 				}
-				v.Params = append(v.Params, EnumParam{Name: p.Name, FieldName: fieldName, Type: substWords(p.Type, existSubst)})
+				erasedType, eerr := EraseIndexArgs(p.Type, isIndexed)
+				if eerr != nil {
+					return nil, fmt.Errorf("%s: variant %s: %v", filename, m.Name, eerr)
+				}
+				v.Params = append(v.Params, EnumParam{Name: p.Name, FieldName: fieldName, Type: substWords(erasedType, existSubst), RawType: p.Type})
 			}
 			e.Variants = append(e.Variants, v)
 			break
