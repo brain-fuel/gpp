@@ -331,9 +331,15 @@ func renderTraversals(spec *lower.EnumSpec, wrappers map[string]*wrapperDecl, ch
 func emitChildStmts(stmts *[]string, expr, typ, enumName string, wrappers map[string]*wrapperDecl, indent string, n *int) {
 	switch classifyField(typ, enumName, wrappers) {
 	case shapeEnum:
-		*stmts = append(*stmts, fmt.Sprintf("%sout = append(out, %s)\n", indent, expr))
+		// Guarded: erased enums are interfaces, and real code (an
+		// optional annotation field) stores nil in them.
+		*stmts = append(*stmts, fmt.Sprintf("%sif %s != nil {\n%s\tout = append(out, %s)\n%s}\n", indent, expr, indent, expr, indent))
 	case shapeSliceEnum:
-		*stmts = append(*stmts, fmt.Sprintf("%sout = append(out, %s...)\n", indent, expr))
+		loopVar := fmt.Sprintf("c%d", *n)
+		*n++
+		*stmts = append(*stmts, fmt.Sprintf("%sfor _, %s := range %s {\n", indent, loopVar, expr))
+		*stmts = append(*stmts, fmt.Sprintf("%s\tif %s != nil {\n%s\t\tout = append(out, %s)\n%s\t}\n", indent, loopVar, indent, loopVar, indent))
+		*stmts = append(*stmts, indent+"}\n")
 	case shapeWrapper:
 		w := wrappers[strings.TrimSpace(typ)]
 		for _, fd := range w.fields {
@@ -363,7 +369,9 @@ func emitChildStmts(stmts *[]string, expr, typ, enumName string, wrappers map[st
 func emitTransformStmts(stmts *[]string, lvalue, typ, enumName, transName string, wrappers map[string]*wrapperDecl, indent string, n *int) {
 	switch classifyField(typ, enumName, wrappers) {
 	case shapeEnum:
-		*stmts = append(*stmts, fmt.Sprintf("%s%s = %s(%s, f)\n", indent, lvalue, transName, lvalue))
+		// Guarded: a nil optional field passes through untouched; f
+		// never sees nil.
+		*stmts = append(*stmts, fmt.Sprintf("%sif %s != nil {\n%s\t%s = %s(%s, f)\n%s}\n", indent, lvalue, indent, lvalue, transName, lvalue, indent))
 	case shapeSliceEnum:
 		sliceVar := fmt.Sprintf("s%d", *n)
 		idxVar := fmt.Sprintf("i%d", *n)
@@ -372,7 +380,8 @@ func emitTransformStmts(stmts *[]string, lvalue, typ, enumName, transName string
 		*stmts = append(*stmts, fmt.Sprintf("%sif len(%s) > 0 {\n", indent, lvalue))
 		*stmts = append(*stmts, fmt.Sprintf("%s\t%s := make(%s, len(%s))\n", indent, sliceVar, strings.TrimSpace(typ), lvalue))
 		*stmts = append(*stmts, fmt.Sprintf("%s\tfor %s, %s := range %s {\n", indent, idxVar, elemVar, lvalue))
-		*stmts = append(*stmts, fmt.Sprintf("%s\t\t%s[%s] = %s(%s, f)\n", indent, sliceVar, idxVar, transName, elemVar))
+		*stmts = append(*stmts, fmt.Sprintf("%s\t\t%s[%s] = %s\n", indent, sliceVar, idxVar, elemVar))
+		*stmts = append(*stmts, fmt.Sprintf("%s\t\tif %s != nil {\n%s\t\t\t%s[%s] = %s(%s, f)\n%s\t\t}\n", indent, elemVar, indent, sliceVar, idxVar, transName, elemVar, indent))
 		*stmts = append(*stmts, indent+"\t}\n")
 		*stmts = append(*stmts, fmt.Sprintf("%s\t%s = %s\n", indent, lvalue, sliceVar))
 		*stmts = append(*stmts, indent+"}\n")

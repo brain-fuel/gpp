@@ -230,3 +230,53 @@ Feature: Derived deep traversals
     And the file "main_gpp.go" does not contain "ColorChildren"
     And the file "main_gpp.go" does not contain "OptionChildren"
     And the file "main_gpp.go" does not contain "ExprChildren"
+
+  Scenario: Nil optional fields are skipped, never handed to the rewrite
+    Given a G++ file "main.gpp":
+      """
+      package main
+
+      import "fmt"
+
+      type Tm enum {
+      	Lit(n int)
+      	Let(ty Tm, v Tm)
+      }
+
+      func main() {
+      	var t Tm = Let(nil, Lit(1))
+      	fmt.Println(len(TmChildren(t)))
+      	count := 0
+      	for range TmUniverse(t) {
+      		count++
+      	}
+      	fmt.Println(count)
+      	out := TmTransform(t, func(u Tm) Tm {
+      		match u {
+      		case Lit(n):
+      			return Lit(n + 1)
+      		case _:
+      			return u
+      		}
+      	})
+      	match out {
+      	case Let(ty, v):
+      		fmt.Println(ty == nil)
+      		match v {
+      		case Lit(n):
+      			fmt.Println(n)
+      		case _:
+      		}
+      	case _:
+      	}
+      }
+      """
+    When I run gpp with arguments "run ."
+    Then the exit code is 0
+    And stdout contains:
+      """
+      1
+      2
+      true
+      2
+      """
