@@ -7,6 +7,34 @@ Generated packages compile with the standard Go toolchain and may be
 distributed and consumed **without** G++ — the same interoperability story
 Kotlin, Scala, and Clojure have with Java.
 
+## v0.10.0 — The Dogfood Rewrite
+
+[goforge.dev/cadence](https://goforge.dev/cadence) v0.2.0 is authored
+in G++ — the first external artifact rewritten in the language — and
+the rewrite drove three features home:
+
+```go
+// Derived rapid generators for every enum (emission is demand-driven —
+// law tests, or //gpp:derive gen — so rapid never enters go.mod uninvited):
+s := GenStrategy(rt)
+
+// Laws quantify over enums, drawn through the derived generator:
+type Interpreter[T any] class {
+	Serve(host T, r Region, s Strategy, ctx RequestContext) (Tree, error)
+	law Fallback(host T, s Strategy) { … }
+}
+// → every instance gets a generated rapid property; violations shrink
+//   to counterexamples like m={-1}
+
+// Operations declare multiple results; tests are G++ too:
+//   foo_test.gpp → foo_gpp_test.go (still a _test.go to the go tool)
+```
+
+In cadence, Strategy became a real sum (illegal states unrepresentable),
+the hand-rolled FallbackHolds died, and the fallback law is now part of
+the Interpreter class — proven automatically for every interpreter
+anyone writes.
+
 ## v0.9.0 — Tooling: LSP, Editors, go generate
 
 No language changes — this release is about living with gpp:
@@ -469,6 +497,7 @@ The spec is executable: the Godog/Cucumber feature suite under
 | v0.7.0  | The dependent core: QTT quantities, total functions, indexed enums, Eq, linearity, std/vec — shipped |
 | v0.8.0  | std/parsec: streaming parser combinators — shipped |
 | v0.9.0  | Tooling: gpp lsp + four editors, go generate canonical, cross-package hardening — shipped |
+| v0.10.0 | The dogfood rewrite: cadence v0.2.0 in G++; derived generators, laws over enums, multi-result ops, G++ tests — shipped |
 
 ## License
 
