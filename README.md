@@ -359,6 +359,13 @@ as ordinary Go with `go get`.
 ## CLI
 
 ```
+# Canonical workflow: the go toolchain drives, gpp only generates.
+gpp init                 # scaffold //go:generate wiring (flag: -hook)
+go get -tool goforge.dev/gpp/cmd/gpp@latest   # pin gpp in go.mod (Go 1.24+)
+go generate ./...        # regenerate *_gpp.go from *.gpp
+go build ./...           # plain Go from here (test/vet/run likewise)
+
+# Convenience wrapper: same thing, one word shorter.
 gpp gen ./...            # generate *_gpp.go from *.gpp
 gpp gen -check ./...     # exit 1 if any generated file is stale (CI)
 gpp gen -stage ./...     # regenerate and git-add results (pre-commit)

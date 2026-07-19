@@ -21,6 +21,7 @@ Usage:
 Commands:
 
 	gen      generate Go from .gpp files (flags: -check, -stage)
+	init     scaffold //go:generate wiring for this package (flag: -hook)
 	build    generate, then run 'go build'
 	test     generate, then run 'go test'
 	run      generate, then run 'go run'
@@ -42,6 +43,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	switch cmd {
 	case "gen":
 		return runGen(rest, stdout, stderr)
+	case "init":
+		return runInit(rest, stdout, stderr)
 	case "build", "test", "run", "vet":
 		return runDelegated(cmd, rest, stdout, stderr)
 	case "version":
