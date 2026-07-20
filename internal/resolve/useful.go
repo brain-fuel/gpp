@@ -4,9 +4,9 @@ import (
 	"go/token"
 	"strings"
 
-	"goforge.dev/gpp/internal/core"
-	"goforge.dev/gpp/internal/registry"
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/core"
+	"goforge.dev/goplus/internal/registry"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 // Typed pattern usefulness (Maranget's algorithm). With nested patterns a
@@ -22,7 +22,7 @@ import (
 type patCol struct {
 	enum     *registry.Enum
 	targs    []string
-	idxTerms []string // scrutinee index terms when known (v0.7.0); nil otherwise
+	idxTerms []string  // scrutinee index terms when known (v0.7.0); nil otherwise
 	pos      token.Pos // diagnostic anchor (the match subject / parent pattern)
 }
 

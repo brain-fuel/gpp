@@ -10,9 +10,9 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"goforge.dev/gpp/internal/diag"
-	"goforge.dev/gpp/internal/lower"
-	"goforge.dev/gpp/internal/registry"
+	"goforge.dev/goplus/internal/diag"
+	"goforge.dev/goplus/internal/lower"
+	"goforge.dev/goplus/internal/registry"
 )
 
 // fileResolver rewrites one shadow file for one fixpoint iteration.
@@ -155,7 +155,7 @@ func (r *fileResolver) candidate(sel *ast.SelectorExpr) {
 		return
 	}
 	if h == nil {
-		return // not a gpp method use; the backstop will judge it
+		return // not a goplus method use; the backstop will judge it
 	}
 
 	// Classify the syntactic context.
@@ -263,9 +263,9 @@ func (r *fileResolver) rewriteCall(call *ast.CallExpr, sel *ast.SelectorExpr, ty
 	})
 }
 
-// memberHit finds a gpp method reachable from a receiver type: declared
+// memberHit finds a goplus method reachable from a receiver type: declared
 // directly, on the enum a variant struct belongs to, or promoted through
-// embedded fields. Returns (nil, nil) when there is no gpp member.
+// embedded fields. Returns (nil, nil) when there is no goplus member.
 func (r *fileResolver) memberHit(t types.Type, name string) (*hit, error) {
 	if m, named, ok := lookupDirect(r.reg, t, name); ok {
 		_, wasPtr := asNamed(t)

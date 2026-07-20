@@ -1,5 +1,5 @@
-// G++ extension nodes and entry points. This file is gpp's own (not
-// vendored from GOROOT): the fork parses G++'s two grammar extensions —
+// Go+ extension nodes and entry points. This file is goplus's own (not
+// vendored from GOROOT): the fork parses Go+'s two grammar extensions —
 // enum declarations and match statements — into the side-table types below,
 // leaving stock placeholder nodes (*ast.BadExpr / *ast.BadStmt) in the
 // *ast.File so every downstream go/ast consumer keeps working.
@@ -12,12 +12,12 @@ import (
 
 // EnumDecl is one `type Name [TypeParams] enum { … }` declaration.
 type EnumDecl struct {
-	Gen     *ast.GenDecl  // enclosing declaration; filled by syntax.ParseFile
-	Spec    *ast.TypeSpec // Name/TypeParams are real; Spec.Type is an *ast.BadExpr spanning the enum body
-	EnumPos token.Pos     // position of the `enum` keyword
-	Lbrace  token.Pos
+	Gen      *ast.GenDecl  // enclosing declaration; filled by syntax.ParseFile
+	Spec     *ast.TypeSpec // Name/TypeParams are real; Spec.Type is an *ast.BadExpr spanning the enum body
+	EnumPos  token.Pos     // position of the `enum` keyword
+	Lbrace   token.Pos
 	Variants []*Variant
-	Rbrace  token.Pos
+	Rbrace   token.Pos
 }
 
 // Variant is one constructor declaration inside an enum body.
@@ -256,7 +256,7 @@ type MatchExprArm struct {
 	Value   ast.Expr
 }
 
-// Extensions collects a file's G++ constructs.
+// Extensions collects a file's Go+ constructs.
 //
 // Pipes and Composes are in CREATION order: a node registers when its
 // first operator token is claimed, so extensions nested in stages/right
@@ -284,7 +284,7 @@ type Extensions struct {
 	Totals     []*TotalFunc
 }
 
-// ParseFileExt parses G++ source: stock Go grammar plus enum declarations,
+// ParseFileExt parses Go+ source: stock Go grammar plus enum declarations,
 // match statements, and type parameters on methods.
 func ParseFileExt(fset *token.FileSet, filename string, src []byte, mode Mode) (*ast.File, *Extensions, error) {
 	f, ext, err := parseFileExt(fset, filename, src, mode)

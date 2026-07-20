@@ -6,16 +6,16 @@ import (
 	"strconv"
 	"strings"
 
-	"goforge.dev/gpp/internal/lower"
+	"goforge.dev/goplus/internal/lower"
 )
 
 // Uniform segment carriers (v0.4.0 Engine A). Pass 1 lowers every
-// direct-callee pipe segment to `__gpp_seg<k>(head, callee, fixed…)` and
-// every dot segment's receiver to `__gpp_dot(head)`, so resolution sees
+// direct-callee pipe segment to `__gp_seg<k>(head, callee, fixed…)` and
+// every dot segment's receiver to `__gp_dot(head)`, so resolution sees
 // the flowing type at every stage. A non-Result head collapses to the
 // exact v0.3 rendering; a Result head lifts onto the railway (phase 6).
 
-// segCandidate collapses one __gpp_seg<k> carrier.
+// segCandidate collapses one __gp_seg<k> carrier.
 func (r *fileResolver) segCandidate(call *ast.CallExpr) {
 	fn, ok := call.Fun.(*ast.Ident)
 	if !ok || !strings.HasPrefix(fn.Name, lower.SegCarrierPrefix) {
@@ -65,7 +65,7 @@ func (r *fileResolver) segCandidate(call *ast.CallExpr) {
 	})
 }
 
-// dotCandidate collapses one __gpp_dot(head) marker.
+// dotCandidate collapses one __gp_dot(head) marker.
 func (r *fileResolver) dotCandidate(call *ast.CallExpr) {
 	fn, ok := call.Fun.(*ast.Ident)
 	if !ok || fn.Name != lower.DotCarrier || len(call.Args) != 1 {
@@ -110,6 +110,6 @@ func (r *fileResolver) isResult(t types.Type) (T, E types.Type, ok bool) {
 }
 
 const (
-	resultPkgPath  = "goforge.dev/gpp/std/result"
+	resultPkgPath  = "goforge.dev/goplus/std/result"
 	resultTypeName = "Result"
 )

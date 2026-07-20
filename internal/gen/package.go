@@ -9,17 +9,17 @@ import (
 	"go/token"
 	"reflect"
 
-	"goforge.dev/gpp/internal/lower"
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/lower"
+	"goforge.dev/goplus/internal/syntax"
 )
 
-// sourceFile is one file participating in a package: authored .go or .gpp.
+// sourceFile is one file participating in a package: authored .go or .gp.
 type sourceFile struct {
 	path string // absolute
 	base string // basename
 	src  []byte
 	ast  *ast.File
-	gpp  *syntax.File // non-nil for .gpp files
+	gp   *syntax.File // non-nil for .gp files
 }
 
 // pkgIndex indexes one directory's files for name and type lookups.

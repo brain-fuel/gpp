@@ -7,16 +7,16 @@ import (
 	"go/types"
 	"strings"
 
-	"goforge.dev/gpp/internal/directive"
-	"goforge.dev/gpp/internal/lower"
-	"goforge.dev/gpp/internal/registry"
+	"goforge.dev/goplus/internal/directive"
+	"goforge.dev/goplus/internal/lower"
+	"goforge.dev/goplus/internal/registry"
 )
 
 // Class structure resolution (v0.5.0): witness flattening (leaves-first,
 // diamonds collapsing), upcast generation, and instance default filling.
 // All candidates are idempotent by AST inspection.
 
-// classFor recognizes a witness struct decl by its //gpp:class marker.
+// classFor recognizes a witness struct decl by its //goplus:class marker.
 func (r *fileResolver) classFor(gd *ast.GenDecl) (*registry.Class, *ast.TypeSpec, *ast.StructType, bool) {
 	if gd.Tok != token.TYPE || len(gd.Specs) != 1 || gd.Doc == nil {
 		return nil, nil, nil, false
@@ -376,7 +376,7 @@ func (r *fileResolver) defaultFillText(w, op string, declClass, instClass regist
 		if err != nil {
 			return "", false
 		}
-		name := fmt.Sprintf("__gpp_a%d", i)
+		name := fmt.Sprintf("__gp_a%d", i)
 		if sig.Variadic() && i == sig.Params().Len()-1 {
 			elem, _ := types.Unalias(sig.Params().At(i).Type()).(*types.Slice)
 			if elem == nil {

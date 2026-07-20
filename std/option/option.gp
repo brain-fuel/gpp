@@ -1,0 +1,90 @@
+// Package option is the presence type of Go+: a value that is there
+// (Some) or absent (None). It is authored in Go+ and distributed as
+// generated Go — consumers never need the goplus toolchain.
+package option
+
+// Option carries at most one value.
+type Option[T any] enum {
+	Some(value T)
+	None
+}
+
+// Of enters from Go's comma-ok shape.
+func Of[T any](v T, ok bool) Option[T] {
+	if !ok {
+		return None
+	}
+	return Some(v)
+}
+
+// IsSome reports presence.
+func (o Option[T]) IsSome() bool {
+	match o {
+	case Some(_):
+		return true
+	case None:
+		return false
+	}
+}
+
+// IsNone reports absence.
+func (o Option[T]) IsNone() bool {
+	match o {
+	case Some(_):
+		return false
+	case None:
+		return true
+	}
+}
+
+// Map lifts a plain function over the value; None passes through.
+func (o Option[T]) Map[U any](f func(T) U) Option[U] {
+	match o {
+	case Some(v):
+		return Some(f(v))
+	case None:
+		return None
+	}
+}
+
+// Bind chains an option-producing function; None bypasses it.
+func (o Option[T]) Bind[U any](f func(T) Option[U]) Option[U] {
+	match o {
+	case Some(v):
+		return f(v)
+	case None:
+		return None
+	}
+}
+
+// UnwrapOr yields the value or a fallback.
+func (o Option[T]) UnwrapOr(fallback T) T {
+	match o {
+	case Some(v):
+		return v
+	case None:
+		return fallback
+	}
+}
+
+// OrElse yields the option itself when present, otherwise the
+// alternative.
+func (o Option[T]) OrElse(alt Option[T]) Option[T] {
+	match o {
+	case Some(_):
+		return o
+	case None:
+		return alt
+	}
+}
+
+// Get leaves in Go's comma-ok shape.
+func (o Option[T]) Get() (T, bool) {
+	match o {
+	case Some(v):
+		return v, true
+	case None:
+		var zero T
+		return zero, false
+	}
+}

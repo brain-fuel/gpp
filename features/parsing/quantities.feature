@@ -15,7 +15,7 @@ Feature: Quantity prefixes and total functions parse and strip
       """
 
   Scenario: Quantities and total strip; the program still runs
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -39,7 +39,7 @@ Feature: Quantity prefixes and total functions parse and strip
       	fmt.Println(through(func() int { return 9 }))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -47,27 +47,27 @@ Feature: Quantity prefixes and total functions parse and strip
       ab
       9
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       func Twice(a int) int {
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      //gpp:dep join(0 n int, x string, 1 s string) string
+      //goplus:dep join(0 n int, x string, 1 s string) string
       func join(x string, s Lin[string]) string {
       	return x + s.Use()
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       	fmt.Println(join("a", LinOf("b")))
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       func through(f func() int) int {
       """
 
   Scenario: A variadic parameter cannot be linear
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -77,12 +77,12 @@ Feature: Quantity prefixes and total functions parse and strip
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "a variadic parameter cannot be linear in v0.7.0"
 
   Scenario: Valid Go parameter forms keep their Go meaning
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -107,20 +107,20 @@ Feature: Quantity prefixes and total functions parse and strip
       	fmt.Println(pair("x", 1), poly("q", total))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "x 6"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       func pair(a b, c d) string {
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       func poly[T any](m string, v T) T {
       """
 
   Scenario: Only 0 and 1 are quantity literals
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -130,12 +130,12 @@ Feature: Quantity prefixes and total functions parse and strip
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "expected ')'"
 
   Scenario: A quantity requires a named parameter
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -145,6 +145,6 @@ Feature: Quantity prefixes and total functions parse and strip
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "a quantity annotation requires a named parameter with a type"

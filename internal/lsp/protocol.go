@@ -1,7 +1,7 @@
 package lsp
 
 // The slice of the LSP 3.17 surface this server speaks. Positions are
-// 0-based (LSP) at this layer; conversion to gpp's 1-based
+// 0-based (LSP) at this layer; conversion to goplus's 1-based
 // token.Position happens at the boundary.
 
 type Position struct {

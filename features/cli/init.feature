@@ -1,6 +1,6 @@
-Feature: gpp init scaffolds the go generate workflow
+Feature: goplus init scaffolds the go generate workflow
   `go generate ./... && go build ./...` is the canonical workflow; the
-  gpp wrapper commands are convenience. init writes the //go:generate
+  goplus wrapper commands are convenience. init writes the //go:generate
   wiring (and, with -hook, a pre-commit config) and refuses to
   overwrite.
 
@@ -13,7 +13,7 @@ Feature: gpp init scaffolds the go generate workflow
       """
 
   Scenario: init writes the directive and the module builds plainly
-    Given a G++ file "app.gpp":
+    Given a Go+ file "app.gp":
       """
       package main
 
@@ -21,27 +21,27 @@ Feature: gpp init scaffolds the go generate workflow
       	println("ok" |> func(s string) string { return s })
       }
       """
-    When I run gpp with arguments "init -hook"
+    When I run goplus with arguments "init -hook"
     Then the exit code is 0
-    And stdout contains "wrote gpp_generate.go"
+    And stdout contains "wrote goplus_generate.go"
     And stdout contains "wrote .pre-commit-config.yaml"
-    And stdout contains "go get -tool goforge.dev/gpp/cmd/gpp@latest"
-    And the file "gpp_generate.go" contains:
+    And stdout contains "go get -tool goforge.dev/goplus/cmd/goplus@latest"
+    And the file "goplus_generate.go" contains:
       """
-      //go:generate go tool gpp gen ./...
+      //go:generate go tool goplus gen ./...
 
       package main
       """
-    When I run gpp with arguments "gen ./..."
+    When I run goplus with arguments "gen ./..."
     Then the exit code is 0
 
   Scenario: init refuses to overwrite its scaffold
-    Given a file "gpp_generate.go":
+    Given a file "goplus_generate.go":
       """
-      //go:generate go tool gpp gen ./...
+      //go:generate go tool goplus gen ./...
 
       package main
       """
-    When I run gpp with arguments "init"
+    When I run goplus with arguments "init"
     Then the exit code is 2
-    And stderr contains "gpp_generate.go already exists"
+    And stderr contains "goplus_generate.go already exists"

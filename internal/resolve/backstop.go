@@ -7,12 +7,12 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"goforge.dev/gpp/internal/diag"
-	"goforge.dev/gpp/internal/sourcemap"
+	"goforge.dev/goplus/internal/diag"
+	"goforge.dev/goplus/internal/sourcemap"
 )
 
 // Backstop type-checks the final emitted texts strictly and returns every
-// error, remapped into .gpp positions where the error lies in a generated
+// error, remapped into .gp positions where the error lies in a generated
 // file. This is the full go/types safety net behind the targeted
 // resolution pass: anything the lowering got wrong, and any ordinary type
 // error the user wrote, surfaces here exactly once — before anything is
@@ -39,7 +39,7 @@ func Backstop(in *Input, maps map[string]*sourcemap.Map) ([]diag.Diagnostic, err
 				if mapped, ok := m.Map(pos); ok {
 					pos = mapped
 				} else {
-					msg = "gpp internal lowering error (please report): " + msg
+					msg = "goplus internal lowering error (please report): " + msg
 				}
 			}
 			d := diag.At(pos, "%s", msg)

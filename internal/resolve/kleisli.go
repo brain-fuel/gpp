@@ -6,11 +6,11 @@ import (
 	"go/types"
 	"strings"
 
-	"goforge.dev/gpp/internal/lower"
+	"goforge.dev/goplus/internal/lower"
 )
 
 // Kleisli composition (v0.4.0). Pass 1 lowers a mixed `>=>` / `>>>` chain
-// to `__gpp_kcomp_<kinds>(f, g, h)` with one kind letter per link ('k'
+// to `__gp_kcomp_<kinds>(f, g, h)` with one kind letter per link ('k'
 // for >=>, 'c' for >>>). The chain folds left-to-right with track state:
 // the rail opens at the first failure-capable operand (returning a Result
 // or (U, error)); after that, `>=>` links lift plain operands (Map/Tee),
@@ -273,7 +273,7 @@ func (r *fileResolver) emitKleisli(call *ast.CallExpr, ops []*composeOp, steps [
 		if fail(err) {
 			return
 		}
-		outerParams = append(outerParams, fmt.Sprintf("__gpp_f%d %s", i, ft))
+		outerParams = append(outerParams, fmt.Sprintf("__gp_f%d %s", i, ft))
 		outerArgs = append(outerArgs, op.text)
 	}
 
@@ -281,7 +281,7 @@ func (r *fileResolver) emitKleisli(call *ast.CallExpr, ops []*composeOp, steps [
 	var innerParams, innerTypes, callArgs []string
 	for i := 0; i < first.Params().Len(); i++ {
 		t := first.Params().At(i).Type()
-		name := fmt.Sprintf("__gpp_a%d", i)
+		name := fmt.Sprintf("__gp_a%d", i)
 		if first.Variadic() && i == first.Params().Len()-1 {
 			elem, err := r.typeText(t.(*types.Slice).Elem())
 			if fail(err) {
@@ -306,14 +306,14 @@ func (r *fileResolver) emitKleisli(call *ast.CallExpr, ops []*composeOp, steps [
 	}
 
 	var body string
-	firstCall := fmt.Sprintf("__gpp_f0(%s)", strings.Join(callArgs, ", "))
+	firstCall := fmt.Sprintf("__gp_f0(%s)", strings.Join(callArgs, ", "))
 	if steps[0].kind == 'o' {
 		body = fmt.Sprintf("%s.Of(%s)", resPkg, firstCall)
 	} else {
 		body = firstCall
 	}
 	for i := 1; i < len(ops); i++ {
-		f := fmt.Sprintf("__gpp_f%d", i)
+		f := fmt.Sprintf("__gp_f%d", i)
 		switch steps[i].kind {
 		case 'f':
 			body = fmt.Sprintf("%s(%s)", f, body)
@@ -324,7 +324,7 @@ func (r *fileResolver) emitKleisli(call *ast.CallExpr, ops []*composeOp, steps [
 		case 't':
 			body = fmt.Sprintf("%s.Tee(%s, %s)", resPkg, body, f)
 		case 'a':
-			body = fmt.Sprintf("%s.Bind(%s, func(__gpp_p %s) %s.Result[%s, error] { return %s.Of(%s(__gpp_p)) })",
+			body = fmt.Sprintf("%s.Bind(%s, func(__gp_p %s) %s.Result[%s, error] { return %s.Of(%s(__gp_p)) })",
 				resPkg, body, steps[i].adaptT, resPkg, steps[i].adaptU, resPkg, f)
 		case 'o':
 			body = fmt.Sprintf("%s.Of(%s(%s))", resPkg, f, body)

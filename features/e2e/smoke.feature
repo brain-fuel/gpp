@@ -1,6 +1,6 @@
 Feature: End-to-end smoke
   One realistic module exercising the whole v0.1.0 surface: a library
-  package authored in G++, a G++ consumer using chained calls, explicit
+  package authored in Go+, a Go+ consumer using chained calls, explicit
   instantiation, method values and promotion, a plain-Go consumer of the
   lowered API, tests, and a clean -check.
 
@@ -11,7 +11,7 @@ Feature: End-to-end smoke
 
       go 1.24
       """
-    And a G++ file "collections/stack.gpp":
+    And a Go+ file "collections/stack.gp":
       """
       package collections
 
@@ -35,7 +35,7 @@ Feature: End-to-end smoke
       // Len is a plain method; it stays a method.
       func (s Stack[T]) Len() int { return len(s.Items) }
       """
-    And a G++ file "main.gpp":
+    And a Go+ file "main.gp":
       """
       package main
 
@@ -89,12 +89,12 @@ Feature: End-to-end smoke
       	}
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "chained: [42] len: 1"
     And stdout contains "value: [84]"
     And stdout contains "explicit: [42]"
-    When I run gpp with arguments "test ./..."
+    When I run goplus with arguments "test ./..."
     Then the exit code is 0
-    And running gpp with arguments "gen -check ./..." exits with 0
-    And running gpp with arguments "vet ./..." exits with 0
+    And running goplus with arguments "gen -check ./..." exits with 0
+    And running goplus with arguments "vet ./..." exits with 0

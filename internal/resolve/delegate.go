@@ -7,12 +7,12 @@ import (
 	"go/types"
 	"strings"
 
-	"goforge.dev/gpp/internal/directive"
-	"goforge.dev/gpp/internal/lower"
+	"goforge.dev/goplus/internal/directive"
+	"goforge.dev/goplus/internal/lower"
 )
 
 // Delegation forwarders (v0.6.0). A struct field marked `delegate` (its
-// //gpp:delegate marker survives pass 1) must have an interface type; the
+// //goplus:delegate marker survives pass 1) must have an interface type; the
 // outer type gains a generated value-receiver forwarder for every
 // interface method it does not otherwise declare — authored anywhere in
 // the package, promoted from embedding, or generated in a previous

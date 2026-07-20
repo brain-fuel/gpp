@@ -4,10 +4,10 @@ Feature: parsec interoperates with the rest of the language
   any generated Go.
 
   Background:
-    Given a module "example.com/demo" using the gpp standard library
+    Given a module "example.com/demo" using the goplus standard library
 
   Scenario: Run output through the railway, Reply through its fold
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -17,8 +17,8 @@ Feature: parsec interoperates with the rest of the language
       	"strings"
       	"unicode"
 
-      	"goforge.dev/gpp/std/parsec"
-      	"goforge.dev/gpp/std/result"
+      	"goforge.dev/goplus/std/parsec"
+      	"goforge.dev/goplus/std/result"
       )
 
       func number() parsec.Parser[int] {
@@ -50,7 +50,7 @@ Feature: parsec interoperates with the rest of the language
       	fmt.Println(desc)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """

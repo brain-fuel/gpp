@@ -11,7 +11,7 @@ import (
 
 	"github.com/cucumber/godog"
 
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 func initParsingV2Steps(sc *godog.ScenarioContext, ps *parseState) {
@@ -50,7 +50,6 @@ func initParsingV2Steps(sc *godog.ScenarioContext, ps *parseState) {
 		}
 		return nil
 	})
-
 
 	sc.Step(`^parsing succeeds with (\d+) match statements?$`, func(want int) error {
 		if ps.err != nil {

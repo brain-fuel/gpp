@@ -1,29 +1,29 @@
 {
-  "name": "gpp",
-  "displayName": "G++ (gpp)",
-  "description": "G++ language support: syntax highlighting and the gpp language server (diagnostics, hover, definition, completion).",
+  "name": "goplus",
+  "displayName": "Go+ (goplus)",
+  "description": "Go+ language support: syntax highlighting and the goplus language server (diagnostics, hover, definition, completion).",
   "version": "0.9.0",
   "publisher": "goforge-dev",
   "license": "SEE LICENSE IN ../../LICENSE",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Programming Languages"],
-  "repository": { "type": "git", "url": "https://github.com/brain-fuel/gpp" },
+  "repository": { "type": "git", "url": "https://github.com/brain-fuel/goplus" },
   "main": "./out/extension.js",
-  "activationEvents": ["onLanguage:gpp"],
+  "activationEvents": ["onLanguage:goplus"],
   "contributes": {
     "languages": [
       {
-        "id": "gpp",
-        "aliases": ["G++", "gpp"],
-        "extensions": [".gpp"],
+        "id": "goplus",
+        "aliases": ["Go+", "goplus"],
+        "extensions": [".gp"],
         "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
       {
-        "language": "gpp",
-        "scopeName": "source.gpp",
-        "path": "./syntaxes/gpp.tmLanguage.json"
+        "language": "goplus",
+        "scopeName": "source.gp",
+        "path": "./syntaxes/goplus.tmLanguage.json"
       }
     ]
   },

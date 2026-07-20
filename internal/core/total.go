@@ -117,7 +117,7 @@ func (c *totalChecker) walk(t Term, roots, smaller map[string]int) error {
 		}
 		return fmt.Errorf("total function %s does not terminate: this recursive call shrinks no argument (destructure a parameter with match, or recurse on p-1 for a nat parameter p)", ShortName(c.def.Name))
 	}
-	return fmt.Errorf("gpp internal: unknown term %T in termination check", t)
+	return fmt.Errorf("goplus internal: unknown term %T in termination check", t)
 }
 
 // decreases reports whether arg is strictly smaller than parameter i.

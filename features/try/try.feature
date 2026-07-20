@@ -16,7 +16,7 @@ Feature: Postfix ? failure propagation
       """
 
   Scenario: The whole right-hand side of := unpacks in place (fast path)
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -40,25 +40,25 @@ Feature: Postfix ? failure propagation
       	fmt.Println(err != nil)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "42 <nil>"
     And stdout contains "true"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      	data, __gpp_err0 := os.ReadFile(path)
-      	if __gpp_err0 != nil {
-      		return *new(int), __gpp_err0
+      	data, __gp_err0 := os.ReadFile(path)
+      	if __gp_err0 != nil {
+      		return *new(int), __gp_err0
       	}
-      	n, __gpp_err1 := strconv.Atoi(string(data))
-      	if __gpp_err1 != nil {
-      		return *new(int), __gpp_err1
+      	n, __gp_err1 := strconv.Atoi(string(data))
+      	if __gp_err1 != nil {
+      		return *new(int), __gp_err1
       	}
       	return n * 2, nil
       """
 
   Scenario: A nested ? hoists a temp before the enclosing statement
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -76,20 +76,20 @@ Feature: Postfix ? failure propagation
       	fmt.Println(l, err)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "n=7 <nil>"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      	__gpp_t0, __gpp_err0 := strconv.Atoi(s)
-      	if __gpp_err0 != nil {
-      		return *new(string), __gpp_err0
+      	__gp_t0, __gp_err0 := strconv.Atoi(s)
+      	if __gp_err0 != nil {
+      		return *new(string), __gp_err0
       	}
-      	return fmt.Sprintf("n=%d", __gpp_t0), nil
+      	return fmt.Sprintf("n=%d", __gp_t0), nil
       """
 
   Scenario: A multi-value operand as the whole right-hand side
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -112,13 +112,13 @@ Feature: Postfix ? failure propagation
       	fmt.Println(v, err)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "1a <nil>"
 
   Scenario: A Result operand in an (…, error) function goes through Unpack
-    Given a module "example.com/demo" using the gpp standard library
-    And a G++ file "main.gpp":
+    Given a module "example.com/demo" using the goplus standard library
+    And a Go+ file "main.gp":
       """
       package main
 
@@ -126,7 +126,7 @@ Feature: Postfix ? failure propagation
       	"fmt"
       	"strconv"
 
-      	"goforge.dev/gpp/std/result"
+      	"goforge.dev/goplus/std/result"
       )
 
       func parse(s string) result.Result[int, error] {
@@ -143,20 +143,20 @@ Feature: Postfix ? failure propagation
       	fmt.Println(n, err)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "42 <nil>"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      	__gpp_t0, __gpp_err0 := result.Unpack(parse(s))
-      	if __gpp_err0 != nil {
-      		return *new(int), __gpp_err0
+      	__gp_t0, __gp_err0 := result.Unpack(parse(s))
+      	if __gp_err0 != nil {
+      		return *new(int), __gp_err0
       	}
       """
 
   Scenario: A Result-returning function returns Err (Unpack form)
-    Given a module "example.com/demo" using the gpp standard library
-    And a G++ file "main.gpp":
+    Given a module "example.com/demo" using the goplus standard library
+    And a Go+ file "main.gp":
       """
       package main
 
@@ -164,7 +164,7 @@ Feature: Postfix ? failure propagation
       	"fmt"
       	"strconv"
 
-      	"goforge.dev/gpp/std/result"
+      	"goforge.dev/goplus/std/result"
       )
 
       func parse(s string) result.Result[int, error] {
@@ -187,7 +187,7 @@ Feature: Postfix ? failure propagation
       	fmt.Println(result.UnwrapOr(fromGoShape("41"), -1))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -195,24 +195,24 @@ Feature: Postfix ? failure propagation
       true
       42
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      	__gpp_t0, __gpp_err0 := result.Unpack(parse(s))
-      	if __gpp_err0 != nil {
-      		return result.Err[int, error]{Err: __gpp_err0}
+      	__gp_t0, __gp_err0 := result.Unpack(parse(s))
+      	if __gp_err0 != nil {
+      		return result.Err[int, error]{Err: __gp_err0}
       	}
       """
 
   Scenario: A typed error rail is preserved through a variant assertion
-    Given a module "example.com/demo" using the gpp standard library
-    And a G++ file "main.gpp":
+    Given a module "example.com/demo" using the goplus standard library
+    And a Go+ file "main.gp":
       """
       package main
 
       import (
       	"fmt"
 
-      	"goforge.dev/gpp/std/result"
+      	"goforge.dev/goplus/std/result"
       )
 
       type ParseErr struct{ Line int }
@@ -236,36 +236,36 @@ Feature: Postfix ? failure propagation
       	fmt.Println(result.MapError(chain(-1), func(e ParseErr) ParseErr { return e }))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "v=42"
     And stdout contains "bad line -1"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      	__gpp_r0 := step(n)
-      	if result.IsErr(__gpp_r0) {
-      		return result.Err[string, ParseErr]{Err: any(__gpp_r0).(result.Err[int, ParseErr]).Err}
+      	__gp_r0 := step(n)
+      	if result.IsErr(__gp_r0) {
+      		return result.Err[string, ParseErr]{Err: any(__gp_r0).(result.Err[int, ParseErr]).Err}
       	}
-      	__gpp_t0 := any(__gpp_r0).(result.Ok[int, ParseErr]).Value
+      	__gp_t0 := any(__gp_r0).(result.Ok[int, ParseErr]).Value
       """
 
   Scenario: The std/result import is added when a file needs one
-    Given a module "example.com/demo" using the gpp standard library
-    And a G++ file "lib/lib.gpp":
+    Given a module "example.com/demo" using the goplus standard library
+    And a Go+ file "lib/lib.gp":
       """
       package lib
 
       import (
       	"strconv"
 
-      	"goforge.dev/gpp/std/result"
+      	"goforge.dev/goplus/std/result"
       )
 
       func Parse(s string) result.Result[int, error] {
       	return result.Of(strconv.Atoi(s))
       }
       """
-    And a G++ file "main.gpp":
+    And a Go+ file "main.gp":
       """
       package main
 
@@ -285,16 +285,16 @@ Feature: Postfix ? failure propagation
       	fmt.Println(n, err)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "7 <nil>"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      import "goforge.dev/gpp/std/result"
+      import "goforge.dev/goplus/std/result"
       """
 
   Scenario: A bare error operand propagates as a statement
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -316,19 +316,19 @@ Feature: Postfix ? failure propagation
       	fmt.Println(err)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "5 <nil>"
     And stdout contains "negative"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      		if __gpp_err0 := errors.New("negative"); __gpp_err0 != nil {
-      			return *new(int), __gpp_err0
+      		if __gp_err0 := errors.New("negative"); __gp_err0 != nil {
+      			return *new(int), __gp_err0
       		}
       """
 
   Scenario: On a pipeline stage, ? applies to the stage result
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -351,13 +351,13 @@ Feature: Postfix ? failure propagation
       	fmt.Println(err != nil)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "42 <nil>"
     And stdout contains "true"
 
   Scenario: ? and a hand-written err check are equivalent (oracle)
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -387,7 +387,7 @@ Feature: Postfix ? failure propagation
       	}
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -398,7 +398,7 @@ Feature: Postfix ? failure propagation
       """
 
   Scenario: ? in a function with no failure channel is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -410,12 +410,12 @@ Feature: Postfix ? failure propagation
 
       func main() { _ = f("1") }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "the enclosing function returns neither (…, error) nor a Result"
 
   Scenario: A ? operand that cannot fail is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -425,12 +425,12 @@ Feature: Postfix ? failure propagation
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "the ? operand must be a Result value, an (…, error) call, or an error; it has type int"
 
   Scenario: A multi-value operand outside a whole assignment or return is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -444,12 +444,12 @@ Feature: Postfix ? failure propagation
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "can only be the whole right-hand side of an assignment or the whole return operand"
 
   Scenario: ? on a whole deferred call is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -462,12 +462,12 @@ Feature: Postfix ? failure propagation
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "? cannot apply to a whole deferred call"
 
   Scenario: ? in a for condition is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -483,12 +483,12 @@ Feature: Postfix ? failure propagation
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "? cannot appear in a for condition or post statement"
 
   Scenario: ? on the right of && is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -503,13 +503,13 @@ Feature: Postfix ? failure propagation
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "? cannot appear on the right side of &&"
 
   Scenario: A Go-shaped operand cannot enter a typed-error Result function
-    Given a module "example.com/demo" using the gpp standard library
-    And a G++ file "main.gpp":
+    Given a module "example.com/demo" using the goplus standard library
+    And a Go+ file "main.gp":
       """
       package main
 
@@ -517,7 +517,7 @@ Feature: Postfix ? failure propagation
       	"fmt"
       	"strconv"
 
-      	"goforge.dev/gpp/std/result"
+      	"goforge.dev/goplus/std/result"
       )
 
       type ParseErr struct{ Line int }
@@ -531,6 +531,6 @@ Feature: Postfix ? failure propagation
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "can only propagate into a function whose Result error type is error"

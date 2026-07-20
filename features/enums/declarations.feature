@@ -2,7 +2,7 @@ Feature: Lowering enum declarations
   An enum lowers to a sealed interface (unexported marker method whose
   parameters are the enum's type parameters — tying every variant instance
   to exactly one interface instance) plus one struct per variant.
-  //gpp:enum and //gpp:variant markers make the emitted Go self-describing.
+  //goplus:enum and //goplus:variant markers make the emitted Go self-describing.
 
   Background:
     Given a file "go.mod":
@@ -13,7 +13,7 @@ Feature: Lowering enum declarations
       """
 
   Scenario: Option lowers to a sealed generic interface with variant structs
-    Given a G++ file "option.gpp":
+    Given a Go+ file "option.gp":
       """
       package demo
 
@@ -23,36 +23,36 @@ Feature: Lowering enum declarations
       	None
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 0
-    And the file "option_gpp.go" contains:
+    And the file "option_gp.go" contains:
       """
       // Option is an optional value.
       //
-      //gpp:enum Option[T any]
+      //goplus:enum Option[T any]
       type Option[T any] interface{ isOption(T) }
       """
-    And the file "option_gpp.go" contains:
+    And the file "option_gp.go" contains:
       """
-      //gpp:variant (Option[T]) Some(value T)
+      //goplus:variant (Option[T]) Some(value T)
       type Some[T any] struct {
       	Value T
       }
 
       func (Some[T]) isOption(T) {}
       """
-    And the file "option_gpp.go" contains:
+    And the file "option_gp.go" contains:
       """
-      //gpp:variant (Option[T]) None
+      //goplus:variant (Option[T]) None
       type None[T any] struct{}
 
       func (None[T]) isOption(T) {}
       """
-    And running gpp with arguments "gen -check ." exits with 0
-    And running gpp with arguments "vet ./..." exits with 0
+    And running goplus with arguments "gen -check ." exits with 0
+    And running goplus with arguments "vet ./..." exits with 0
 
   Scenario: Result carries every enum type parameter on every variant
-    Given a G++ file "result.gpp":
+    Given a Go+ file "result.gp":
       """
       package demo
 
@@ -61,15 +61,15 @@ Feature: Lowering enum declarations
       	Err(err E)
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 0
-    And the file "result_gpp.go" contains:
+    And the file "result_gp.go" contains:
       """
       type Result[T any, E any] interface{ isResult(T, E) }
       """
-    And the file "result_gpp.go" contains:
+    And the file "result_gp.go" contains:
       """
-      //gpp:variant (Result[T, E]) Ok(value T)
+      //goplus:variant (Result[T, E]) Ok(value T)
       type Ok[T any, E any] struct {
       	Value T
       }
@@ -78,7 +78,7 @@ Feature: Lowering enum declarations
       """
 
   Scenario: GADT variants pin the interface instance they implement
-    Given a G++ file "expr.gpp":
+    Given a Go+ file "expr.gp":
       """
       package demo
 
@@ -89,20 +89,20 @@ Feature: Lowering enum declarations
       	If(c Expr[bool], t, e Expr[T])
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 0
-    And the file "expr_gpp.go" contains:
+    And the file "expr_gp.go" contains:
       """
-      //gpp:variant (Expr[T]) Lit(v int) Expr[int]
+      //goplus:variant (Expr[T]) Lit(v int) Expr[int]
       type Lit struct {
       	V int
       }
 
       func (Lit) isExpr(int) {}
       """
-    And the file "expr_gpp.go" contains:
+    And the file "expr_gp.go" contains:
       """
-      //gpp:variant (Expr[T]) If(c Expr[bool], t, e Expr[T])
+      //goplus:variant (Expr[T]) If(c Expr[bool], t, e Expr[T])
       type If[T any] struct {
       	C Expr[bool]
       	T Expr[T]
@@ -113,7 +113,7 @@ Feature: Lowering enum declarations
       """
 
   Scenario: GADT field types follow their fixed type parameters
-    Given a G++ file "boxed.gpp":
+    Given a Go+ file "boxed.gp":
       """
       package demo
 
@@ -122,9 +122,9 @@ Feature: Lowering enum declarations
       	Free(v T)
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 0
-    And the file "boxed_gpp.go" contains:
+    And the file "boxed_gp.go" contains:
       """
       type Ints struct {
       	Xs []int
@@ -135,7 +135,7 @@ Feature: Lowering enum declarations
       """
 
   Scenario: Visibility follows the enum and variant names
-    Given a G++ file "vis.gpp":
+    Given a Go+ file "vis.gp":
       """
       package demo
 
@@ -144,19 +144,19 @@ Feature: Lowering enum declarations
       	remote(host string)
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 0
-    And the file "vis_gpp.go" contains:
+    And the file "vis_gp.go" contains:
       """
       type route interface{ isRoute() }
       """
-    And the file "vis_gpp.go" contains:
+    And the file "vis_gp.go" contains:
       """
       type local struct {
       	path string
       }
       """
-    And the file "vis_gpp.go" contains:
+    And the file "vis_gp.go" contains:
       """
       type remote struct {
       	host string
@@ -164,7 +164,7 @@ Feature: Lowering enum declarations
       """
 
   Scenario: A variant name shared by two enums prefixes both lowered structs
-    Given a G++ file "shared.gpp":
+    Given a Go+ file "shared.gp":
       """
       package demo
 
@@ -178,19 +178,19 @@ Feature: Lowering enum declarations
       	None
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 0
-    And the file "shared_gpp.go" contains:
+    And the file "shared_gp.go" contains:
       """
-      //gpp:variant (Option[T]) None
+      //goplus:variant (Option[T]) None
       type OptionNone[T any] struct{}
       """
-    And the file "shared_gpp.go" contains:
+    And the file "shared_gp.go" contains:
       """
-      //gpp:variant (List[T]) None
+      //goplus:variant (List[T]) None
       type ListNone[T any] struct{}
       """
-    And the file "shared_gpp.go" contains:
+    And the file "shared_gp.go" contains:
       """
       type Some[T any] struct {
       """
@@ -202,7 +202,7 @@ Feature: Lowering enum declarations
 
       type Circle struct{ R float64 }
       """
-    And a G++ file "shape.gpp":
+    And a Go+ file "shape.gp":
       """
       package demo
 
@@ -211,25 +211,25 @@ Feature: Lowering enum declarations
       	Point
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "generated name Circle"
     And stderr contains "rename"
 
   Scenario: A zero-variant enum is rejected
-    Given a G++ file "empty.gpp":
+    Given a Go+ file "empty.gp":
       """
       package demo
 
       type Nothing enum {
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "enum Nothing must declare at least one variant"
 
   Scenario: Composite GADT result arguments are supported (v0.6.0)
-    Given a G++ file "shapes.gpp":
+    Given a Go+ file "shapes.gp":
       """
       package demo
 
@@ -238,11 +238,11 @@ Feature: Lowering enum declarations
       	Grounded(s string) Expr[int]
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 0
-    And the file "shapes_gpp.go" contains:
+    And the file "shapes_gp.go" contains:
       """
-      //gpp:variant (Expr[T]) Sliced(v int) Expr[[]T]
+      //goplus:variant (Expr[T]) Sliced(v int) Expr[[]T]
       type Sliced[T any] struct {
       	V int
       }
@@ -251,7 +251,7 @@ Feature: Lowering enum declarations
       """
 
   Scenario: A field typed by an undetermined type parameter is rejected
-    Given a G++ file "bad.gpp":
+    Given a Go+ file "bad.gp":
       """
       package demo
 
@@ -259,12 +259,12 @@ Feature: Lowering enum declarations
       	Bad(v B) P[[]A, []A]
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "type parameter B does not appear in the result type"
 
   Scenario: Enum generation is deterministic and idempotent
-    Given a G++ file "option.gpp":
+    Given a Go+ file "option.gp":
       """
       package demo
 
@@ -273,14 +273,14 @@ Feature: Lowering enum declarations
       	None
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     And I record the generated files
-    And I run gpp with arguments "gen ."
+    And I run goplus with arguments "gen ."
     Then the generated files are unchanged
-    And running gpp with arguments "gen -check ." exits with 0
+    And running goplus with arguments "gen -check ." exits with 0
 
   Scenario: Variant doc comments survive lowering onto the generated structs
-    Given a G++ file "term.gpp":
+    Given a Go+ file "term.gp":
       """
       package demo
 
@@ -294,21 +294,21 @@ Feature: Lowering enum declarations
       	Lit(n int)
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 0
-    And the file "term_gpp.go" contains:
+    And the file "term_gp.go" contains:
       """
       // Var is a bound variable, a de Bruijn index.
       //
-      //gpp:variant (Tm) Var(idx int)
+      //goplus:variant (Tm) Var(idx int)
       type Var struct {
       """
-    And the file "term_gpp.go" contains:
+    And the file "term_gp.go" contains:
       """
       // Lit is a literal.
       //
       // It documents across multiple lines.
       //
-      //gpp:variant (Tm) Lit(n int)
+      //goplus:variant (Tm) Lit(n int)
       type Lit struct {
       """

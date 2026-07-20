@@ -6,13 +6,13 @@ import (
 	"go/token"
 	"strings"
 
-	"goforge.dev/gpp/internal/core"
-	"goforge.dev/gpp/internal/diag"
-	"goforge.dev/gpp/internal/directive"
-	"goforge.dev/gpp/internal/lower"
-	"goforge.dev/gpp/internal/naming"
-	"goforge.dev/gpp/internal/registry"
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/core"
+	"goforge.dev/goplus/internal/diag"
+	"goforge.dev/goplus/internal/directive"
+	"goforge.dev/goplus/internal/lower"
+	"goforge.dev/goplus/internal/naming"
+	"goforge.dev/goplus/internal/registry"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 // enumPlan is the package-wide enum analysis: render-ready specs plus the
@@ -37,12 +37,12 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table, probe domainPro
 		e *syntax.EnumDecl
 	}
 	var all []located
-	shared := map[string]int{} // gpp variant name -> #enums declaring it
+	shared := map[string]int{} // goplus variant name -> #enums declaring it
 	for _, f := range idx.files {
-		if f.gpp == nil {
+		if f.gp == nil {
 			continue
 		}
-		for _, e := range f.gpp.Enums {
+		for _, e := range f.gp.Enums {
 			all = append(all, located{f, e})
 			for _, v := range e.Variants {
 				shared[v.Name.Name]++
@@ -64,7 +64,7 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table, probe domainPro
 		if tp == nil {
 			continue
 		}
-		src := le.f.gpp
+		src := le.f.gp
 		pos, idxSet := 0, map[int]bool{}
 		for _, field := range tp.List {
 			ctext := string(src.Src[src.Offset(field.Type.Pos()):src.Offset(field.Type.End())])
@@ -94,7 +94,7 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table, probe domainPro
 		}
 		alias, base := ctext[:i], ctext[i+1:]
 		path := ""
-		for _, imp := range f.gpp.AST.Imports {
+		for _, imp := range f.gp.AST.Imports {
 			p := strings.Trim(imp.Path.Value, "\"")
 			a := p[strings.LastIndex(p, "/")+1:]
 			if imp.Name != nil && imp.Name.Name != "_" {
@@ -137,7 +137,7 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table, probe domainPro
 			if tagDomains[name] != nil {
 				continue
 			}
-			src := le.f.gpp
+			src := le.f.gp
 			okDomain := true
 			tags := map[string]int{}
 			for _, v := range le.e.Variants {
@@ -169,7 +169,7 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table, probe domainPro
 
 	for _, le := range all {
 		f, e := le.f, le.e
-		src := f.gpp
+		src := f.gp
 		enumName := e.Spec.Name.Name
 		errAt := func(pos token.Pos, format string, args ...any) {
 			diags = append(diags, diag.At(idx.fset.Position(pos), format, args...))
@@ -186,12 +186,12 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table, probe domainPro
 
 		// Partition binders: type parameters survive erasure; `n nat`
 		// binders are value indices that exist only at check time.
-		var tparamNames []string      // ERASED type-parameter names
+		var tparamNames []string // ERASED type-parameter names
 		var tparamConstraints []string
 		var indices []registry.IndexBinder
 		indexNames := map[string]bool{}
 		binderSort := map[string]string{}
-		kindIndex := []bool{} // per ORIGINAL binder position
+		kindIndex := []bool{}  // per ORIGINAL binder position
 		kindSort := []string{} // sort at index positions ("" for type binders)
 		origTParamsSrc := ""
 		if tp := e.Spec.TypeParams; tp != nil {
@@ -236,7 +236,7 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table, probe domainPro
 			}
 			tparamsSrc = strings.Join(kept, ", ")
 		}
-		indexResolver := gppCallResolver(pkgPath, f.gpp.AST)
+		indexResolver := goplusCallResolver(pkgPath, f.gp.AST)
 
 		spec := &lower.EnumSpec{
 			Name:        enumName,
@@ -336,7 +336,7 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table, probe domainPro
 				}
 			}
 
-			vs := lower.EnumVariantSpec{GppName: vName, TypeName: typeName, MarkerArgs: markerArgs}
+			vs := lower.EnumVariantSpec{GoplusName: vName, TypeName: typeName, MarkerArgs: markerArgs}
 			if v.Doc != nil {
 				var db strings.Builder
 				for _, c := range v.Doc.List {
@@ -707,15 +707,15 @@ func decomposeResult(result ast.Expr) (*ast.Ident, []ast.Expr) {
 // any generated file exists.
 func rootDomainEnums(idx *pkgIndex, pkgPath string) []*registry.Enum {
 	type cand struct {
-		e   *syntax.EnumDecl
-		f   *sourceFile
+		e *syntax.EnumDecl
+		f *sourceFile
 	}
 	var cands []cand
 	for _, f := range idx.files {
-		if f.gpp == nil {
+		if f.gp == nil {
 			continue
 		}
-		for _, e := range f.gpp.Enums {
+		for _, e := range f.gp.Enums {
 			if e.Spec.TypeParams == nil {
 				cands = append(cands, cand{e: e, f: f})
 			}
@@ -730,7 +730,7 @@ func rootDomainEnums(idx *pkgIndex, pkgPath string) []*registry.Enum {
 			if names[name] {
 				continue
 			}
-			src := c.f.gpp
+			src := c.f.gp
 			okDomain := true
 			t := map[string]int{}
 			for _, v := range c.e.Variants {

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"goforge.dev/gpp/internal/lower"
-	"goforge.dev/gpp/internal/naming"
+	"goforge.dev/goplus/internal/lower"
+	"goforge.dev/goplus/internal/naming"
 )
 
 // Structural-equality derivation (v0.11.0). Every monomorphic enum
@@ -24,7 +24,7 @@ import (
 // chan-typed content in the reachable spine, fields typed as
 // underivable enums (transitively), fields typed as same-package
 // structs that are not comparable, generic or indexed enums, and
-// `//gpp:derive off`.
+// `//goplus:derive off`.
 
 // eqShape classifies one field type for equality descent.
 type eqShape int
@@ -255,7 +255,7 @@ func renderEquality(spec *lower.EnumSpec, env *eqEnv, eqName, withName, ovName s
 	fmt.Fprintf(&b, "type %s struct {\n", ovName)
 	for i := range spec.Variants {
 		vs := &spec.Variants[i]
-		fmt.Fprintf(&b, "\t%s func(x, y %s) (eq, handled bool)\n", vs.GppName, vs.TypeName)
+		fmt.Fprintf(&b, "\t%s func(x, y %s) (eq, handled bool)\n", vs.GoplusName, vs.TypeName)
 	}
 	b.WriteString("}\n\n")
 
@@ -268,8 +268,8 @@ func renderEquality(spec *lower.EnumSpec, env *eqEnv, eqName, withName, ovName s
 		vs := &spec.Variants[i]
 		fmt.Fprintf(&b, "\tcase %s:\n", vs.TypeName)
 		fmt.Fprintf(&b, "\t\ty, ok := any(b).(%s)\n\t\tif !ok {\n\t\t\treturn false\n\t\t}\n", vs.TypeName)
-		fmt.Fprintf(&b, "\t\tif ov.%s != nil {\n", vs.GppName)
-		fmt.Fprintf(&b, "\t\t\tif eq, handled := ov.%s(x, y); handled {\n\t\t\t\treturn eq\n\t\t\t}\n\t\t}\n", vs.GppName)
+		fmt.Fprintf(&b, "\t\tif ov.%s != nil {\n", vs.GoplusName)
+		fmt.Fprintf(&b, "\t\t\tif eq, handled := ov.%s(x, y); handled {\n\t\t\t\treturn eq\n\t\t\t}\n\t\t}\n", vs.GoplusName)
 		if len(vs.Fields) == 0 {
 			b.WriteString("\t\t_ = y\n")
 		}

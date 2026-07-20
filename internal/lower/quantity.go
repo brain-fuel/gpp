@@ -1,7 +1,7 @@
 package lower
 
 import (
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 // Quantity pass 1 (v0.7.0): prefixes span [QPos, Name.Pos) and are

@@ -3,37 +3,37 @@ Feature: Derived rapid generators
   chosen uniformly, fields generated recursively (sibling enums through
   their own generators, depth-bounded to leaf variants at the bottom).
   Derivation is default-on but EMISSION is demand-driven — law tests
-  that need one, or `//gpp:derive gen` producing a per-package
-  gpp_gen_test.go — so rapid never enters a module's dependencies
+  that need one, or `//goplus:derive gen` producing a per-package
+  goplus_gen_test.go — so rapid never enters a module's dependencies
   uninvited.
 
   Scenario: Opted-in enums emit generators that respect the depth bound
     Given a module "example.com/demo" using rapid for law tests
-    And a G++ file "main.gpp":
+    And a Go+ file "main.gp":
       """
       package main
 
-      //gpp:derive gen
+      //goplus:derive gen
       type Strategy enum {
       	Eager
       	Deferred(where Where, on Trigger)
       	Live
       }
 
-      //gpp:derive gen
+      //goplus:derive gen
       type Where enum {
       	Server
       	Client
       }
 
-      //gpp:derive gen
+      //goplus:derive gen
       type Trigger enum {
       	OnLoad
       	OnVisible
       	OnHover
       }
 
-      //gpp:derive gen
+      //goplus:derive gen
       type List enum {
       	Empty
       	Cons(head int, tail List)
@@ -70,17 +70,17 @@ Feature: Derived rapid generators
       	})
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 0
-    And the file "gpp_gen_test.go" contains:
+    And the file "goplus_gen_test.go" contains:
       """
       func GenStrategy(t *rapid.T) Strategy {
       """
-    And the file "gpp_gen_test.go" contains:
+    And the file "goplus_gen_test.go" contains:
       """
       		return Deferred{Where: genWhereDepth(t, depth-1), On: genTriggerDepth(t, depth-1)}
       """
-    When I run gpp with arguments "test ."
+    When I run goplus with arguments "test ."
     Then the exit code is 0
 
   Scenario: No demand, no rapid — plain enums emit no generator file
@@ -90,7 +90,7 @@ Feature: Derived rapid generators
 
       go 1.24
       """
-    And a G++ file "main.gpp":
+    And a Go+ file "main.gp":
       """
       package main
 
@@ -101,9 +101,9 @@ Feature: Derived rapid generators
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 0
-    And the file "gpp_gen_test.go" does not exist
+    And the file "goplus_gen_test.go" does not exist
 
   Scenario: A generic enum cannot derive a generator
     Given a file "go.mod":
@@ -112,11 +112,11 @@ Feature: Derived rapid generators
 
       go 1.24
       """
-    And a G++ file "main.gpp":
+    And a Go+ file "main.gp":
       """
       package main
 
-      //gpp:derive gen
+      //goplus:derive gen
       type Box[T any] enum {
       	Full(v T)
       	Vacant
@@ -124,6 +124,6 @@ Feature: Derived rapid generators
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "enum Box cannot derive a generator (type parameters, indices, or no leaf variant)"

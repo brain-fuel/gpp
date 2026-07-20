@@ -74,7 +74,7 @@ func walkOblig(t Term, hyps []Fact) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("gpp internal: unknown term %T in obligation check", t)
+	return fmt.Errorf("goplus internal: unknown term %T in obligation check", t)
 }
 
 // condFacts converts a comparison into decider hypotheses. != yields a
@@ -164,7 +164,7 @@ func IndexClash(useTerm, variantTerm string, tagOf func(string) (string, bool)) 
 	}
 	// The variant's binders are its own scope: α-rename them apart so a
 	// caller-side variable that happens to share a name never aliases.
-	vt = renameFree(vt, "gpp·v·")
+	vt = renameFree(vt, "goplus·v·")
 	cv, vv := symbolicValue(ct), symbolicValue(vt)
 	if cv == nil || vv == nil {
 		return false

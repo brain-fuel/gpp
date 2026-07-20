@@ -7,17 +7,17 @@ import (
 	"go/token"
 	"strings"
 
-	"goforge.dev/gpp/internal/core"
+	"goforge.dev/goplus/internal/core"
 )
 
-// Total functions (v0.7.0). A `//gpp:total Name(params…) nat` marker
+// Total functions (v0.7.0). A `//goplus:total Name(params…) nat` marker
 // sits above the erased func in the generated file; the erased Go body
 // IS the definition (pure nat code on ints), so reconstruction
 // re-elaborates it — no body duplication in comments. Defs are keyed
 // canonically "pkgpath.Name" everywhere (Call.Fn, Defs maps, lookups).
 
 // TotalPrefix is the marker directive.
-const TotalPrefix = "//gpp:total"
+const TotalPrefix = "//goplus:total"
 
 // Total is one total function.
 type Total struct {
@@ -91,7 +91,7 @@ func TotalsFromMarkers(pkgPath, filename string, src []byte) ([]*Total, error) {
 	fset := token.NewFileSet()
 	astFile, err := parser.ParseFile(fset, filename, src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
-		return nil, fmt.Errorf("parsing %s for gpp markers: %w", filename, err)
+		return nil, fmt.Errorf("parsing %s for goplus markers: %w", filename, err)
 	}
 	resolve := markerCallResolver(pkgPath, astFile)
 	var out []*Total

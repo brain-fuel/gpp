@@ -1,13 +1,13 @@
 Feature: An expression evaluator in twenty lines
   The showcase: a full arithmetic grammar — precedence, associativity,
   parentheses, whitespace — from Chainl1, Between, and Defer, composed
-  with gpp pipelines. This is the README example.
+  with goplus pipelines. This is the README example.
 
   Background:
-    Given a module "example.com/demo" using the gpp standard library
+    Given a module "example.com/demo" using the goplus standard library
 
   Scenario: Arithmetic with precedence, parens, and errors
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -16,7 +16,7 @@ Feature: An expression evaluator in twenty lines
       	"strconv"
       	"unicode"
 
-      	"goforge.dev/gpp/std/parsec"
+      	"goforge.dev/goplus/std/parsec"
       )
 
       func number() parsec.Parser[int] {
@@ -52,7 +52,7 @@ Feature: An expression evaluator in twenty lines
       	fmt.Println("1+*2" |> eval)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """

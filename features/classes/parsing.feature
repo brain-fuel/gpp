@@ -6,7 +6,7 @@ Feature: Parsing class and instance declarations
   those identifiers keeps its Go meaning.
 
   Scenario: The algebra shape parses
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -55,7 +55,7 @@ Feature: Parsing class and instance declarations
     And instance 1 is named "SliceConcat" for class "Monoid[[]T]"
 
   Scenario: class, instance, and law stay ordinary identifiers in Go code
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -72,7 +72,7 @@ Feature: Parsing class and instance declarations
     Then parsing succeeds with 0 classes and 0 instances
 
   Scenario: An identifier type named class is not claimed without a brace
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -84,7 +84,7 @@ Feature: Parsing class and instance declarations
     Then parsing succeeds with 0 classes and 0 instances
 
   Scenario: A law requires a body
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -97,7 +97,7 @@ Feature: Parsing class and instance declarations
     Then parsing fails with an error containing "a law requires a body"
 
   Scenario: A class cannot be a type alias
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -109,7 +109,7 @@ Feature: Parsing class and instance declarations
     Then parsing fails with an error containing "class declarations cannot be type aliases"
 
   Scenario: An instance head must apply the class
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -121,7 +121,7 @@ Feature: Parsing class and instance declarations
     Then parsing fails with an error containing "an instance names a fully applied class; write Monoid[int]"
 
   Scenario: Instance members require bodies
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 

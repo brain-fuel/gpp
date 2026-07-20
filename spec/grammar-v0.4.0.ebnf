@@ -1,12 +1,12 @@
 (*
-  G++ grammar, v0.4.0 — expressed as a delta over the Go specification and
+  Go+ grammar, v0.4.0 — expressed as a delta over the Go specification and
   spec/grammar-v0.3.0.ebnf. Every production not listed here is exactly the
   Go production; the v0.1.0 MethodDecl, v0.2.0 EnumType/MatchStmt, and
   v0.3.0 PipeExpr/PipeStage extensions are carried forward unchanged.
   ComposeExpr is restated below to admit ">=>".
 
   "?" is not a Go token: the scanner reports it as an illegal character.
-  G++ claims it only as a POSTFIX suffix written immediately after the
+  Go+ claims it only as a POSTFIX suffix written immediately after the
   expression it modifies, with no intervening whitespace, comments, or
   newlines. A spaced or freestanding "?" (e.g. `f() ?`, `a ? b : c`,
   `var ? int`) is not claimed and keeps the stock scanner error.
@@ -16,7 +16,7 @@
   strict superset. Near-misses (">= >", ">=>=", ">=>>") are not claimed.
 
   This file and the Godog feature suite under features/ are together the
-  authoritative specification of G++.
+  authoritative specification of Go+.
 *)
 
 (* --------------------------- Failure suffix ----------------------------- *)
@@ -82,7 +82,7 @@ MatchPattern = (* v0.2.0 Pattern production, verbatim *) .
     literal restriction. No init statements. `else` is REQUIRED and
     follows "}" on the same line; else-if chains allowed. An ExprBlock
     holds exactly one expression (the optional ";" is the automatic
-    newline semicolon). Arm values are full G++ expressions — pipelines,
+    newline semicolon). Arm values are full Go+ expressions — pipelines,
     "?", and nested expression conditionals all nest.
   - `switch`-expr arms have no `fallthrough` and (normatively) require a
     `default` arm; `match`-expr has no `default` (use `case _:`) and is

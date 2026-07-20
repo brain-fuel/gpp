@@ -1,0 +1,53 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Go+",
+  "scopeName": "source.gp",
+  "fileTypes": ["goplus"],
+  "patterns": [
+    { "include": "#goplus-keywords" },
+    { "include": "#goplus-operators" },
+    { "include": "#goplus-quantities" },
+    { "include": "#goplus-directives" },
+    { "include": "source.go" }
+  ],
+  "repository": {
+    "goplus-keywords": {
+      "patterns": [
+        {
+          "comment": "goplus declaration keywords (contextual)",
+          "match": "\\b(enum|match|class|instance|law|total|delegate|nat|mult|refl)\\b",
+          "name": "keyword.control.gp"
+        },
+        {
+          "comment": "Eq proposition type",
+          "match": "\\bEq(?=\\[)",
+          "name": "support.type.gp"
+        }
+      ]
+    },
+    "goplus-operators": {
+      "patterns": [
+        { "match": "\\|>", "name": "keyword.operator.pipeline.gp" },
+        { "match": ">=>", "name": "keyword.operator.kleisli.gp" },
+        { "match": "(?<=[)\\w])\\?", "name": "keyword.operator.try.gp" }
+      ]
+    },
+    "goplus-quantities": {
+      "patterns": [
+        {
+          "comment": "quantity prefixes in parameter lists",
+          "match": "(?<=[(,]\\s*)([01])\\s+(?=[A-Za-z_])",
+          "name": "storage.modifier.quantity.gp"
+        }
+      ]
+    },
+    "goplus-directives": {
+      "patterns": [
+        {
+          "match": "//goplus:\\w+.*$",
+          "name": "comment.line.directive.gp"
+        }
+      ]
+    }
+  }
+}

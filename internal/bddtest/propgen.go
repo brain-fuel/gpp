@@ -9,7 +9,7 @@ import (
 )
 
 // Property-input generators. Everything generated here is valid by
-// construction, so property failures always indicate a gpp defect, not a
+// construction, so property failures always indicate a goplus defect, not a
 // generator defect.
 
 var (
@@ -19,7 +19,7 @@ var (
 )
 
 // plainGoSource generates a small, gofmt-clean, self-contained Go file with
-// no G++ constructs: declarations, comments, and simple bodies.
+// no Go+ constructs: declarations, comments, and simple bodies.
 func plainGoSource(rt *rapid.T) string {
 	var b strings.Builder
 	n := rapid.IntRange(0, 9).Draw(rt, "pkgn")
@@ -52,16 +52,16 @@ func plainGoSource(rt *rapid.T) string {
 	return string(src)
 }
 
-// gppPackage is a generated G++ package as separable declaration blocks,
+// goplusPackage is a generated Go+ package as separable declaration blocks,
 // so properties can permute declaration order.
-type gppPackage struct {
+type goplusPackage struct {
 	Header       string   // package clause + receiver type decl
 	Decls        []string // remaining top-level blocks
 	MethodNames  []string // expected lowered function names
 	VariantNames []string // expected lowered variant struct names
 }
 
-func (p gppPackage) Source(order []int) string {
+func (p goplusPackage) Source(order []int) string {
 	var b strings.Builder
 	b.WriteString(p.Header)
 	if order == nil {
@@ -76,12 +76,12 @@ func (p gppPackage) Source(order []int) string {
 	return b.String()
 }
 
-// gppPackageGen generates a valid G++ package with 1..3 generic methods
+// goplusPackageGen generates a valid Go+ package with 1..3 generic methods
 // whose lowered names are collision-free by construction. The source is
-// hand-formatted (gofmt cannot parse G++), matching gofmt conventions.
-func gppPackageGen(rt *rapid.T) gppPackage {
+// hand-formatted (gofmt cannot parse Go+), matching gofmt conventions.
+func goplusPackageGen(rt *rapid.T) goplusPackage {
 	recv := rapid.SampledFrom(recvNames).Draw(rt, "recv")
-	p := gppPackage{
+	p := goplusPackage{
 		Header: fmt.Sprintf("package prop\n\ntype %s[T any] struct{ items []T }\n\n", recv),
 	}
 

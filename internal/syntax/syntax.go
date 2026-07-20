@@ -1,4 +1,4 @@
-// Package syntax parses .gpp source: Go grammar plus G++'s extensions —
+// Package syntax parses .gp source: Go grammar plus Go+'s extensions —
 // type parameters on methods (v0.1.0), enum declarations and match
 // statements (v0.2.0). It fronts a vendored fork of go/parser (see
 // internal/syntax/parser); the *ast.File it produces is fully stock, with
@@ -11,7 +11,7 @@ import (
 	"go/ast"
 	"go/token"
 
-	"goforge.dev/gpp/internal/syntax/parser"
+	"goforge.dev/goplus/internal/syntax/parser"
 )
 
 // Re-exported extension node types; see internal/syntax/parser/ext.go.
@@ -48,22 +48,22 @@ const (
 	ComposeKleisli = parser.ComposeKleisli
 )
 
-// File is one parsed .gpp file.
+// File is one parsed .gp file.
 type File struct {
-	Path    string
-	Src     []byte
-	Fset    *token.FileSet
-	TokFile *token.File
-	AST     *ast.File // stock AST; enum bodies are BadExpr, matches BadStmt
-	Methods []*GenericMethod
-	Enums   []*EnumDecl  // source order
-	Classes   []*ClassDecl    // source order (v0.5.0)
-	Instances []*InstanceDecl // source order (v0.5.0)
+	Path      string
+	Src       []byte
+	Fset      *token.FileSet
+	TokFile   *token.File
+	AST       *ast.File // stock AST; enum bodies are BadExpr, matches BadStmt
+	Methods   []*GenericMethod
+	Enums     []*EnumDecl      // source order
+	Classes   []*ClassDecl     // source order (v0.5.0)
+	Instances []*InstanceDecl  // source order (v0.5.0)
 	Delegates []*DelegateField // source order (v0.6.0)
 
 	Quantities []*QuantityParam // source order (v0.7.0)
 	Totals     []*TotalFunc     // source order (v0.7.0)
-	Matches []*MatchStmt // pre-order (nested matches follow their parent)
+	Matches    []*MatchStmt     // pre-order (nested matches follow their parent)
 
 	// Pipes and Composes are in creation order (extensions nested in a
 	// head/left operand precede their encloser); resolve placeholders by
@@ -98,7 +98,6 @@ type GenericMethod struct {
 	// LBrack and RBrack are byte offsets in Src of the method's type
 	// parameter brackets.
 	LBrack, RBrack int
-
 }
 
 // Offset converts a token.Pos within f to a byte offset in f.Src.
@@ -250,7 +249,7 @@ func (f *File) OutermostFlow() (pipes []*PipeExpr, composes []*ComposeExpr) {
 	return pipes, composes
 }
 
-// ParseFile parses .gpp source. Genuine syntax errors are returned as a
+// ParseFile parses .gp source. Genuine syntax errors are returned as a
 // scanner.ErrorList.
 func ParseFile(fset *token.FileSet, path string, src []byte) (*File, error) {
 	astFile, ext, err := parser.ParseFileExt(fset, path, src, parser.ParseComments|parser.SkipObjectResolution)
@@ -258,18 +257,18 @@ func ParseFile(fset *token.FileSet, path string, src []byte) (*File, error) {
 		return nil, err
 	}
 	f := &File{
-		Path:      path,
-		Src:       src,
-		Fset:      fset,
-		TokFile:   fset.File(astFile.Pos()),
-		AST:       astFile,
-		Enums:     ext.Enums,
-		Classes:   ext.Classes,
-		Instances: ext.Instances,
-		Delegates: ext.Delegates,
-		Quantities: ext.Quantities,
-		Totals:     ext.Totals,
-		Matches:   ext.Matches,
+		Path:        path,
+		Src:         src,
+		Fset:        fset,
+		TokFile:     fset.File(astFile.Pos()),
+		AST:         astFile,
+		Enums:       ext.Enums,
+		Classes:     ext.Classes,
+		Instances:   ext.Instances,
+		Delegates:   ext.Delegates,
+		Quantities:  ext.Quantities,
+		Totals:      ext.Totals,
+		Matches:     ext.Matches,
 		Pipes:       ext.Pipes,
 		Composes:    ext.Composes,
 		Tries:       ext.Tries,

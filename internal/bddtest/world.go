@@ -1,6 +1,6 @@
 // Package bddtest hosts the Godog step definitions and per-scenario World for
-// the gpp spec suite. The feature files under features/ plus the grammar under
-// spec/ are the authoritative specification of gpp behavior.
+// the goplus spec suite. The feature files under features/ plus the grammar under
+// spec/ are the authoritative specification of goplus behavior.
 package bddtest
 
 import (
@@ -12,7 +12,7 @@ import (
 )
 
 // World is the isolated state of one scenario: a temp directory acting as the
-// user's module, plus the outcome of the last gpp invocation.
+// user's module, plus the outcome of the last goplus invocation.
 type World struct {
 	// T is the suite-level testing.T, needed by property-based steps that
 	// drive pgregory.net/rapid.
@@ -25,15 +25,15 @@ type World struct {
 	Stderr   bytes.Buffer
 	ExitCode int
 
-	// LastGppFile is the most recently written G++ fixture file, the
+	// LastGoplusFile is the most recently written Go+ fixture file, the
 	// implicit subject of frontend steps like "I parse it".
-	LastGppFile string
+	LastGoplusFile string
 
 	origWD string
 }
 
 func newWorld(t *testing.T) (*World, error) {
-	dir, err := os.MkdirTemp("", "gpp-scenario-*")
+	dir, err := os.MkdirTemp("", "goplus-scenario-*")
 	if err != nil {
 		return nil, err
 	}

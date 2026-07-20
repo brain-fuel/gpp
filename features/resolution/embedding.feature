@@ -12,7 +12,7 @@ Feature: Promotion through embedded fields
       """
 
   Scenario: A generic method promoted from an embedded value field
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -41,16 +41,16 @@ Feature: Promotion through embedded fields
       	fmt.Println(w.Map(strconv.Itoa).items)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "[3 4]"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       fmt.Println(Map(w.Stack, strconv.Itoa).items)
       """
 
   Scenario: A pointer-receiver method promoted through a pointer embedded field
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -72,16 +72,16 @@ Feature: Promotion through embedded fields
       	fmt.Println(w.Stack.items)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "[7]"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       Push(w.Stack, 7, func(v int) string { return fmt.Sprint(v) })
       """
 
   Scenario: Deeper nesting still resolves, shallowest first
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -101,16 +101,16 @@ Feature: Promotion through embedded fields
       	fmt.Println(o.Get(func(x int) int { return x * 2 }))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "42"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       fmt.Println(Get(o.Middle.Inner, func(x int) int { return x * 2 }))
       """
 
   Scenario: The same generic method at the same depth is ambiguous
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -132,6 +132,6 @@ Feature: Promotion through embedded fields
       	x.Map(func(v int) int { return v })
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 2
     And stderr contains "ambiguous generic method Map"

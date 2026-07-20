@@ -17,16 +17,16 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"goforge.dev/gpp/internal/core"
-	"goforge.dev/gpp/internal/diag"
-	"goforge.dev/gpp/internal/directive"
-	"goforge.dev/gpp/internal/emit"
-	"goforge.dev/gpp/internal/lower"
-	"goforge.dev/gpp/internal/naming"
-	"goforge.dev/gpp/internal/registry"
-	"goforge.dev/gpp/internal/resolve"
-	"goforge.dev/gpp/internal/sourcemap"
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/core"
+	"goforge.dev/goplus/internal/diag"
+	"goforge.dev/goplus/internal/directive"
+	"goforge.dev/goplus/internal/emit"
+	"goforge.dev/goplus/internal/lower"
+	"goforge.dev/goplus/internal/naming"
+	"goforge.dev/goplus/internal/registry"
+	"goforge.dev/goplus/internal/resolve"
+	"goforge.dev/goplus/internal/sourcemap"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 // Options configures a generation run.
@@ -36,7 +36,7 @@ type Options struct {
 	Check    bool     // verify only: report stale outputs, write nothing
 	Stage    bool     // after writing, git-add changed/deleted outputs
 
-	// Overlay substitutes in-memory contents for on-disk .gpp files
+	// Overlay substitutes in-memory contents for on-disk .gp files
 	// (absolute path → bytes) — the LSP's unsaved buffers.
 	Overlay map[string][]byte
 	// DryRun computes diagnostics and outputs without writing anything
@@ -48,9 +48,9 @@ type Options struct {
 
 // Result reports what a run did (paths relative to Options.Dir when under it).
 type Result struct {
-	Written []string // files written (or deleted orphans, in write mode)
-	Stale   []string // check mode: outputs missing or out of date
-	Orphans []string // generated files whose .gpp source is gone
+	Written []string          // files written (or deleted orphans, in write mode)
+	Stale   []string          // check mode: outputs missing or out of date
+	Orphans []string          // generated files whose .gp source is gone
 	Outputs map[string][]byte // DryRun: would-be generated content
 	Diags   []diag.Diagnostic
 }
@@ -109,8 +109,8 @@ func Run(opts Options) (*Result, error) {
 	totalsByDir := map[string][]*registry.Total{}
 	depsByDir := map[string][]*registry.DepFn{}
 	lawsOutByDir := map[string]string{}
-	gppSources := map[string][]byte{} // output abs path -> .gpp source bytes
-	gppPaths := map[string]string{}   // output abs path -> .gpp path (relative)
+	goplusSources := map[string][]byte{} // output abs path -> .gp source bytes
+	goplusPaths := map[string]string{}   // output abs path -> .gp path (relative)
 	var orphans []string
 
 	// Pre-load every directory once: the parses are reused below, and
@@ -159,10 +159,10 @@ func Run(opts Options) (*Result, error) {
 			depsByDir[dir] = deps
 			lawsOutByDir[dir] = lawsOut
 			for _, f := range idx.files {
-				if f.gpp != nil {
+				if f.gp != nil {
 					out := emit.OutputPath(f.path)
-					gppSources[out] = f.src
-					gppPaths[out] = relTo(opts.Dir, f.path)
+					goplusSources[out] = f.src
+					goplusPaths[out] = relTo(opts.Dir, f.path)
 				}
 			}
 		}
@@ -195,10 +195,10 @@ func Run(opts Options) (*Result, error) {
 		}
 		if len(out.Diags) > 0 {
 			// Resolution diagnostics carry overlay-file positions; remap
-			// them onto the .gpp sources they lower from.
+			// them onto the .gp sources they lower from.
 			maps := map[string]*sourcemap.Map{}
 			for path, text := range out.Texts {
-				maps[path] = sourcemap.Build(gppPaths[path], gppSources[path], text)
+				maps[path] = sourcemap.Build(goplusPaths[path], goplusSources[path], text)
 			}
 			for _, d := range out.Diags {
 				if m, ok := maps[d.Pos.Filename]; ok {
@@ -214,10 +214,10 @@ func Run(opts Options) (*Result, error) {
 		outputs = out.Texts
 
 		// Strict backstop: go/types must accept the final result; its
-		// errors map back to .gpp positions before anything is written.
+		// errors map back to .gp positions before anything is written.
 		maps := map[string]*sourcemap.Map{}
 		for path, text := range outputs {
-			maps[path] = sourcemap.Build(gppPaths[path], gppSources[path], text)
+			maps[path] = sourcemap.Build(goplusPaths[path], goplusSources[path], text)
 		}
 		in.Texts = outputs
 		bdiags, err := resolve.Backstop(in, maps)
@@ -239,7 +239,7 @@ func Run(opts Options) (*Result, error) {
 					continue
 				}
 				skipGens := map[string]bool{}
-				if genFile, ok := outputs[filepath.Join(dir, "gpp_gen_test.go")]; ok {
+				if genFile, ok := outputs[filepath.Join(dir, "goplus_gen_test.go")]; ok {
 					for _, m := range regexp.MustCompile(`func Gen(\w+)\(`).FindAllStringSubmatch(string(genFile), -1) {
 						skipGens[m[1]] = true
 					}
@@ -329,34 +329,34 @@ func loadPatterns(patterns []string) []string {
 	return out
 }
 
-// loadDir parses a directory's .gpp and authored .go files. Returns nil
-// when the directory has no .gpp files.
+// loadDir parses a directory's .gp and authored .go files. Returns nil
+// when the directory has no .gp files.
 func loadDir(dir string, overlay map[string][]byte) (*pkgIndex, []diag.Diagnostic) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, []diag.Diagnostic{diag.Errorf("%s: %v", dir, err)}
 	}
-	var gppNames, goNames []string
+	var goplusNames, goNames []string
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
 		switch {
-		case strings.HasSuffix(e.Name(), ".gpp"):
-			gppNames = append(gppNames, e.Name())
+		case strings.HasSuffix(e.Name(), ".gp"):
+			goplusNames = append(goplusNames, e.Name())
 		case strings.HasSuffix(e.Name(), ".go") && !strings.HasSuffix(e.Name(), "_test.go"):
 			goNames = append(goNames, e.Name())
 		}
 	}
-	if len(gppNames) == 0 {
+	if len(goplusNames) == 0 {
 		return nil, nil
 	}
-	sort.Strings(gppNames)
+	sort.Strings(goplusNames)
 	sort.Strings(goNames)
 
 	idx := &pkgIndex{fset: token.NewFileSet()}
 	var diags []diag.Diagnostic
-	for _, name := range gppNames {
+	for _, name := range goplusNames {
 		path := filepath.Join(dir, name)
 		src, err := readWithOverlay(path, overlay)
 		if err != nil {
@@ -368,7 +368,7 @@ func loadDir(dir string, overlay map[string][]byte) (*pkgIndex, []diag.Diagnosti
 			diags = append(diags, parseDiags(err)...)
 			continue
 		}
-		idx.files = append(idx.files, &sourceFile{path: path, base: name, src: src, ast: f.AST, gpp: f})
+		idx.files = append(idx.files, &sourceFile{path: path, base: name, src: src, ast: f.AST, gp: f})
 	}
 	for _, name := range goNames {
 		path := filepath.Join(dir, name)
@@ -390,7 +390,7 @@ func loadDir(dir string, overlay map[string][]byte) (*pkgIndex, []diag.Diagnosti
 	return idx, diags
 }
 
-// processPackage lowers every .gpp file of one package to output bytes,
+// processPackage lowers every .gp file of one package to output bytes,
 // also returning the package's generic methods and enums for the
 // resolution registry.
 func processPackage(idx *pkgIndex, pkgPath string, probe domainProbeFn) (map[string][]byte, []*registry.Method, []*registry.Enum, []*registry.Class, []*registry.Instance, []*registry.Total, []*registry.DepFn, string, []diag.Diagnostic) {
@@ -422,13 +422,13 @@ func processPackage(idx *pkgIndex, pkgPath string, probe domainProbeFn) (map[str
 	shared := map[string]int{}
 	plainByFile := map[*sourceFile][]plainEnumMethod{}
 	for _, f := range idx.files {
-		if f.gpp == nil {
+		if f.gp == nil {
 			continue
 		}
-		for _, gm := range f.gpp.Methods {
+		for _, gm := range f.gp.Methods {
 			shared[naming.BareName(gm.RecvTypeName, gm.Decl.Name.Name)]++
 		}
-		for _, decl := range f.gpp.AST.Decls {
+		for _, decl := range f.gp.AST.Decls {
 			fd, ok := decl.(*ast.FuncDecl)
 			if !ok || fd.Recv == nil || fd.Type.TypeParams != nil {
 				continue
@@ -463,10 +463,10 @@ func processPackage(idx *pkgIndex, pkgPath string, probe domainProbeFn) (map[str
 	// file is processed so cross-file same-package calls check.
 	totalLocals := map[string]bool{}
 	for _, f := range idx.files {
-		if f.gpp == nil {
+		if f.gp == nil {
 			continue
 		}
-		for _, t := range f.gpp.Totals {
+		for _, t := range f.gp.Totals {
 			totalLocals[pkgPath+"."+t.Decl.Name.Name] = true
 		}
 	}
@@ -478,10 +478,10 @@ func processPackage(idx *pkgIndex, pkgPath string, probe domainProbeFn) (map[str
 	enumMethods := map[*sourceFile][]*syntax.GenericMethod{}
 	var allMethods []*registry.Method
 	for _, f := range idx.files {
-		if f.gpp == nil {
+		if f.gp == nil {
 			continue
 		}
-		for _, d := range f.gpp.Delegates {
+		for _, d := range f.gp.Delegates {
 			for _, n := range d.Field.Names {
 				if n.Name == "_" {
 					diags = append(diags, diag.At(idx.fset.Position(n.Pos()),
@@ -491,13 +491,13 @@ func processPackage(idx *pkgIndex, pkgPath string, probe domainProbeFn) (map[str
 		}
 		// Enum receivers must be values: the lowered receiver type is the
 		// sealed interface.
-		for _, gm := range f.gpp.Methods {
+		for _, gm := range f.gp.Methods {
 			if enumNames[gm.RecvTypeName] && gm.RecvPointer {
 				diags = append(diags, diag.At(idx.fset.Position(gm.Decl.Recv.Pos()),
 					"enum receiver must not be a pointer; %s is an interface after lowering", gm.RecvTypeName))
 			}
 		}
-		methods, errs := registry.MethodsFromFile(pkgPath, f.gpp, tbl, shared)
+		methods, errs := registry.MethodsFromFile(pkgPath, f.gp, tbl, shared)
 		for _, err := range errs {
 			diags = append(diags, diag.Errorf("%s", err))
 		}
@@ -505,7 +505,7 @@ func processPackage(idx *pkgIndex, pkgPath string, probe domainProbeFn) (map[str
 		// MethodsFromFile returns methods in file order, skipping errored
 		// ones; align by (type, method) name.
 		for _, m := range methods {
-			for _, gm := range f.gpp.Methods {
+			for _, gm := range f.gp.Methods {
 				if gm.RecvTypeName == m.RecvTypeName && gm.Decl.Name.Name == m.MethodName {
 					methodNames[gm] = m.FuncName
 				}
@@ -556,14 +556,14 @@ func processPackage(idx *pkgIndex, pkgPath string, probe domainProbeFn) (map[str
 		outputs[p] = c
 	}
 	for _, f := range idx.files {
-		if f.gpp == nil {
+		if f.gp == nil {
 			continue
 		}
 		var edits []lower.Edit
 		needIter := false
-		for _, e := range f.gpp.Enums {
+		for _, e := range f.gp.Enums {
 			if spec, ok := enums.specs[e]; ok {
-				edits = append(edits, lower.EnumEdits(f.gpp, e, spec)...)
+				edits = append(edits, lower.EnumEdits(f.gp, e, spec)...)
 				if spec.TraversalText != "" {
 					needIter = true
 				}
@@ -574,28 +574,28 @@ func processPackage(idx *pkgIndex, pkgPath string, probe domainProbeFn) (map[str
 			// the package clause unless the source already has it (the
 			// sync/atomic discipline — gofmt normalizes the result).
 			hasIter := false
-			for _, imp := range f.gpp.AST.Imports {
+			for _, imp := range f.gp.AST.Imports {
 				if imp.Path.Value == `"iter"` {
 					hasIter = true
 				}
 			}
 			if !hasIter {
-				at := f.gpp.Offset(f.gpp.AST.Name.End())
+				at := f.gp.Offset(f.gp.AST.Name.End())
 				edits = append(edits, lower.Edit{Start: at, End: at, New: "\n\nimport \"iter\""})
 			}
 		}
-		for _, c := range f.gpp.Classes {
-			edits = append(edits, lower.ClassEdits(f.gpp, c)...)
+		for _, c := range f.gp.Classes {
+			edits = append(edits, lower.ClassEdits(f.gp, c)...)
 		}
-		for _, d := range f.gpp.Instances {
-			edits = append(edits, lower.InstanceEdits(f.gpp, d)...)
+		for _, d := range f.gp.Instances {
+			edits = append(edits, lower.InstanceEdits(f.gp, d)...)
 		}
-		for _, d := range f.gpp.Delegates {
-			edits = append(edits, lower.DelegateEdits(f.gpp, d)...)
+		for _, d := range f.gp.Delegates {
+			edits = append(edits, lower.DelegateEdits(f.gp, d)...)
 		}
 		edits = append(edits, eraseOrdinaryIndexUses(f, enums.isIndexed)...)
 		totalDecls := map[*ast.FuncDecl]bool{}
-		for _, t := range f.gpp.Totals {
+		for _, t := range f.gp.Totals {
 			totalDecls[t.Decl] = true
 		}
 		dedits, dfns, ddiags := processDeps(f, pkgPath, totalDecls, enums)
@@ -606,18 +606,18 @@ func processPackage(idx *pkgIndex, pkgPath string, probe domainProbeFn) (map[str
 		edits = append(edits, tedits...)
 		allTotals = append(allTotals, ttotals...)
 		diags = append(diags, tdiags...)
-		hedits, hdiags := lower.NewHoister(f.gpp, len(f.gpp.Matches)).FileEdits()
+		hedits, hdiags := lower.NewHoister(f.gp, len(f.gp.Matches)).FileEdits()
 		diags = append(diags, hdiags...)
 		edits = append(edits, hedits...)
-		for _, gm := range append(append([]*syntax.GenericMethod{}, f.gpp.Methods...), enumMethods[f]...) {
+		for _, gm := range append(append([]*syntax.GenericMethod{}, f.gp.Methods...), enumMethods[f]...) {
 			funcName := methodNames[gm]
 			tparams, err := receiverTParams(idx, gm)
 			if err != nil {
 				diags = append(diags, diag.At(idx.fset.Position(gm.Decl.Pos()), "%v", err))
 				continue
 			}
-			edits = append(edits, lower.Decl(f.gpp, gm, funcName, tparams)...)
-			edits = append(edits, lower.MarkerInsert(f.gpp, gm, markerFor(gm, funcName)))
+			edits = append(edits, lower.Decl(f.gp, gm, funcName, tparams)...)
+			edits = append(edits, lower.MarkerInsert(f.gp, gm, markerFor(gm, funcName)))
 		}
 		if len(diags) > 0 {
 			continue
@@ -640,7 +640,7 @@ func processPackage(idx *pkgIndex, pkgPath string, probe domainProbeFn) (map[str
 	return outputs, allMethods, enums.models, classModels, instModels, allTotals, allDeps, lawsOut, nil
 }
 
-// markerFor renders the //gpp:method marker comment for a lowered method.
+// markerFor renders the //goplus:method marker comment for a lowered method.
 func markerFor(gm *syntax.GenericMethod, funcName string) string {
 	var tparams []string
 	if gm.Decl.Type.TypeParams != nil {
@@ -660,7 +660,7 @@ func markerFor(gm *syntax.GenericMethod, funcName string) string {
 	}.String()
 }
 
-// findOrphans lists generated files in dir whose .gpp source no longer
+// findOrphans lists generated files in dir whose .gp source no longer
 // exists.
 func findOrphans(dir string) []string {
 	entries, err := os.ReadDir(dir)
@@ -670,13 +670,13 @@ func findOrphans(dir string) []string {
 	var orphans []string
 	for _, e := range entries {
 		name := e.Name()
-		gppName := ""
-		if base, ok := strings.CutSuffix(name, "_gpp_test.go"); ok {
-			gppName = base + "_test.gpp"
+		goplusName := ""
+		if base, ok := strings.CutSuffix(name, "_gp_test.go"); ok {
+			goplusName = base + "_test.gp"
 		} else if strings.HasSuffix(name, emit.GeneratedSuffix) {
-			gppName = strings.TrimSuffix(name, emit.GeneratedSuffix) + ".gpp"
+			goplusName = strings.TrimSuffix(name, emit.GeneratedSuffix) + ".gp"
 		}
-		if e.IsDir() || gppName == "" {
+		if e.IsDir() || goplusName == "" {
 			continue
 		}
 		path := filepath.Join(dir, name)
@@ -687,7 +687,7 @@ func findOrphans(dir string) []string {
 		if _, generated := emit.GeneratedFrom(src); !generated {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(dir, gppName)); os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(dir, goplusName)); os.IsNotExist(err) {
 			orphans = append(orphans, path)
 		}
 	}

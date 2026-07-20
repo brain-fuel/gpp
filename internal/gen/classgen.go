@@ -5,10 +5,10 @@ import (
 	"go/token"
 	"strings"
 
-	"goforge.dev/gpp/internal/diag"
-	"goforge.dev/gpp/internal/naming"
-	"goforge.dev/gpp/internal/registry"
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/diag"
+	"goforge.dev/goplus/internal/naming"
+	"goforge.dev/goplus/internal/registry"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 // planClasses validates class and instance declarations before lowering
@@ -27,19 +27,19 @@ func planClasses(idx *pkgIndex, tbl *naming.Table) ([]*registry.Class, []*regist
 	}
 
 	for _, f := range idx.files {
-		if f.gpp == nil {
+		if f.gp == nil {
 			continue
 		}
-		if f.gpp.AST.Doc != nil {
-			for _, c := range f.gpp.AST.Doc.List {
-				if rest, ok := strings.CutPrefix(strings.TrimSpace(c.Text), "//gpp:laws"); ok {
+		if f.gp.AST.Doc != nil {
+			for _, c := range f.gp.AST.Doc.List {
+				if rest, ok := strings.CutPrefix(strings.TrimSpace(c.Text), "//goplus:laws"); ok {
 					if out, found := strings.CutPrefix(strings.TrimSpace(rest), "out="); found {
 						lawsOut = strings.TrimSpace(out)
 					}
 				}
 			}
 		}
-		for _, c := range f.gpp.Classes {
+		for _, c := range f.gp.Classes {
 			name := c.Spec.Name.Name
 			if c.Gen.Lparen.IsValid() || len(c.Gen.Specs) > 1 {
 				errAt(c.Spec.Pos(), "declare each class in its own type declaration (class %s is inside a grouped type block)", name)
@@ -98,13 +98,13 @@ func planClasses(idx *pkgIndex, tbl *naming.Table) ([]*registry.Class, []*regist
 			for _, m := range c.Members {
 				switch {
 				case m.Embed != nil:
-					if ref, ok := embedClassRef(f.gpp, m.Embed); ok {
+					if ref, ok := embedClassRef(f.gp, m.Embed); ok {
 						model.Embeds = append(model.Embeds, ref)
 					} else {
 						errAt(m.Embed.Pos(), "class %s embeds something that is not a class reference", name)
 					}
 				case m.LawPos.IsValid():
-					params := string(f.gpp.Src[f.gpp.Offset(m.Params.Opening)+1 : f.gpp.Offset(m.Params.Closing)])
+					params := string(f.gp.Src[f.gp.Offset(m.Params.Opening)+1 : f.gp.Offset(m.Params.Closing)])
 					model.Laws = append(model.Laws, registry.ClassLaw{Name: m.Name.Name, Params: params})
 				default:
 					model.Ops = append(model.Ops, m.Name.Name)
@@ -116,7 +116,7 @@ func planClasses(idx *pkgIndex, tbl *naming.Table) ([]*registry.Class, []*regist
 			classModels = append(classModels, model)
 		}
 
-		for _, d := range f.gpp.Instances {
+		for _, d := range f.gp.Instances {
 			// Instance names hide behind BadDecls, so the authored-name
 			// sweep misses them; record them here.
 			tbl.AddAuthored(d.Name.Name, idx.fset.Position(d.Name.Pos()).String())
@@ -130,9 +130,9 @@ func planClasses(idx *pkgIndex, tbl *naming.Table) ([]*registry.Class, []*regist
 
 			model := &registry.Instance{Name: d.Name.Name, Generic: d.TParams != nil}
 			if d.TParams != nil {
-				model.TParamsText = string(f.gpp.Src[f.gpp.Offset(d.TParams.Opening)+1 : f.gpp.Offset(d.TParams.Closing)])
+				model.TParamsText = string(f.gp.Src[f.gp.Offset(d.TParams.Opening)+1 : f.gp.Offset(d.TParams.Closing)])
 			}
-			ref, args, ok := instanceClassParts(f.gpp, d.Class)
+			ref, args, ok := instanceClassParts(f.gp, d.Class)
 			if !ok {
 				errAt(d.Class.Pos(), "instance %s does not name a class", d.Name.Name)
 				continue
@@ -140,7 +140,7 @@ func planClasses(idx *pkgIndex, tbl *naming.Table) ([]*registry.Class, []*regist
 			model.Class, model.ClassArgs = ref, args
 			model.LawsMode = lawsDirective(d.Doc)
 			model.SrcPath = f.path
-			model.PkgName = f.gpp.AST.Name.Name
+			model.PkgName = f.gp.AST.Name.Name
 			instModels = append(instModels, model)
 		}
 	}
@@ -228,13 +228,13 @@ func importPathIn(f *syntax.File, alias string) (string, bool) {
 	return "", false
 }
 
-// lawsDirective extracts the raw //gpp:laws value from an instance's doc.
+// lawsDirective extracts the raw //goplus:laws value from an instance's doc.
 func lawsDirective(doc *ast.CommentGroup) string {
 	if doc == nil {
 		return ""
 	}
 	for _, c := range doc.List {
-		if rest, ok := strings.CutPrefix(strings.TrimSpace(c.Text), "//gpp:laws"); ok {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(c.Text), "//goplus:laws"); ok {
 			return strings.TrimSpace(rest)
 		}
 	}

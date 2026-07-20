@@ -74,12 +74,12 @@ type parser struct {
 	// during parsing.
 	nestLev int
 
-	// gpp:begin — extension state
-	ahead    []aheadTok             // raw-token lookahead buffer (see gpp.go)
-	ext      Extensions             // extension constructs (see ext.go)
-	claimedQ []token.Pos            // positions of claimed postfix '?' tokens
-	extBad   map[*ast.BadExpr]bool  // extension placeholders (composite-lit guard)
-	// gpp:end
+	// goplus:begin — extension state
+	ahead    []aheadTok            // raw-token lookahead buffer (see goplus.go)
+	ext      Extensions            // extension constructs (see ext.go)
+	claimedQ []token.Pos           // positions of claimed postfix '?' tokens
+	extBad   map[*ast.BadExpr]bool // extension placeholders (composite-lit guard)
+	// goplus:end
 }
 
 func (p *parser) init(file *token.File, src []byte, mode Mode) {
@@ -160,7 +160,7 @@ func (p *parser) next0() {
 	}
 
 	for {
-		p.pos, p.tok, p.lit = p.rawScan() // gpp: reads the lookahead buffer first
+		p.pos, p.tok, p.lit = p.rawScan() // goplus: reads the lookahead buffer first
 		if p.tok == token.COMMENT {
 			if p.top && strings.HasPrefix(p.lit, "//go:build") {
 				if x, err := constraint.Parse(p.lit); err == nil {
@@ -172,13 +172,13 @@ func (p *parser) next0() {
 			}
 		} else {
 			if p.tok == token.STRING {
-				// gpp:begin — go/internal/scannerhooks is unreachable from
+				// goplus:begin — go/internal/scannerhooks is unreachable from
 				// outside GOROOT; compute the end from the literal text.
 				// Exact except for raw strings containing carriage returns
 				// (which the scanner strips from lit); ast.BasicLit.End()
 				// applies the same fallback when ValueEnd is unset.
 				p.stringEnd = p.pos + token.Pos(len(p.lit))
-				// gpp:end
+				// goplus:end
 			}
 
 			// Found a non-comment; top of file is over.
@@ -736,7 +736,7 @@ func (p *parser) parseFieldDecl() *ast.Field {
 		typ = &ast.BadExpr{From: pos, To: p.pos}
 	}
 
-	// gpp:begin — trailing contextual `delegate` on struct fields (v0.6.0).
+	// goplus:begin — trailing contextual `delegate` on struct fields (v0.6.0).
 	// A bare identifier after a NAMED field's type is invalid Go in every
 	// continuation, so the claim is a strict superset; `x delegate` (a
 	// field of type delegate) and `Store delegate` (a field Store of type
@@ -746,7 +746,7 @@ func (p *parser) parseFieldDecl() *ast.Field {
 		delegatePos = p.pos
 		p.next()
 	}
-	// gpp:end
+	// goplus:end
 
 	var tag *ast.BasicLit
 	if p.tok == token.STRING {
@@ -757,11 +757,11 @@ func (p *parser) parseFieldDecl() *ast.Field {
 	comment := p.expectSemi()
 
 	field := &ast.Field{Doc: doc, Names: names, Type: typ, Tag: tag, Comment: comment}
-	// gpp:begin — register the delegate field (v0.6.0).
+	// goplus:begin — register the delegate field (v0.6.0).
 	if delegatePos.IsValid() {
 		p.ext.Delegates = append(p.ext.Delegates, &DelegateField{Field: field, DelegatePos: delegatePos})
 	}
-	// gpp:end
+	// goplus:end
 	return field
 }
 
@@ -834,7 +834,7 @@ func (p *parser) parseParamDecl(name *ast.Ident, typeSetsOK bool) (f field) {
 	}
 
 	switch p.tok {
-	// gpp:begin — QTT quantity prefixes (v0.7.0). A leading integer
+	// goplus:begin — QTT quantity prefixes (v0.7.0). A leading integer
 	// literal in a parameter declaration is invalid Go (the default arm
 	// below errors), so `0 n int` / `1 f *os.File` is a strict-superset
 	// claim. Only 0 and 1 are quantity literals; anything else errors.
@@ -859,7 +859,7 @@ func (p *parser) parseParamDecl(name *ast.Ident, typeSetsOK bool) (f field) {
 		p.errorExpected(p.pos, "')'")
 		p.advance(exprEnd)
 		return
-	// gpp:end
+	// goplus:end
 	case token.IDENT:
 		// name
 		if name != nil {
@@ -872,7 +872,7 @@ func (p *parser) parseParamDecl(name *ast.Ident, typeSetsOK bool) (f field) {
 		case token.IDENT, token.MUL, token.ARROW, token.FUNC, token.CHAN, token.MAP, token.STRUCT, token.INTERFACE, token.LPAREN:
 			// name type
 			f.typ = p.parseType()
-			// gpp:begin — multiplicity-variable quantities (v0.7.0).
+			// goplus:begin — multiplicity-variable quantities (v0.7.0).
 			// `m x T`: after a name-type pair, another type-start token is
 			// invalid Go, so when the parsed "type" is a bare identifier it
 			// was really a quantity variable followed by the name; the real
@@ -890,7 +890,7 @@ func (p *parser) parseParamDecl(name *ast.Ident, typeSetsOK bool) (f field) {
 					return
 				}
 			}
-			// gpp:end
+			// goplus:end
 
 		case token.LBRACK:
 			// name "[" type1, ..., typeN "]" or name "[" n "]" type
@@ -1421,7 +1421,7 @@ func (p *parser) parseTypeInstance(typ ast.Expr) ast.Expr {
 	p.exprLev++
 	var list []ast.Expr
 	for p.tok != token.RBRACK && p.tok != token.EOF {
-		// gpp:begin — index terms in type instances (v0.7.0). An
+		// goplus:begin — index terms in type instances (v0.7.0). An
 		// instantiation argument may be a nat TERM (`0`, `n+1`,
 		// `Plus(n, m)`); composite-type starts still parse as types.
 		// Valid Go never has terms in type-argument position, and
@@ -1433,7 +1433,7 @@ func (p *parser) parseTypeInstance(typ ast.Expr) ast.Expr {
 		default:
 			list = append(list, p.parseBinaryExpr(nil, token.LowestPrec+1))
 		}
-		// gpp:end
+		// goplus:end
 		if !p.atComma("type argument list", token.RBRACK) {
 			break
 		}
@@ -1560,11 +1560,11 @@ func (p *parser) parseOperand() ast.Expr {
 		defer un(trace(p, "Operand"))
 	}
 
-	// gpp:begin — expression-position if/switch/match (v0.4.0); see gpp.go.
+	// goplus:begin — expression-position if/switch/match (v0.4.0); see goplus.go.
 	if x := p.parseExprFormOperand(); x != nil {
 		return x
 	}
-	// gpp:end
+	// goplus:end
 
 	switch p.tok {
 	case token.IDENT:
@@ -1849,7 +1849,7 @@ func (p *parser) parsePrimaryExpr(x ast.Expr) ast.Expr {
 			x = p.parseIndexOrSliceOrInstance(x)
 		case token.LPAREN:
 			x = p.parseCallOrConversion(x)
-		// gpp:begin — postfix `?` (v0.4.0): an ILLEGAL '?' written
+		// goplus:begin — postfix `?` (v0.4.0): an ILLEGAL '?' written
 		// immediately after the expression is claimed as a try suffix;
 		// spaced or freestanding '?' keeps the stock scanner error.
 		case token.ILLEGAL:
@@ -1858,7 +1858,7 @@ func (p *parser) parsePrimaryExpr(x ast.Expr) ast.Expr {
 				continue
 			}
 			return x
-		// gpp:end
+		// goplus:end
 		case token.LBRACE:
 			// operand may have returned a parenthesized complit
 			// type; accept it but complain if we have a complit
@@ -1867,7 +1867,7 @@ func (p *parser) parsePrimaryExpr(x ast.Expr) ast.Expr {
 			switch t.(type) {
 			case *ast.BadExpr, *ast.Ident, *ast.SelectorExpr:
 				if bad, isBad := t.(*ast.BadExpr); isBad && p.extBad[bad] {
-					return x // gpp: extension placeholder is never a composite-lit type
+					return x // goplus: extension placeholder is never a composite-lit type
 				}
 				if p.exprLev < 0 {
 					return x
@@ -1970,12 +1970,12 @@ func (p *parser) tokPrec() (token.Token, int) {
 	if p.inRhs && tok == token.ASSIGN {
 		tok = token.EQL
 	}
-	// gpp:begin — |> and >>> parse below every Go binary operator, so the
-	// stock precedence ladder returns without consuming them (see gpp.go).
-	if p.gppExtOp() {
+	// goplus:begin — |> and >>> parse below every Go binary operator, so the
+	// stock precedence ladder returns without consuming them (see goplus.go).
+	if p.goplusExtOp() {
 		return tok, token.LowestPrec
 	}
-	// gpp:end
+	// goplus:end
 	return tok, tok.Precedence()
 }
 
@@ -2015,7 +2015,7 @@ func (p *parser) parseExpr() ast.Expr {
 	}
 
 	x := p.parseBinaryExpr(nil, token.LowestPrec+1)
-	return p.parseExtOps(x) // gpp: |> and >>> chains (v0.3.0)
+	return p.parseExtOps(x) // goplus: |> and >>> chains (v0.3.0)
 }
 
 func (p *parser) parseRhs() ast.Expr {
@@ -2559,14 +2559,14 @@ func (p *parser) parseStmt() (s ast.Stmt) {
 		defer un(trace(p, "Statement"))
 	}
 
-	// gpp:begin — contextual `match` statement. Claimed only when the
+	// goplus:begin — contextual `match` statement. Claimed only when the
 	// following token could begin a match subject AND cannot continue a
 	// valid Go statement starting with the identifier `match` (see
-	// matchClaims in gpp.go for the full ambiguity table).
+	// matchClaims in goplus.go for the full ambiguity table).
 	if p.tok == token.IDENT && p.lit == "match" && matchClaims(p.peekNonComment()) {
 		return p.parseMatchStmt()
 	}
-	// gpp:end
+	// goplus:end
 
 	switch p.tok {
 	case token.CONST, token.TYPE, token.VAR:
@@ -2723,7 +2723,7 @@ func (p *parser) parseGenericType(spec *ast.TypeSpec, openPos token.Pos, name0 *
 		spec.Assign = p.pos
 		p.next()
 	}
-	p.parseTypeSpecType(spec) // gpp: was `spec.Type = p.parseType()`
+	p.parseTypeSpecType(spec) // goplus: was `spec.Type = p.parseType()`
 }
 
 func (p *parser) parseTypeSpec(doc *ast.CommentGroup, _ token.Token, _ int) ast.Spec {
@@ -2793,7 +2793,7 @@ func (p *parser) parseTypeSpec(doc *ast.CommentGroup, _ token.Token, _ int) ast.
 			spec.Assign = p.pos
 			p.next()
 		}
-		p.parseTypeSpecType(spec) // gpp: was `spec.Type = p.parseType()`
+		p.parseTypeSpecType(spec) // goplus: was `spec.Type = p.parseType()`
 	}
 
 	spec.Comment = p.expectSemi()
@@ -2920,9 +2920,9 @@ func (p *parser) parseFuncDecl() *ast.FuncDecl {
 	var tparams *ast.FieldList
 	if p.tok == token.LBRACK {
 		tparams = p.parseTypeParameters()
-		// gpp:begin — G++ methods may declare type parameters; keep them.
+		// goplus:begin — Go+ methods may declare type parameters; keep them.
 		// (Upstream errors here and discards tparams.)
-		// gpp:end
+		// goplus:end
 	}
 	params := p.parseParameters(false)
 	results := p.parseParameters(true)
@@ -2964,15 +2964,15 @@ func (p *parser) parseDecl(sync map[token.Token]bool) ast.Decl {
 		defer un(trace(p, "Declaration"))
 	}
 
-	// gpp:begin — instance declarations (v0.5.0). No valid Go top-level
+	// goplus:begin — instance declarations (v0.5.0). No valid Go top-level
 	// declaration begins with an identifier (the default arm below errors),
 	// so this claim is a strict superset.
 	if p.tok == token.IDENT && p.lit == "instance" && p.peekNonComment() == token.IDENT {
 		return p.parseInstanceDecl()
 	}
-	// gpp:end
+	// goplus:end
 
-	// gpp:begin — total functions (v0.7.0). `total` before func is invalid
+	// goplus:begin — total functions (v0.7.0). `total` before func is invalid
 	// Go at the top level (the default arm below errors), so this claim is
 	// a strict superset. `total` stays an ordinary identifier elsewhere.
 	if p.tok == token.IDENT && p.lit == "total" && p.peekNonComment() == token.FUNC {
@@ -2982,7 +2982,7 @@ func (p *parser) parseDecl(sync map[token.Token]bool) ast.Decl {
 		p.ext.Totals = append(p.ext.Totals, &TotalFunc{Decl: fd, TotalPos: totalPos})
 		return fd
 	}
-	// gpp:end
+	// goplus:end
 
 	var f parseSpecFunction
 	switch p.tok {

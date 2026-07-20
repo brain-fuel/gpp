@@ -1,12 +1,12 @@
 package lower
 
 import (
-	"goforge.dev/gpp/internal/directive"
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/directive"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 // Delegation pass 1 (v0.6.0). The trailing `delegate` keyword is stripped
-// (the shadow struct is plain Go) and a //gpp:delegate marker line lands
+// (the shadow struct is plain Go) and a //goplus:delegate marker line lands
 // above the field; resolution generates the forwarders once the field's
 // interface type is known.
 

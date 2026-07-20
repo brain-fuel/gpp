@@ -8,21 +8,21 @@ import (
 	"strconv"
 	"strings"
 
-	"goforge.dev/gpp/internal/directive"
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/directive"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 // Class lowering (v0.5.0). A class becomes a witness struct whose fields
 // are the operations; laws and defaults become methods spliced AROUND
 // their bodies, so body bytes stay in place (tight sourcemap, and nested
-// G++ constructs inside bodies lower independently):
+// Go+ constructs inside bodies lower independently):
 //
-//	type Monoid[T any] class {        //gpp:class Monoid[T any] embeds(Semigroup)
+//	type Monoid[T any] class {        //goplus:class Monoid[T any] embeds(Semigroup)
 //		Semigroup[T]                  type Monoid[T any] struct {
 //		Empty() T                 ⇒       Semigroup[T]        // flattened in pass 2
 //		law LeftId(a T) { … }             Empty func() T
 //	}                                 }
-//	                                  //gpp:law (Monoid[T]) LeftId(a T)
+//	                                  //goplus:law (Monoid[T]) LeftId(a T)
 //	                                  func (m Monoid[T]) LawLeftId(a T) bool { … }
 
 // ClassEdits lowers one class declaration.

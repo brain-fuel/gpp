@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"goforge.dev/gpp/internal/version"
+	"goforge.dev/goplus/internal/version"
 )
 
 // testClient runs Serve over in-process pipes.
@@ -92,7 +92,7 @@ func (tc *testClient) awaitDiagnostics(path string, timeout time.Duration) *publ
 	}
 }
 
-// fixtureModule writes a minimal gpp module and returns its dir.
+// fixtureModule writes a minimal goplus module and returns its dir.
 func fixtureModule(t *testing.T, mainSrc string) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -100,7 +100,7 @@ func fixtureModule(t *testing.T, mainSrc string) (string, string) {
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/lspfix\n\ngo 1.24\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, "main.gpp")
+	path := filepath.Join(dir, "main.gp")
 	if err := os.WriteFile(path, []byte(mainSrc), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestInitializeAndDiagnostics(t *testing.T) {
 
 	resp := tc.request("initialize", initializeParams{RootURI: pathToURI(dir)})
 	out, _ := json.Marshal(resp.Result)
-	if !strings.Contains(string(out), `"name":"gpp"`) {
+	if !strings.Contains(string(out), `"name":"goplus"`) {
 		t.Fatalf("serverInfo missing: %s", out)
 	}
 	if !strings.Contains(string(out), version.Version) {
@@ -152,7 +152,7 @@ func TestInitializeAndDiagnostics(t *testing.T) {
 		t.Fatalf("expected clean, got %v", p.Diagnostics)
 	}
 
-	// Introduce a non-exhaustive match: a gpp diagnostic with position.
+	// Introduce a non-exhaustive match: a goplus diagnostic with position.
 	broken := strings.Replace(goodSrc, "\tcase Square(side):\n\t\treturn side * side\n", "", 1)
 	tc.notifyServer("textDocument/didChange", didChangeParams{
 		TextDocument: textDocumentIdentifier{URI: pathToURI(path)},

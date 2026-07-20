@@ -1,7 +1,7 @@
-// Package lsp is gpp's language server. The transport and the heavy
+// Package lsp is goplus's language server. The transport and the heavy
 // lifting (generation, gopls delegation) are plain Go; the request
-// dispatch is authored in gpp (handlers.gpp) — the server is
-// extensible in the language it serves, and it ships inside the gpp
+// dispatch is authored in goplus (handlers.gp) — the server is
+// extensible in the language it serves, and it ships inside the goplus
 // binary, so its version IS the language version.
 package lsp
 

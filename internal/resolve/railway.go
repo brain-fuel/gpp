@@ -6,7 +6,7 @@ import (
 	"go/types"
 	"strings"
 
-	"goforge.dev/gpp/internal/lower"
+	"goforge.dev/goplus/internal/lower"
 )
 
 // Railway pipes (v0.4.0). When the flowing value of a pipeline is a
@@ -23,7 +23,7 @@ import (
 // Emission is std/result combinator calls; stage extra arguments close
 // over in a function literal, so they evaluate on the Ok path only.
 
-// railwaySeg lifts a __gpp_seg<k> carrier whose head is Result[T, E].
+// railwaySeg lifts a __gp_seg<k> carrier whose head is Result[T, E].
 // It reports whether it handled the carrier (edit, diagnostic, or wait);
 // false falls through to the direct v0.3 collapse.
 func (r *fileResolver) railwaySeg(call *ast.CallExpr, insertAt int, T, E types.Type) bool {
@@ -52,7 +52,7 @@ func (r *fileResolver) railwaySeg(call *ast.CallExpr, insertAt int, T, E types.T
 	return r.railwayLift(call, call.Args[0], T, E, calleeText, fixed, insertAt, sig)
 }
 
-// railwayBare lifts a __gpp_bare_ carrier (function reading) whose head
+// railwayBare lifts a __gp_bare_ carrier (function reading) whose head
 // is Result[T, E].
 func (r *fileResolver) railwayBare(call *ast.CallExpr, name, brackets string, T, E types.Type, sig *types.Signature) bool {
 	var fixed []string
@@ -140,19 +140,19 @@ func (r *fileResolver) railwayLift(call *ast.CallExpr, head ast.Expr, T, E types
 		}
 		args := make([]string, 0, len(fixed)+1)
 		args = append(args, fixed[:insertAt]...)
-		args = append(args, "__gpp_p")
+		args = append(args, "__gp_p")
 		args = append(args, fixed[insertAt:]...)
 		callText := calleeText + "(" + strings.Join(args, ", ") + ")"
 		switch kind {
 		case liftTee:
-			stage = fmt.Sprintf("func(__gpp_p %s) { %s }", tText, callText)
+			stage = fmt.Sprintf("func(__gp_p %s) { %s }", tText, callText)
 		case liftAdapt:
 			uText, uErr := r.typeText(adaptU)
 			if uErr != nil {
 				r.errorf(call.Pos(), "%v", uErr)
 				return true
 			}
-			stage = fmt.Sprintf("func(__gpp_p %s) %s.Result[%s, error] { return %s.Of(%s) }",
+			stage = fmt.Sprintf("func(__gp_p %s) %s.Result[%s, error] { return %s.Of(%s) }",
 				tText, resPkg, uText, resPkg, callText)
 		case liftBind:
 			retText, retErr := r.typeText(bindRes)
@@ -160,14 +160,14 @@ func (r *fileResolver) railwayLift(call *ast.CallExpr, head ast.Expr, T, E types
 				r.errorf(call.Pos(), "%v", retErr)
 				return true
 			}
-			stage = fmt.Sprintf("func(__gpp_p %s) %s { return %s }", tText, retText, callText)
+			stage = fmt.Sprintf("func(__gp_p %s) %s { return %s }", tText, retText, callText)
 		case liftMap:
 			uText, uErr := r.typeText(res.At(0).Type())
 			if uErr != nil {
 				r.errorf(call.Pos(), "%v", uErr)
 				return true
 			}
-			stage = fmt.Sprintf("func(__gpp_p %s) %s { return %s }", tText, uText, callText)
+			stage = fmt.Sprintf("func(__gp_p %s) %s { return %s }", tText, uText, callText)
 		}
 	}
 

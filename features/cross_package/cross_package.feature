@@ -1,7 +1,7 @@
 Feature: Cross-package generic methods
-  The emitted Go is the single distribution artifact: //gpp:method markers
+  The emitted Go is the single distribution artifact: //goplus:method markers
   make it self-describing, so importing packages get method syntax even when
-  the dependency ships only its generated Go — no .gpp sources, no G++
+  the dependency ships only its generated Go — no .gp sources, no Go+
   toolchain.
 
   Scenario: Method syntax across packages in the same module
@@ -11,7 +11,7 @@ Feature: Cross-package generic methods
 
       go 1.24
       """
-    And a G++ file "lib/stack.gpp":
+    And a Go+ file "lib/stack.gp":
       """
       package lib
 
@@ -25,7 +25,7 @@ Feature: Cross-package generic methods
       	return out
       }
       """
-    And a G++ file "main.gpp":
+    And a Go+ file "main.gp":
       """
       package main
 
@@ -41,22 +41,22 @@ Feature: Cross-package generic methods
       	fmt.Println(s.Map(strconv.Itoa).Items)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "[9 10]"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       fmt.Println(lib.Map(s, strconv.Itoa).Items)
       """
 
-  Scenario: A distributed dependency works without its .gpp sources
+  Scenario: A distributed dependency works without its .gp sources
     Given a file "dep/go.mod":
       """
       module example.com/dep
 
       go 1.24
       """
-    And a G++ file "dep/lib/stack.gpp":
+    And a Go+ file "dep/lib/stack.gp":
       """
       package lib
 
@@ -66,12 +66,12 @@ Feature: Cross-package generic methods
       	s.Items = append(s.Items, conv(v))
       }
       """
-    And I run gpp in "dep" with arguments "gen ./..."
-    And the file "dep/lib/stack_gpp.go" contains:
+    And I run goplus in "dep" with arguments "gen ./..."
+    And the file "dep/lib/stack_gp.go" contains:
       """
-      //gpp:method (*Stack[T]) Push[V]
+      //goplus:method (*Stack[T]) Push[V]
       """
-    And the file "dep/lib/stack.gpp" is deleted
+    And the file "dep/lib/stack.gp" is deleted
     And a file "app/go.mod":
       """
       module example.com/app
@@ -82,7 +82,7 @@ Feature: Cross-package generic methods
 
       replace example.com/dep => ../dep
       """
-    And a G++ file "app/main.gpp":
+    And a Go+ file "app/main.gp":
       """
       package main
 
@@ -98,10 +98,10 @@ Feature: Cross-package generic methods
       	fmt.Println(s.Items)
       }
       """
-    When I run gpp in "app" with arguments "run ."
+    When I run goplus in "app" with arguments "run ."
     Then the exit code is 0
     And stdout contains "[333]"
-    And the file "app/main_gpp.go" contains:
+    And the file "app/main_gp.go" contains:
       """
       lib.Push(&s, 3, func(v int) string { return fmt.Sprint(v * 111) })
       """
@@ -113,7 +113,7 @@ Feature: Cross-package generic methods
 
       go 1.24
       """
-    And a G++ file "lib/stack.gpp":
+    And a Go+ file "lib/stack.gp":
       """
       package lib
 
@@ -143,7 +143,7 @@ Feature: Cross-package generic methods
       	fmt.Println(lib.Map(s, strconv.Itoa).Items)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "[5]"
 
@@ -154,7 +154,7 @@ Feature: Cross-package generic methods
 
       go 1.24
       """
-    And a G++ file "algebra/algebra.gpp":
+    And a Go+ file "algebra/algebra.gp":
       """
       package algebra
 
@@ -171,7 +171,7 @@ Feature: Cross-package generic methods
       	return acc
       }
       """
-    And a G++ file "nums/nums.gpp":
+    And a Go+ file "nums/nums.gp":
       """
       package nums
 
@@ -182,7 +182,7 @@ Feature: Cross-package generic methods
       	Empty() int { return 0 }
       }
       """
-    And a G++ file "main.gpp":
+    And a Go+ file "main.gp":
       """
       package main
 
@@ -200,9 +200,9 @@ Feature: Cross-package generic methods
       	fmt.Println(algebra.Accumulate(nums.IntAdd, []int{5, 6}))
       }
       """
-    When I run gpp with arguments "gen ./..."
+    When I run goplus with arguments "gen ./..."
     Then the exit code is 0
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """

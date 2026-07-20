@@ -6,10 +6,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"goforge.dev/gpp/internal/directive"
-	"goforge.dev/gpp/internal/lower"
-	"goforge.dev/gpp/internal/naming"
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/directive"
+	"goforge.dev/goplus/internal/lower"
+	"goforge.dev/goplus/internal/naming"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 // Fold derivation (v0.6.0). Every enum derives, BY DEFAULT, a one-level
@@ -23,12 +23,12 @@ import (
 //
 // The fold function follows the v0.5.1 naming rule (bare Fold when
 // unique — two deriving enums both prefix); the Cases struct is always
-// enum-prefixed. `//gpp:derive off` on the enum suppresses derivation;
+// enum-prefixed. `//goplus:derive off` on the enum suppresses derivation;
 // an enum whose result arguments leave a variant's type parameters
 // undetermined under the identity instantiation silently derives
 // nothing (the same erasure wall as unmatchable arms).
 
-// deriveMode reads the enum's //gpp:derive directive. "off" suppresses
+// deriveMode reads the enum's //goplus:derive directive. "off" suppresses
 // all derivation; "gen" (v0.10.0) additionally opts the enum into a
 // standalone generator test file.
 func deriveMode(e *syntax.EnumDecl) (off bool, genOptIn bool, unknown string) {
@@ -96,7 +96,7 @@ func planFolds(idx *pkgIndex, plan *enumPlan, tbl *naming.Table, shared map[stri
 		model := plan.model[e]
 		off, _, unknown := deriveMode(e)
 		if unknown != "" {
-			errs = append(errs, fmt.Errorf("%s: unknown //gpp:derive argument %q; supported arguments: 'off', 'gen'",
+			errs = append(errs, fmt.Errorf("%s: unknown //goplus:derive argument %q; supported arguments: 'off', 'gen'",
 				idx.fset.Position(e.Spec.Pos()), unknown))
 			continue
 		}
@@ -108,7 +108,7 @@ func planFolds(idx *pkgIndex, plan *enumPlan, tbl *naming.Table, shared map[stri
 		for i := range spec.Variants {
 			vs := &spec.Variants[i]
 			var resultArgs []string
-			if mv, mok := model.Variant(vs.GppName); mok {
+			if mv, mok := model.Variant(vs.GoplusName); mok {
 				resultArgs = mv.ResultArgs
 			}
 			headArgs, ok := foldHeadArgs(spec, vs, resultArgs)
@@ -195,7 +195,7 @@ func renderFold(spec *lower.EnumSpec, foldName, casesName string, cases []foldCa
 			}
 			params = append(params, name+" "+ftype)
 		}
-		fmt.Fprintf(&b, "\t%s func(%s) R\n", c.vs.GppName, strings.Join(params, ", "))
+		fmt.Fprintf(&b, "\t%s func(%s) R\n", c.vs.GoplusName, strings.Join(params, ", "))
 	}
 	b.WriteString("}\n\n")
 
@@ -218,9 +218,9 @@ func renderFold(spec *lower.EnumSpec, foldName, casesName string, cases []foldCa
 		for _, f := range c.vs.Fields {
 			args = append(args, "m."+f.Name)
 		}
-		fmt.Fprintf(&b, "\t\treturn cs.%s(%s)\n", c.vs.GppName, strings.Join(args, ", "))
+		fmt.Fprintf(&b, "\t\treturn cs.%s(%s)\n", c.vs.GoplusName, strings.Join(args, ", "))
 	}
-	fmt.Fprintf(&b, "\tdefault:\n\t\tpanic(\"gpp: impossible enum value in %s\")\n\t}\n}\n", foldName)
+	fmt.Fprintf(&b, "\tdefault:\n\t\tpanic(\"goplus: impossible enum value in %s\")\n\t}\n}\n", foldName)
 	return b.String()
 }
 

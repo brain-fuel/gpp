@@ -9,12 +9,12 @@ import (
 	"sort"
 	"strings"
 
-	"goforge.dev/gpp/internal/directive"
+	"goforge.dev/goplus/internal/directive"
 )
 
 // EnumParam is one constructor parameter of a variant.
 type EnumParam struct {
-	Name      string // parameter name as written in G++, e.g. "value"
+	Name      string // parameter name as written in Go+, e.g. "value"
 	FieldName string // Go struct field name, e.g. "Value"
 	Type      string // ERASED type text, e.g. "T" or "Vec[T]"
 	RawType   string // unerased type text ("Vec[T, n]"); == Type without indices
@@ -27,7 +27,7 @@ type EnumVariant struct {
 	// nil ResultArgs (defaulted result) means all.
 	Occurs []int
 
-	Name       string      // G++ constructor name, e.g. "Some"
+	Name       string      // Go+ constructor name, e.g. "Some"
 	TypeName   string      // lowered Go struct type name, e.g. "Some" or "OptionNone"
 	Params     []EnumParam // nil for a bare variant; types ERASED for existentials
 	HasParams  bool        // distinguishes None from None()
@@ -120,7 +120,7 @@ func (e *Enum) DomainTags() map[string]int {
 // Origin renders a human-readable description for diagnostics.
 func (e *Enum) Origin() string { return "enum " + e.Name }
 
-// Variant finds a variant by its G++ constructor name.
+// Variant finds a variant by its Go+ constructor name.
 func (e *Enum) Variant(name string) (*EnumVariant, bool) {
 	for _, v := range e.Variants {
 		if v.Name == name {
@@ -134,8 +134,8 @@ func (e *Enum) Variant(name string) (*EnumVariant, bool) {
 type enumIndex struct {
 	byName        map[string]*Enum   // pkgPath \x00 enumName
 	byVariantType map[string]*Enum   // pkgPath \x00 loweredTypeName
-	byVariantName map[string][]*Enum // pkgPath \x00 gppVariantName
-	variantNames  map[string]bool    // gpp variant names (candidate prefilter)
+	byVariantName map[string][]*Enum // pkgPath \x00 goplusVariantName
+	variantNames  map[string]bool    // goplus variant names (candidate prefilter)
 }
 
 func (r *Registry) enums() *enumIndex {
@@ -180,7 +180,7 @@ func (r *Registry) EnumByVariantType(pkgPath, typeName string) (*Enum, bool) {
 }
 
 // EnumsByVariantName lists the enums of a package declaring a variant with
-// this G++ name (>1 means bare references are ambiguous without inference).
+// this Go+ name (>1 means bare references are ambiguous without inference).
 func (r *Registry) EnumsByVariantName(pkgPath, name string) []*Enum {
 	return r.enums().byVariantName[pkgPath+"\x00"+name]
 }
@@ -215,7 +215,7 @@ func EnumsFromMarkers(pkgPath, filename string, src []byte) ([]*Enum, error) {
 type ExternDomain func(importPath, name string) (*Enum, bool)
 
 // EnumsFromPackageMarkers scans a dependency PACKAGE's distributed Go
-// sources for //gpp:enum and //gpp:variant markers, reconstructing the
+// sources for //goplus:enum and //goplus:variant markers, reconstructing the
 // enum model with cross-file knowledge: an enum may reference an index
 // domain or another indexed enum declared in a sibling file. Tolerant:
 // damaged markers make an enum invisible, never fatal.
@@ -233,12 +233,12 @@ func EnumsFromPackageMarkers(pkgPath string, files map[string][]byte, extern Ext
 	sort.Strings(names)
 	for _, name := range names {
 		src := files[name]
-		if !strings.Contains(string(src), "//gpp:enum") {
+		if !strings.Contains(string(src), "//goplus:enum") {
 			continue
 		}
 		astFile, err := parser.ParseFile(fset, name, src, parser.ParseComments|parser.SkipObjectResolution)
 		if err != nil {
-			return nil, fmt.Errorf("parsing %s for gpp markers: %w", name, err)
+			return nil, fmt.Errorf("parsing %s for goplus markers: %w", name, err)
 		}
 		parsed = append(parsed, parsedFile{name: name, file: astFile})
 	}
@@ -248,7 +248,7 @@ func EnumsFromPackageMarkers(pkgPath string, files map[string][]byte, extern Ext
 	enums := map[string]*Enum{}
 	var order []string
 
-	// First pass: //gpp:enum markers on interface type decls. Binder
+	// First pass: //goplus:enum markers on interface type decls. Binder
 	// partition happens after ALL markers are gathered — an index-domain
 	// enum (zero tparams) may be declared later in the file than the
 	// enum indexed over it.
@@ -356,7 +356,7 @@ func EnumsFromPackageMarkers(pkgPath string, files map[string][]byte, extern Ext
 		}
 		e.TParams, e.Indices = SplitBinders(rawTParams[name], isDomain)
 	}
-	// Second pass: //gpp:variant markers on struct type decls, paired with
+	// Second pass: //goplus:variant markers on struct type decls, paired with
 	// the decl to learn the lowered type name and Go field names.
 	for _, pf := range parsed {
 		filename := pf.name

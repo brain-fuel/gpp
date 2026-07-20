@@ -11,7 +11,7 @@ import (
 
 	"github.com/cucumber/godog"
 
-	"goforge.dev/gpp/internal/cli"
+	"goforge.dev/goplus/internal/cli"
 )
 
 // InitializeScenario registers every step definition against a fresh World.
@@ -45,11 +45,11 @@ func InitializeScenario(t *testing.T, sc *godog.ScenarioContext) {
 		return ctx, nil
 	})
 
-	sc.Step(`^I run gpp with arguments "([^"]*)"$`, func(args string) error {
-		return w.runGpp(splitArgs(args))
+	sc.Step(`^I run goplus with arguments "([^"]*)"$`, func(args string) error {
+		return w.runGoplus(splitArgs(args))
 	})
-	sc.Step(`^I run gpp in "([^"]+)" with arguments "([^"]*)"$`, func(sub, args string) error {
-		return w.runGppIn(sub, splitArgs(args))
+	sc.Step(`^I run goplus in "([^"]+)" with arguments "([^"]*)"$`, func(sub, args string) error {
+		return w.runGoplusIn(sub, splitArgs(args))
 	})
 	sc.Step(`^the file "([^"]+)" is deleted$`, func(name string) error {
 		return os.Remove(filepath.Join(w.Dir, filepath.FromSlash(name)))
@@ -84,11 +84,11 @@ func InitializeScenario(t *testing.T, sc *godog.ScenarioContext) {
 	sc.Step(`^a file "([^"]+)":$`, func(name string, doc *godog.DocString) error {
 		return w.writeFile(name, doc.Content)
 	})
-	// A go.mod that requires goforge.dev/gpp/std, replaced by this repo's
+	// A go.mod that requires goforge.dev/goplus/std, replaced by this repo's
 	// std directory — the scenario-side equivalent of a released std.
-	sc.Step(`^a module "([^"]+)" using the gpp standard library$`, func(mod string) error {
+	sc.Step(`^a module "([^"]+)" using the goplus standard library$`, func(mod string) error {
 		content := fmt.Sprintf(
-			"module %s\n\ngo 1.24\n\nrequire goforge.dev/gpp/std v0.0.0\n\nreplace goforge.dev/gpp/std => %s\n",
+			"module %s\n\ngo 1.24\n\nrequire goforge.dev/goplus/std v0.0.0\n\nreplace goforge.dev/goplus/std => %s\n",
 			mod, filepath.Join(w.origWD, "std"))
 		return w.writeFile("go.mod", content)
 	})
@@ -107,12 +107,12 @@ func InitializeScenario(t *testing.T, sc *godog.ScenarioContext) {
 	})
 }
 
-// runGpp invokes the CLI in-process with the scenario dir as working directory.
-func (w *World) runGpp(args []string) error {
-	return w.runGppIn(".", args)
+// runGoplus invokes the CLI in-process with the scenario dir as working directory.
+func (w *World) runGoplus(args []string) error {
+	return w.runGoplusIn(".", args)
 }
 
-func (w *World) runGppIn(sub string, args []string) error {
+func (w *World) runGoplusIn(sub string, args []string) error {
 	w.Stdout.Reset()
 	w.Stderr.Reset()
 	if err := os.Chdir(filepath.Join(w.Dir, filepath.FromSlash(sub))); err != nil {

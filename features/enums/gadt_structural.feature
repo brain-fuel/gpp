@@ -19,7 +19,7 @@ Feature: Structural GADT result types
       """
 
   Scenario: Composite result arguments construct, match, and filter
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -50,20 +50,20 @@ Feature: Structural GADT result types
       	_ = m
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
       sliced[1 2]
       wrap
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       	case Wrap[int]:
       """
 
   Scenario: Impossible composite variants make a wildcard unreachable
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -85,12 +85,12 @@ Feature: Structural GADT result types
 
       func main() { fmt.Println(f(Sliced(nil))) }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "unreachable match arm"
 
   Scenario: Cross-position type parameters swap through the result type
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -116,17 +116,17 @@ Feature: Structural GADT result types
       	fmt.Println(read(d))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "s:1x"
     And stdout contains "f:y2"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       	case Flipped[string, int]:
       """
 
   Scenario: A composite variant on a generic scrutinee is unmatchable
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -149,13 +149,13 @@ Feature: Structural GADT result types
 
       func main() { fmt.Println(f(Plain(1))) }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "cannot be matched against"
     And stderr contains "do not determine the variant's type parameters under Go's erasure"
 
   Scenario: The wildcard covers unmatchable composite variants
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -180,7 +180,7 @@ Feature: Structural GADT result types
       	fmt.Println(f[[]int](Wrap[int](Plain(2))))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """

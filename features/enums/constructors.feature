@@ -16,7 +16,7 @@ Feature: Constructing enum values
       """
 
   Scenario: Arguments alone determine the type arguments
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -32,16 +32,16 @@ Feature: Constructing enum values
       	fmt.Println(s.Value + 1)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "42"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       s := Some[int]{Value: 41}
       """
 
   Scenario: The expected type flows through declarations, returns, and elements
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -65,20 +65,20 @@ Feature: Constructing enum values
       	fmt.Println(o == None, len(xs), pick(true))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "true 2 {yes}"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       var o Option[int] = None[int]{}
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       xs := []Option[int]{Some[int]{Value: 1}, None[int]{}}
       """
 
   Scenario: Recursive constructor literals resolve outside-in
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -106,16 +106,16 @@ Feature: Constructing enum values
       	fmt.Println(sum(l))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "6"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       var l List[int] = Cons[int]{Head: 1, Tail: Cons[int]{Head: 2, Tail: Cons[int]{Head: 3, Tail: Nil[int]{}}}}
       """
 
   Scenario: Explicit instantiation and enum-qualified constructors
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -133,16 +133,16 @@ Feature: Constructing enum values
       	fmt.Println(a.Value, b, c.Value)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "hi {} q"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       b := None[int]{}
       """
 
   Scenario: A constructor in function position auto-wraps into a closure
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -161,16 +161,16 @@ Feature: Constructing enum values
       	fmt.Println(apply(7, Some))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "{7}"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       apply(7, func(p0 int) Option[int] { return Some[int]{Value: p0} })
       """
 
   Scenario: Ground GADT constructors need no inference
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -187,20 +187,20 @@ Feature: Constructing enum values
       	fmt.Println(l.V, e != nil)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "7 true"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       l := Lit{V: 7}
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       var e Expr[int] = If[int]{C: true, T: Lit{V: 1}, E: Lit{V: 2}}
       """
 
   Scenario: Inference disambiguates a variant name shared by two enums
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -222,20 +222,20 @@ Feature: Constructing enum values
       	fmt.Println(o, l)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "{} {}"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       var o Option[int] = OptionNone[int]{}
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       var l List[int] = ListNone[int]{}
       """
 
   Scenario: A genuinely ambiguous bare constructor must qualify
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -254,12 +254,12 @@ Feature: Constructing enum values
       	_ = x
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "constructor None is declared by Option and List; qualify it"
 
   Scenario: An uninferable constructor points at the fixes
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -273,7 +273,7 @@ Feature: Constructing enum values
       	_ = x
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "cannot infer the type arguments of constructor None"
 
@@ -284,7 +284,7 @@ Feature: Constructing enum values
 
       go 1.24
       """
-    And a G++ file "dep/lib/option.gpp":
+    And a Go+ file "dep/lib/option.gp":
       """
       package lib
 
@@ -293,8 +293,8 @@ Feature: Constructing enum values
       	None
       }
       """
-    And I run gpp in "dep" with arguments "gen ./..."
-    And the file "dep/lib/option.gpp" is deleted
+    And I run goplus in "dep" with arguments "gen ./..."
+    And the file "dep/lib/option.gp" is deleted
     And a file "app/go.mod":
       """
       module example.com/app
@@ -305,7 +305,7 @@ Feature: Constructing enum values
 
       replace example.com/dep => ../dep
       """
-    And a G++ file "app/main.gpp":
+    And a Go+ file "app/main.gp":
       """
       package main
 
@@ -321,14 +321,14 @@ Feature: Constructing enum values
       	fmt.Println(s.Value, n)
       }
       """
-    When I run gpp in "app" with arguments "run ."
+    When I run goplus in "app" with arguments "run ."
     Then the exit code is 0
     And stdout contains "41 {}"
-    And the file "app/main_gpp.go" contains:
+    And the file "app/main_gp.go" contains:
       """
       s := lib.Some[int]{Value: 41}
       """
-    And the file "app/main_gpp.go" contains:
+    And the file "app/main_gp.go" contains:
       """
       var n lib.Option[string] = lib.None[string]{}
       """

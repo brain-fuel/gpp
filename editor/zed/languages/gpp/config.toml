@@ -1,6 +1,0 @@
-name = "G++"
-grammar = "go"
-path_suffixes = ["gpp"]
-line_comments = ["// "]
-tab_size = 4
-hard_tabs = true

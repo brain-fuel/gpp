@@ -4,10 +4,10 @@ Feature: Streaming input
   identically to a string — split UTF-8 runes included.
 
   Background:
-    Given a module "example.com/demo" using the gpp standard library
+    Given a module "example.com/demo" using the goplus standard library
 
   Scenario: A byte-at-a-time reader parses identically to a string
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -17,7 +17,7 @@ Feature: Streaming input
       	"strconv"
       	"unicode"
 
-      	"goforge.dev/gpp/std/parsec"
+      	"goforge.dev/goplus/std/parsec"
       )
 
       type trickle struct {
@@ -52,6 +52,6 @@ Feature: Streaming input
       	fmt.Println(a, b, a == b)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "10 10 true"

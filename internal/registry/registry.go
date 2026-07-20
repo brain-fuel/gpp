@@ -1,6 +1,6 @@
 // Package registry indexes the generic methods visible to a compilation:
 // those declared in the packages being generated, plus those advertised by
-// dependency packages via //gpp:method markers in their distributed Go.
+// dependency packages via //goplus:method markers in their distributed Go.
 package registry
 
 import (
@@ -11,9 +11,9 @@ import (
 	"sort"
 	"strings"
 
-	"goforge.dev/gpp/internal/directive"
-	"goforge.dev/gpp/internal/naming"
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/directive"
+	"goforge.dev/goplus/internal/naming"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 // Method describes one generic method and its lowered function.
@@ -94,7 +94,7 @@ func (r *Registry) All() []*Method {
 }
 
 // MethodsFromFile computes registry entries (with lowered names) for one
-// parsed .gpp file, recording each name in tbl. shared counts bare
+// parsed .gp file, recording each name in tbl. shared counts bare
 // lowered-name candidates across the whole package (generic methods plus
 // enum methods): unique names stay bare, colliders — including a bare
 // name already taken by any package-scope declaration — fall back to the
@@ -140,18 +140,18 @@ func countTParams(fd *ast.FuncDecl) int {
 	return n
 }
 
-// FromMarkers scans a dependency package's Go sources for //gpp:method
+// FromMarkers scans a dependency package's Go sources for //goplus:method
 // markers and returns the advertised generic methods. Files lacking the
 // marker substring should be pre-filtered by the caller for speed; this
 // function is still correct without pre-filtering.
 func FromMarkers(pkgPath, filename string, src []byte) ([]*Method, error) {
-	if !strings.Contains(string(src), "//gpp:method") {
+	if !strings.Contains(string(src), "//goplus:method") {
 		return nil, nil
 	}
 	fset := token.NewFileSet()
 	astFile, err := parser.ParseFile(fset, filename, src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
-		return nil, fmt.Errorf("parsing %s for gpp markers: %w", filename, err)
+		return nil, fmt.Errorf("parsing %s for goplus markers: %w", filename, err)
 	}
 	var out []*Method
 	for _, decl := range astFile.Decls {

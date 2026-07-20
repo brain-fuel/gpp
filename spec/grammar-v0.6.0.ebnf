@@ -1,9 +1,9 @@
 (*
-  G++ grammar, v0.6.0 — a delta over spec/grammar-v0.5.1.ebnf. Every
+  Go+ grammar, v0.6.0 — a delta over spec/grammar-v0.5.1.ebnf. Every
   production not listed here is unchanged.
 
   This file and the Godog feature suite under features/ are together the
-  authoritative specification of G++.
+  authoritative specification of Go+.
 *)
 
 (* -------------------- Variants: existentials + full GADTs --------------- *)
@@ -48,7 +48,7 @@ VariantDecl = identifier [ TypeParameters ] [ Parameters ] [ Type ] .
 
   The fold function follows the v0.5.1 naming rule (bare `Fold` when
   unique in the package; colliders — including a second deriving enum —
-  all fall back to <Enum>Fold). `//gpp:derive off` on the enum
+  all fall back to <Enum>Fold). `//goplus:derive off` on the enum
   declaration suppresses derivation; an enum whose variant result
   arguments leave a struct type parameter undetermined under the
   identity instantiation derives nothing (same erasure wall as above).

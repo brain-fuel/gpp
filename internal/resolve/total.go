@@ -4,14 +4,14 @@ import (
 	"go/ast"
 	"strings"
 
-	"goforge.dev/gpp/internal/core"
-	"goforge.dev/gpp/internal/registry"
+	"goforge.dev/goplus/internal/core"
+	"goforge.dev/goplus/internal/registry"
 )
 
 // Total functions, resolve side (v0.7.0). Pass 1 elaborated and checked
 // each local total against local knowledge; import-qualified callees
 // deferred existence to here, where the registry has every reachable
-// package's //gpp:total markers. Pure audit: nothing rewrites.
+// package's //goplus:total markers. Pure audit: nothing rewrites.
 
 // totalCandidate audits one marked total function's cross-package calls.
 func (r *fileResolver) totalCandidate(fd *ast.FuncDecl) {
@@ -36,7 +36,7 @@ func (r *fileResolver) totalCandidate(fd *ast.FuncDecl) {
 			return
 		}
 		if _, found := r.reg.LookupTotal(splitKey(key)); !found {
-			r.errorf(fd.Pos(), "total function %s calls %s, which is not a total function (no //gpp:total marker found)",
+			r.errorf(fd.Pos(), "total function %s calls %s, which is not a total function (no //goplus:total marker found)",
 				fd.Name.Name, key)
 		}
 	})

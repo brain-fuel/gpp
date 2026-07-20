@@ -2,7 +2,7 @@ package parser_test
 
 // The vendored fork must behave byte-for-byte like stock go/parser on pure
 // Go source: identical ASTs, identical error lists. This test is the drift
-// detector for toolchain re-vendors and the safety net under every gpp
+// detector for toolchain re-vendors and the safety net under every goplus
 // grammar hook (which may only ever claim syntax that is invalid Go).
 
 import (
@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	forkparser "goforge.dev/gpp/internal/syntax/parser"
+	forkparser "goforge.dev/goplus/internal/syntax/parser"
 )
 
 func corpus(t *testing.T) []string {

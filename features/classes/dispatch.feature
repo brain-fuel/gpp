@@ -16,7 +16,7 @@ Feature: Constraint lowering and implicit instance dispatch
       """
 
   Scenario: The whole algebra dispatches
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -79,7 +79,7 @@ Feature: Constraint lowering and implicit instance dispatch
       	fmt.Println(Accumulate(SliceConcat[int](), [][]int{{7}, {8}}))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -90,7 +90,7 @@ Feature: Constraint lowering and implicit instance dispatch
       true true
       [7 8]
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       func Accumulate[T any](monoid Monoid[T], xs []T) T {
       	acc := monoid.Empty()
@@ -100,17 +100,17 @@ Feature: Constraint lowering and implicit instance dispatch
       	return acc
       }
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       	fmt.Println(Accumulate(IntAdd.AsMonoid(), []int{1, 2, 3}))
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      	w.LeftDiv = func(__gpp_a0 int, __gpp_a1 int) int { return w.DefaultLeftDiv(__gpp_a0, __gpp_a1) }
+      	w.LeftDiv = func(__gp_a0 int, __gp_a1 int) int { return w.DefaultLeftDiv(__gp_a0, __gp_a1) }
       """
 
   Scenario: Constrained functions thread their own dictionaries, upcast as needed
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -147,20 +147,20 @@ Feature: Constraint lowering and implicit instance dispatch
       	fmt.Println([]int{3, 4} |> Total)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
       6
       14
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       		acc = monoid.Combine(acc, Twice(monoid.AsSemigroup(), x))
       """
 
   Scenario: Multiple constraints on one parameter pass multiple witnesses
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -196,12 +196,12 @@ Feature: Constraint lowering and implicit instance dispatch
       	fmt.Println(Describe([]int{1, 2, 3}))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "<6>"
 
   Scenario: Ambiguous instances are a hard error naming the candidates
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -234,12 +234,12 @@ Feature: Constraint lowering and implicit instance dispatch
       	fmt.Println(Accumulate([]int{1, 2, 3}))
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "ambiguous instance for Monoid[int]: candidates IntAdd, IntMul; pass a witness explicitly"
 
   Scenario: The escape hatch resolves ambiguity
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -272,12 +272,12 @@ Feature: Constraint lowering and implicit instance dispatch
       	fmt.Println(Accumulate(IntAdd, []int{1, 2, 3}), Accumulate(IntMul, []int{1, 2, 3}))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "6 6"
 
   Scenario: No instance in scope is a guided error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -300,12 +300,12 @@ Feature: Constraint lowering and implicit instance dispatch
       	fmt.Println(Accumulate([]float64{1, 2}))
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "no instance of Monoid[float64] is in scope for this call; declare one, import a package that provides one, or pass a witness explicitly"
 
   Scenario: An explicit witness of a stronger class upcasts automatically
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -338,10 +338,10 @@ Feature: Constraint lowering and implicit instance dispatch
       	fmt.Println(Squash(IntAdd, 2, 3, 4), Squash(IntMul, 2, 3, 4))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "9 24"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       	fmt.Println(Squash(IntAdd.AsSemigroup(), 2, 3, 4), Squash(IntMul.AsSemigroup(), 2, 3, 4))
       """

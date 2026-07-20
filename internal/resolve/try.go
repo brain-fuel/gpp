@@ -9,25 +9,25 @@ import (
 	"strconv"
 	"strings"
 
-	"goforge.dev/gpp/internal/lower"
+	"goforge.dev/goplus/internal/lower"
 )
 
 // Postfix `?` propagation (v0.4.0). Pass 1 lowers `e?` to the carrier
-// `__gpp_try<N>(e)`; resolution hoists an early-return before the
+// `__gp_try<N>(e)`; resolution hoists an early-return before the
 // enclosing statement once the operand and the enclosing function are
 // typed:
 //
 //	data := os.ReadFile(path)?
-//	⇒ data, __gpp_err0 := os.ReadFile(path)
-//	  if __gpp_err0 != nil {
-//	  	return *new(R1), …, __gpp_err0        // (…, error) enclosing
+//	⇒ data, __gp_err0 := os.ReadFile(path)
+//	  if __gp_err0 != nil {
+//	  	return *new(R1), …, __gp_err0        // (…, error) enclosing
 //	  }
 //
 // A Result-returning enclosing function returns Err instead — via
 // result.Unpack when its error type is exactly `error`, or a variant
 // assertion that preserves the typed error otherwise.
 
-var tryCarrier = regexp.MustCompile(`^__gpp_try(\d+)$`)
+var tryCarrier = regexp.MustCompile(`^__gp_try(\d+)$`)
 
 // operand shapes
 type tryShape int
@@ -46,7 +46,7 @@ const (
 	fnResult                 // Result[U, E2]
 )
 
-// tryCandidate lowers one __gpp_try<N>(op) carrier.
+// tryCandidate lowers one __gp_try<N>(op) carrier.
 func (r *fileResolver) tryCandidate(call *ast.CallExpr) {
 	fn, ok := call.Fun.(*ast.Ident)
 	if !ok {
@@ -168,7 +168,7 @@ func (r *fileResolver) tryCandidate(call *ast.CallExpr) {
 	}
 
 	// The failure branch's return statement.
-	errName := fmt.Sprintf("__gpp_err%d", n)
+	errName := fmt.Sprintf("__gp_err%d", n)
 	failReturn, frOK := r.tryFailReturn(call, encl, enclRets, enclU, enclE, errName)
 	if !frOK {
 		return
@@ -203,7 +203,7 @@ func (r *fileResolver) tryCandidate(call *ast.CallExpr) {
 			opText := r.text(op.Pos(), op.End())
 			var names []string
 			for i := range vals {
-				names = append(names, fmt.Sprintf("__gpp_t%d_%d", n, i))
+				names = append(names, fmt.Sprintf("__gp_t%d_%d", n, i))
 			}
 			var b strings.Builder
 			fmt.Fprintf(&b, "%s, %s := %s\n", strings.Join(names, ", "), errName, opText)
@@ -220,7 +220,7 @@ func (r *fileResolver) tryCandidate(call *ast.CallExpr) {
 
 	opText := r.text(op.Pos(), op.End())
 	at := r.lineStartOff(r.off(anchor.Pos()))
-	valName := fmt.Sprintf("__gpp_t%d", n)
+	valName := fmt.Sprintf("__gp_t%d", n)
 
 	// Value-less operands propagate but produce nothing: only a statement
 	// position can hold them.
@@ -252,9 +252,9 @@ func (r *fileResolver) tryCandidate(call *ast.CallExpr) {
 			r.errorf(op.Pos(), "%v", tErr)
 			return
 		}
-		fmt.Fprintf(&b, "__gpp_r%d := %s\n", n, opText)
-		fmt.Fprintf(&b, "if %s.IsErr(__gpp_r%d) {\n%s\n}\n", resPkg, n, failReturn)
-		fmt.Fprintf(&b, "%s := any(__gpp_r%d).(%s.Ok[%s, %s]).Value", valName, n, resPkg, tText, eText)
+		fmt.Fprintf(&b, "__gp_r%d := %s\n", n, opText)
+		fmt.Fprintf(&b, "if %s.IsErr(__gp_r%d) {\n%s\n}\n", resPkg, n, failReturn)
+		fmt.Fprintf(&b, "%s := any(__gp_r%d).(%s.Ok[%s, %s]).Value", valName, n, resPkg, tText, eText)
 	case shape == tryResult:
 		resPkg, impOK := r.ensureResultImport()
 		if !impOK {
@@ -304,7 +304,7 @@ func (r *fileResolver) tryFailReturn(call *ast.CallExpr, encl fnShape, enclRets 
 		r.errorf(call.Pos(), "%v", eErr)
 		return "", false
 	}
-	n := strings.TrimPrefix(errName, "__gpp_err")
+	n := strings.TrimPrefix(errName, "__gp_err")
 	op := call.Args[0]
 	tv := r.pkg.TypesInfo.Types[op]
 	resT, resE, _ := r.isResult(tv.Type)
@@ -314,7 +314,7 @@ func (r *fileResolver) tryFailReturn(call *ast.CallExpr, encl fnShape, enclRets 
 		return "", false
 	}
 	_ = resE
-	return fmt.Sprintf("return %s.Err[%s, %s]{Err: any(__gpp_r%s).(%s.Err[%s, %s]).Err}",
+	return fmt.Sprintf("return %s.Err[%s, %s]{Err: any(__gp_r%s).(%s.Err[%s, %s]).Err}",
 		resPkg, uText, eText, n, resPkg, tText, eText), true
 }
 
@@ -454,7 +454,7 @@ func (r *fileResolver) requireResultPkg(at token.Pos) bool {
 	for _, imp := range r.file.Imports {
 		if path, err := strconv.Unquote(imp.Path.Value); err == nil && path == resultPkgPath {
 			// Imported but not loadable: the module lacks the std library.
-			r.errorf(at, "the gpp standard library is not available in this module; run: go get goforge.dev/gpp/std@latest")
+			r.errorf(at, "the goplus standard library is not available in this module; run: go get goforge.dev/goplus/std@latest")
 			return false
 		}
 	}
@@ -463,7 +463,7 @@ func (r *fileResolver) requireResultPkg(at token.Pos) bool {
 }
 
 // ensureResultImport returns the local package name for
-// goforge.dev/gpp/std/result, adding the import (one edit per file per
+// goforge.dev/goplus/std/result, adding the import (one edit per file per
 // iteration) when missing.
 func (r *fileResolver) ensureResultImport() (string, bool) {
 	for _, imp := range r.file.Imports {
@@ -484,7 +484,7 @@ func (r *fileResolver) ensureResultImport() (string, bool) {
 	}
 	name := resultPkgName
 	if identNamedInFile(r.file, name) {
-		name = "__gpp_result"
+		name = "__gp_result"
 	}
 	r.resultImportName = name
 	alias := ""

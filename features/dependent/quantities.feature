@@ -15,7 +15,7 @@ Feature: QTT usage checking
       """
 
   Scenario: Balanced linear use and multiplicity polymorphism generate
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -41,21 +41,21 @@ Feature: QTT usage checking
       	Poly(7, func(n int) { fmt.Println(n) })
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
       true
       7
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      //gpp:dep Poly[m mult, T any](m x T, use func(T))
+      //goplus:dep Poly[m mult, T any](m x T, use func(T))
       func Poly[T any](x T, use func(T)) {
       """
 
   Scenario: A 0-parameter cannot be used at runtime
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -65,12 +65,12 @@ Feature: QTT usage checking
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "parameter n has quantity 0: it exists only at check time and cannot be used at runtime"
 
   Scenario: A linear parameter consumed twice is rejected
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -83,12 +83,12 @@ Feature: QTT usage checking
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "linear parameter b is consumed more than once on some path"
 
   Scenario: A linear parameter never consumed is rejected
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -100,12 +100,12 @@ Feature: QTT usage checking
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "linear parameter b is never consumed"
 
   Scenario: Branches must agree on linear consumption
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -119,12 +119,12 @@ Feature: QTT usage checking
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "the branches of an if consume it a different number of times"
 
   Scenario: Linear use inside a loop is rejected
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -138,12 +138,12 @@ Feature: QTT usage checking
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "it is consumed inside a loop, which may run any number of times"
 
   Scenario: An unknown quantity name is rejected
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -153,6 +153,6 @@ Feature: QTT usage checking
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "quantity q of parameter x is not 0, 1, or a declared multiplicity variable ([q mult])"

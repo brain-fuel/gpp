@@ -1,4 +1,4 @@
-// Package core is gpp's dependent type theory (v0.7.0): first-order
+// Package core is goplus's dependent type theory (v0.7.0): first-order
 // terms over nat and enum-tag data, normalization by evaluation,
 // definitional equality, a linear-arithmetic decider, structural
 // termination checking, and the QTT quantity semiring. The core is
@@ -13,10 +13,10 @@ import "fmt"
 type QKind int
 
 const (
-	Q0 QKind = iota // erased: exists only at check time
-	Q1              // linear: consumed exactly once
-	QOmega          // unrestricted
-	QVar            // a multiplicity variable [m mult]
+	Q0     QKind = iota // erased: exists only at check time
+	Q1                  // linear: consumed exactly once
+	QOmega              // unrestricted
+	QVar                // a multiplicity variable [m mult]
 )
 
 // Quantity is a QTT multiplicity: 0, 1, ω, or a variable.

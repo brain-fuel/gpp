@@ -1,4 +1,4 @@
-// Package lower computes and applies the text edits that turn G++ source
+// Package lower computes and applies the text edits that turn Go+ source
 // into Go. Edits operate on original source bytes — the AST and type
 // information decide where to edit, but bytes are the medium, so untouched
 // regions (comments, formatting) pass through losslessly.
@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 // Edit replaces src[Start:End] with New. A zero-width edit (Start == End)

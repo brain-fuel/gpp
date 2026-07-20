@@ -6,7 +6,7 @@ import (
 	"go/types"
 	"strings"
 
-	"goforge.dev/gpp/internal/lower"
+	"goforge.dev/goplus/internal/lower"
 )
 
 // methodValue lowers an instantiated generic method value, e.g.
@@ -16,9 +16,9 @@ import (
 // into a closure over the lowered function with the receiver captured at
 // bind time (matching Go's method value semantics):
 //
-//	f := func(__gpp_recv Stack[int]) func(func(int) string) Stack[string] {
+//	f := func(__gp_recv Stack[int]) func(func(int) string) Stack[string] {
 //	        return func(p0 func(int) string) Stack[string] {
-//	                return StackMap[int, string](__gpp_recv, p0)
+//	                return StackMap[int, string](__gp_recv, p0)
 //	        }
 //	}(s)
 func (r *fileResolver) methodValue(idx ast.Expr, sel *ast.SelectorExpr, typeArgs []ast.Expr, h *hit, tv types.TypeAndValue) {
@@ -148,7 +148,7 @@ func (r *fileResolver) methodValue(idx ast.Expr, sel *ast.SelectorExpr, typeArgs
 	if combined := append(append([]string{}, recvTargs...), explicitTexts...); len(combined) > 0 {
 		allTargs = "[" + strings.Join(combined, ", ") + "]"
 	}
-	call := funcRef + allTargs + "(__gpp_recv"
+	call := funcRef + allTargs + "(__gp_recv"
 	if len(callArgs) > 0 {
 		call += ", " + strings.Join(callArgs, ", ")
 	}
@@ -158,7 +158,7 @@ func (r *fileResolver) methodValue(idx ast.Expr, sel *ast.SelectorExpr, typeArgs
 		body = "return " + call
 	}
 	inner := fmt.Sprintf("func(%s)%s { %s }", strings.Join(paramDecls, ", "), resText, body)
-	outer := fmt.Sprintf("func(__gpp_recv %s) func(%s)%s { return %s }(%s)",
+	outer := fmt.Sprintf("func(__gp_recv %s) func(%s)%s { return %s }(%s)",
 		recvParamType, strings.Join(paramTypes, ", "), resText, inner, recvArg)
 
 	r.edits = append(r.edits, lower.Edit{

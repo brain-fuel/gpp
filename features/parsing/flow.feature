@@ -4,7 +4,7 @@ Feature: Parsing pipelines and composition
   need no grammar at all — `f(1, _)` already parses as Go.
 
   Scenario: A pipeline chain flattens into one expression
-    Given a G++ file "p.gpp":
+    Given a Go+ file "p.gp":
       """
       package p
 
@@ -17,7 +17,7 @@ Feature: Parsing pipelines and composition
     And pipeline 1 has head "xs" and stages "narrow | total"
 
   Scenario: Stage forms: calls, qualified names, placeholders, dot chains
-    Given a G++ file "p.gpp":
+    Given a Go+ file "p.gp":
       """
       package p
 
@@ -32,7 +32,7 @@ Feature: Parsing pipelines and composition
     And pipeline 1 has head "s" and stages "Filter(isEven) | clamp(lo, _, hi) | strconv.Itoa | .Map(double).Len()"
 
   Scenario: Precedence — Go operators bind tighter; >>> binds tighter than |>
-    Given a G++ file "p.gpp":
+    Given a Go+ file "p.gp":
       """
       package p
 
@@ -50,7 +50,7 @@ Feature: Parsing pipelines and composition
     And pipeline 1 has head "a + b" and stages "double"
 
   Scenario: Compositions flatten left-associatively
-    Given a G++ file "p.gpp":
+    Given a Go+ file "p.gp":
       """
       package p
 
@@ -64,7 +64,7 @@ Feature: Parsing pipelines and composition
     And composition 1 has operands "parse | validate | save"
 
   Scenario: Pipelines nest inside stage arguments
-    Given a G++ file "p.gpp":
+    Given a Go+ file "p.gp":
       """
       package p
 
@@ -77,7 +77,7 @@ Feature: Parsing pipelines and composition
     And pipeline 2 has head "y" and stages "double"
 
   Scenario: Pipelines work in control-flow headers and match arms
-    Given a G++ file "p.gpp":
+    Given a Go+ file "p.gp":
       """
       package p
 
@@ -102,7 +102,7 @@ Feature: Parsing pipelines and composition
     And parsing succeeds with 1 match statement
 
   Scenario: A missing stage is a parse error
-    Given a G++ file "p.gpp":
+    Given a Go+ file "p.gp":
       """
       package p
 
@@ -114,7 +114,7 @@ Feature: Parsing pipelines and composition
     Then parsing fails with an error containing "expected operand"
 
   Scenario: A dot segment requires a name
-    Given a G++ file "p.gpp":
+    Given a Go+ file "p.gp":
       """
       package p
 

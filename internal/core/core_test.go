@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-func nat(n int64) Term { return Nat{N: big.NewInt(n)} }
-func v(name string) Term { return Var{Name: name} }
-func plus(a, b Term) Term { return Prim{Op: "+", Args: []Term{a, b}} }
+func nat(n int64) Term     { return Nat{N: big.NewInt(n)} }
+func v(name string) Term   { return Var{Name: name} }
+func plus(a, b Term) Term  { return Prim{Op: "+", Args: []Term{a, b}} }
 func minus(a, b Term) Term { return Prim{Op: "-", Args: []Term{a, b}} }
 func times(a, b Term) Term { return Prim{Op: "*", Args: []Term{a, b}} }
 

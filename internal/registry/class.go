@@ -8,13 +8,13 @@ import (
 	"strconv"
 	"strings"
 
-	"goforge.dev/gpp/internal/directive"
+	"goforge.dev/goplus/internal/directive"
 )
 
 // Typeclass registry (v0.5.0): classes, named instances, and
 // dictionary-taking (constrained) functions, reconstructed locally from
-// side tables and cross-package from //gpp:class / //gpp:law /
-// //gpp:default / //gpp:instance / //gpp:fn markers.
+// side tables and cross-package from //goplus:class / //goplus:law /
+// //goplus:default / //goplus:instance / //goplus:fn markers.
 
 // ClassRef names a class. An empty PkgPath means "same package as the
 // referrer" and is resolved when the declaration is registered.
@@ -58,8 +58,8 @@ type Instance struct {
 	ClassArgs   string // the single type-argument text, e.g. "int" or "[]T"
 	Generic     bool   // lowered to a function
 	TParamsText string // e.g. "T any" for generic instances
-	LawsMode    string // raw //gpp:laws directive value; "" = default
-	SrcPath     string // declaring .gpp path (local instances; lawgen)
+	LawsMode    string // raw //goplus:laws directive value; "" = default
+	SrcPath     string // declaring .gp path (local instances; lawgen)
 	PkgName     string // declaring package's name (local instances; lawgen)
 }
 
@@ -316,13 +316,13 @@ func ParseClassRefText(text, localPkg string) (ref ClassRef, args string, ok boo
 // markers hide a declaration, never fatal.
 func ClassesFromMarkers(pkgPath, filename string, src []byte) (classes []*Class, instances []*Instance, fns []*ConstrainedFn, err error) {
 	text := string(src)
-	if !strings.Contains(text, "//gpp:class") && !strings.Contains(text, "//gpp:instance") && !strings.Contains(text, "//gpp:fn") {
+	if !strings.Contains(text, "//goplus:class") && !strings.Contains(text, "//goplus:instance") && !strings.Contains(text, "//goplus:fn") {
 		return nil, nil, nil, nil
 	}
 	fset := token.NewFileSet()
 	astFile, perr := parser.ParseFile(fset, filename, src, parser.ParseComments|parser.SkipObjectResolution)
 	if perr != nil {
-		return nil, nil, nil, fmt.Errorf("parsing %s for gpp markers: %w", filename, perr)
+		return nil, nil, nil, fmt.Errorf("parsing %s for goplus markers: %w", filename, perr)
 	}
 	byName := map[string]*Class{}
 

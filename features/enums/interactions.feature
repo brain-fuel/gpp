@@ -1,4 +1,4 @@
-Feature: Enums compose with the rest of G++
+Feature: Enums compose with the rest of Go+
   Enums, constructors, match, enum methods, and v0.1.0 generic methods are
   one language: chains mix them freely, promotion reaches enum methods
   through embedded fields, and enums flow through generic containers.
@@ -12,7 +12,7 @@ Feature: Enums compose with the rest of G++
       """
 
   Scenario: Constructor, enum-method, and chained calls interleave
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -49,12 +49,12 @@ Feature: Enums compose with the rest of G++
       	fmt.Println(got)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "41!"
 
   Scenario: Enum methods promote through embedded fields
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -84,12 +84,12 @@ Feature: Enums compose with the rest of G++
       	fmt.Println(w.Label())
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "busy: forging"
 
   Scenario: Enums flow through v0.1.0 generic containers
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -128,6 +128,6 @@ Feature: Enums compose with the rest of G++
       	fmt.Println(total)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "4"

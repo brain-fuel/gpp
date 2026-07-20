@@ -31,11 +31,11 @@ func exprParser() Parser[int] {
 
 func TestExpression(t *testing.T) {
 	rows := map[string]int{
-		"1+2*3":             7,
-		"(1+2)*3":           9,
-		" 10 - 4 - 3 ":      3,
-		"2*(3+4)/2":         7,
-		"((((5))))":         5,
+		"1+2*3":        7,
+		"(1+2)*3":      9,
+		" 10 - 4 - 3 ": 3,
+		"2*(3+4)/2":    7,
+		"((((5))))":    5,
 	}
 	p := exprParser()
 	for src, want := range rows {

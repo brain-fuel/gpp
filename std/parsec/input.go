@@ -1,5 +1,5 @@
 // Streaming input for parsec (plain Go: this is IO machinery; the
-// combinator layer above it is authored in gpp). A Stream buffers an
+// combinator layer above it is authored in goplus). A Stream buffers an
 // io.Reader; an Input is a VALUE — (stream, absolute offset, line,
 // col) — so replies can carry rest-of-input and alternatives can hold
 // older Inputs. The consumed/empty discipline bounds backtracking: the

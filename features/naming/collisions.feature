@@ -6,7 +6,7 @@ Feature: Lowered names collide predictably
   error naming both origins.
 
   Scenario: Two types sharing a method name both prefix
-    Given a G++ file "shared.gpp":
+    Given a Go+ file "shared.gp":
       """
       package shared
 
@@ -25,7 +25,7 @@ Feature: Lowered names collide predictably
     Then the lowered names are "StackMap, RingMap"
 
   Scenario: A bare name taken by an authored declaration prefixes
-    Given a G++ file "stack.gpp":
+    Given a Go+ file "stack.gp":
       """
       package stack
 
@@ -41,7 +41,7 @@ Feature: Lowered names collide predictably
     Then the lowered names are "StackMap"
 
   Scenario: A collision that survives prefixing is an error
-    Given a G++ file "stack.gpp":
+    Given a Go+ file "stack.gp":
       """
       package stack
 
@@ -61,7 +61,7 @@ Feature: Lowered names collide predictably
     And name generation fails with an error containing "rename"
 
   Scenario: Case folding makes unexported twins prefix, then collide
-    Given a G++ file "fold.gpp":
+    Given a Go+ file "fold.gp":
       """
       package fold
 

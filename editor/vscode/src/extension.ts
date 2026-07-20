@@ -9,12 +9,12 @@ let client: LanguageClient | undefined;
 
 export function activate(_context: vscode.ExtensionContext) {
   const command =
-    vscode.workspace.getConfiguration("gpp").get<string>("serverPath") ?? "gpp";
+    vscode.workspace.getConfiguration("goplus").get<string>("serverPath") ?? "goplus";
   const serverOptions: ServerOptions = { command, args: ["lsp"] };
   const clientOptions: LanguageClientOptions = {
-    documentSelector: [{ scheme: "file", language: "gpp" }],
+    documentSelector: [{ scheme: "file", language: "goplus" }],
   };
-  client = new LanguageClient("gpp", "gpp language server", serverOptions, clientOptions);
+  client = new LanguageClient("goplus", "goplus language server", serverOptions, clientOptions);
   client.start();
 }
 

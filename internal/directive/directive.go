@@ -1,6 +1,6 @@
-// Package directive parses and renders gpp directive comments:
+// Package directive parses and renders goplus directive comments:
 //
-//	//gpp:method (Stack[T]) Map[U] — marker above a lowered function
+//	//goplus:method (Stack[T]) Map[U] — marker above a lowered function
 package directive
 
 import (
@@ -9,9 +9,8 @@ import (
 )
 
 const (
-	methodPrefix = "//gpp:method"
+	methodPrefix = "//goplus:method"
 )
-
 
 // Marker is the machine-readable description of a lowered generic method,
 // rendered as a comment directly above the generated function.

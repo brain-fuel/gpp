@@ -13,7 +13,7 @@ Feature: Generic method values
       """
 
   Scenario: Binding and reusing an instantiated method value
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -40,12 +40,12 @@ Feature: Generic method values
       	fmt.Println(a.items, b.items)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "[5 6] [50 60]"
 
   Scenario: The receiver is captured at bind time, like a Go method value
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -65,12 +65,12 @@ Feature: Generic method values
       	fmt.Println(got, tag)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "1 early"
 
   Scenario: A variadic generic method survives as a method value
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -88,12 +88,12 @@ Feature: Generic method values
       	fmt.Println(with("x", 2, 3).items)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "[1 2 3]"
 
   Scenario: An uninstantiated generic method value is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -108,6 +108,6 @@ Feature: Generic method values
       	_ = s.Map
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 2
     And stderr contains "without instantiation"

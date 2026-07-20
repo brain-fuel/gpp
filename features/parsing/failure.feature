@@ -5,7 +5,7 @@ Feature: Parsing typed-failure syntax
   (spec/grammar-v0.4.0.ebnf).
 
   Scenario: Postfix ? on calls, chains, and nested arguments
-    Given a G++ file "p.gpp":
+    Given a Go+ file "p.gp":
       """
       package p
 
@@ -20,7 +20,7 @@ Feature: Parsing typed-failure syntax
     Then parsing succeeds with 4 try suffixes
 
   Scenario: ? on pipeline stages and heads
-    Given a G++ file "p.gpp":
+    Given a Go+ file "p.gp":
       """
       package p
 
@@ -33,7 +33,7 @@ Feature: Parsing typed-failure syntax
     And parsing succeeds with 2 try suffixes
 
   Scenario: Expression if with else-if chains
-    Given a G++ file "p.gpp":
+    Given a Go+ file "p.gp":
       """
       package p
 
@@ -46,7 +46,7 @@ Feature: Parsing typed-failure syntax
     Then parsing succeeds with 1 if expression
 
   Scenario: Expression switch, tagged and tagless
-    Given a G++ file "p.gpp":
+    Given a Go+ file "p.gp":
       """
       package p
 
@@ -67,7 +67,7 @@ Feature: Parsing typed-failure syntax
     Then parsing succeeds with 2 switch expressions
 
   Scenario: Expression match with patterns and binders
-    Given a G++ file "p.gpp":
+    Given a Go+ file "p.gp":
       """
       package p
 
@@ -83,7 +83,7 @@ Feature: Parsing typed-failure syntax
     Then parsing succeeds with 1 match expression
 
   Scenario: Expression forms nest and take suffixes
-    Given a G++ file "p.gpp":
+    Given a Go+ file "p.gp":
       """
       package p
 
@@ -98,7 +98,7 @@ Feature: Parsing typed-failure syntax
     And parsing succeeds with 1 try suffix
 
   Scenario: A missing else is an error
-    Given a G++ file "p.gpp":
+    Given a Go+ file "p.gp":
       """
       package p
 
@@ -111,7 +111,7 @@ Feature: Parsing typed-failure syntax
     Then parsing fails with an error containing "missing else in if expression"
 
   Scenario: Kleisli chains flatten with per-link operators
-    Given a G++ file "p.gpp":
+    Given a Go+ file "p.gp":
       """
       package p
 

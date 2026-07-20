@@ -13,7 +13,7 @@ Feature: Function composition
       """
 
   Scenario: Unary chains compose in data-flow order
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -29,12 +29,12 @@ Feature: Function composition
       	fmt.Println(toStr(10) + "!")
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "40!"
 
   Scenario: The first operand may be n-ary and variadic
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -55,12 +55,12 @@ Feature: Function composition
       	fmt.Println(f(1, 2, 3))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "12"
 
   Scenario: Operands are captured once, at composition time
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -80,12 +80,12 @@ Feature: Function composition
       	fmt.Println("picks:", picks)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "picks: 2"
 
   Scenario: Partials and composition combine
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -99,12 +99,12 @@ Feature: Function composition
       	fmt.Println(f(3))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "40"
 
   Scenario: Constructor operands infer from the incoming type
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -131,12 +131,12 @@ Feature: Function composition
       	fmt.Println(toOpt(21).UnwrapOr(0))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "42"
 
   Scenario: Compositions pipe as segments
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -149,12 +149,12 @@ Feature: Function composition
       	fmt.Println(10 |> double >>> negate)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "-20"
 
   Scenario: Chain type mismatches are branded errors
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -167,12 +167,12 @@ Feature: Function composition
       	_ = f
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "cannot compose: the previous operand returns string but double takes int"
 
   Scenario: Non-function and multi-arity operands are branded errors
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -184,6 +184,6 @@ Feature: Function composition
       	_ = f
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "a non-first operand of >>> must take exactly one parameter and return one result; add is func(a int, b int) int"

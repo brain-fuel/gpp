@@ -15,7 +15,7 @@ Feature: Nested patterns and GADT refinement
       """
 
   Scenario: The canonical typed interpreter
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -49,20 +49,20 @@ Feature: Nested patterns and GADT refinement
       	fmt.Println(Eval(prog))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "42"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       return any(v).(T)
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       return any(Eval(l) + Eval(r)).(T)
       """
 
   Scenario: Nested patterns match structurally, in order
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -93,14 +93,14 @@ Feature: Nested patterns and GADT refinement
       	fmt.Println(describe(Lit(9)))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "const-fold 3"
     And stdout contains "add"
     And stdout contains "lit 9"
 
   Scenario: Nullary constructors nest as patterns
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -126,12 +126,12 @@ Feature: Nested patterns and GADT refinement
       	fmt.Println(last(Cons(1, Cons(2, Cons(3, Nil)))))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "3"
 
   Scenario: Nested non-coverage yields a witness
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -150,12 +150,12 @@ Feature: Nested patterns and GADT refinement
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "non-exhaustive match on Expr: missing Add(Add(_, _), Lit(_)); add the missing cases or a 'case _:' arm"
 
   Scenario: An arm covered by earlier nested arms is unreachable
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -175,7 +175,7 @@ Feature: Nested patterns and GADT refinement
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "unreachable match arm: Add(Lit(_), _) is already covered by the arms above"
 
@@ -186,7 +186,7 @@ Feature: Nested patterns and GADT refinement
 
       go 1.24
       """
-    And a G++ file "main.gpp":
+    And a Go+ file "main.gp":
       """
       package main
 
@@ -211,16 +211,16 @@ Feature: Nested patterns and GADT refinement
       	fmt.Println(eval(Lit(9)))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "9"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       		out = any(v).(T)
       """
 
   Scenario: Refinement composes with match inside generic enum methods
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -246,6 +246,6 @@ Feature: Nested patterns and GADT refinement
       	fmt.Println(o.UnwrapOr(0) + n.UnwrapOr(1))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "42"

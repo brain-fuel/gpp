@@ -10,7 +10,7 @@ import (
 
 	"pgregory.net/rapid"
 
-	"goforge.dev/gpp/std/parsec"
+	"goforge.dev/goplus/std/parsec"
 )
 
 // chunkReader yields at most n bytes per read.

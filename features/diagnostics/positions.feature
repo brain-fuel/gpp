@@ -1,7 +1,7 @@
-Feature: Diagnostics point at .gpp source
-  gpp type-checks the final emitted Go before writing anything (the
-  backstop). Errors — whether in G++ constructs or plain Go regions — are
-  reported at .gpp positions, and a failing gen writes no files.
+Feature: Diagnostics point at .gp source
+  goplus type-checks the final emitted Go before writing anything (the
+  backstop). Errors — whether in Go+ constructs or plain Go regions — are
+  reported at .gp positions, and a failing gen writes no files.
 
   Background:
     Given a file "go.mod":
@@ -11,8 +11,8 @@ Feature: Diagnostics point at .gpp source
       go 1.24
       """
 
-  Scenario: A type error inside a generic method body maps to its .gpp line
-    Given a G++ file "main.gpp":
+  Scenario: A type error inside a generic method body maps to its .gp line
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -26,14 +26,14 @@ Feature: Diagnostics point at .gpp source
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
-    And stderr contains "main.gpp:6:"
+    And stderr contains "main.gp:6:"
     And stderr contains "cannot use"
-    And the file "main_gpp.go" does not exist
+    And the file "main_gp.go" does not exist
 
   Scenario: A type error in a plain-Go passthrough region maps exactly
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -43,13 +43,13 @@ Feature: Diagnostics point at .gpp source
       	fmt.Println(undefinedThing)
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
-    And stderr contains "main.gpp:6:14: undefined: undefinedThing"
-    And the file "main_gpp.go" does not exist
+    And stderr contains "main.gp:6:14: undefined: undefinedThing"
+    And the file "main_gp.go" does not exist
 
   Scenario: Misusing a generic method call surfaces at the call site
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -64,12 +64,12 @@ Feature: Diagnostics point at .gpp source
       	s.Map(42)
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
-    And stderr contains "main.gpp:11:"
+    And stderr contains "main.gp:11:"
 
   Scenario: A misspelled method is an ordinary undefined-selector error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -84,13 +84,13 @@ Feature: Diagnostics point at .gpp source
       	s.Mapp(func(x int) int { return x })
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
-    And stderr contains "main.gpp:11:"
+    And stderr contains "main.gp:11:"
     And stderr contains "Mapp"
 
-  Scenario: Match diagnostics land on .gpp lines
-    Given a G++ file "main.gpp":
+  Scenario: Match diagnostics land on .gp lines
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -106,13 +106,13 @@ Feature: Diagnostics point at .gpp source
       	}
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
-    And stderr contains "main.gpp:9:"
+    And stderr contains "main.gp:9:"
     And stderr contains "non-exhaustive match on Coin: missing Tails"
 
-  Scenario: A type error deep inside a nested match arm maps to its .gpp line
-    Given a G++ file "main.gpp":
+  Scenario: A type error deep inside a nested match arm maps to its .gp line
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -134,13 +134,13 @@ Feature: Diagnostics point at .gpp source
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
-    And stderr contains "main.gpp:11:"
+    And stderr contains "main.gp:11:"
     And stderr contains "cannot use a"
 
   Scenario: Failed inference reads like a Go inference error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -155,7 +155,7 @@ Feature: Diagnostics point at .gpp source
       	_ = s.Empty()
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
-    And stderr contains "main.gpp:11:"
+    And stderr contains "main.gp:11:"
     And stderr contains "cannot infer U"

@@ -7,9 +7,9 @@ import (
 	"regexp"
 	"strings"
 
-	"goforge.dev/gpp/internal/diag"
-	"goforge.dev/gpp/internal/emit"
-	"goforge.dev/gpp/internal/registry"
+	"goforge.dev/goplus/internal/diag"
+	"goforge.dev/goplus/internal/emit"
+	"goforge.dev/goplus/internal/registry"
 )
 
 // Derived rapid generators (v0.10.0). Every MONOMORPHIC enum (no type
@@ -21,7 +21,7 @@ import (
 // rapid built-ins for base types, sibling generators for enum-typed
 // fields (depth-bounded — at depth 0 only LEAF variants, those with no
 // enum-typed fields, remain). Derivation is default-on; EMISSION is
-// demand-driven (law tests that need one, or //gpp:derive gen), so
+// demand-driven (law tests that need one, or //goplus:derive gen), so
 // rapid never enters a module's dependencies uninvited.
 
 // genFieldExpr renders the generator expression for one field type.
@@ -99,7 +99,7 @@ func RenderEnumGen(e *registry.Enum, siblings map[string]bool, qual string) (str
 
 	var b strings.Builder
 	name := e.Name
-	fmt.Fprintf(&b, "// Gen%s draws a random %s (derived by gpp).\n", name, name)
+	fmt.Fprintf(&b, "// Gen%s draws a random %s (derived by goplus).\n", name, name)
 	fmt.Fprintf(&b, "func Gen%s(t *rapid.T) %s%s {\n\treturn gen%sDepth(t, 3)\n}\n\n", name, qual, name, name)
 	fmt.Fprintf(&b, "func gen%sDepth(t *rapid.T, depth int) %s%s {\n", name, qual, name)
 	fmt.Fprintf(&b, "\tn := rapid.IntRange(0, %d).Draw(t, \"variant\")\n", len(e.Variants)-1)
@@ -125,7 +125,7 @@ func RenderEnumGen(e *registry.Enum, siblings map[string]bool, qual string) (str
 		}
 		fmt.Fprintf(&b, "\t\treturn %s%s{%s}\n", qual, v.TypeName, strings.Join(fields, ", "))
 	}
-	fmt.Fprintf(&b, "\t}\n\tpanic(\"gpp: impossible variant index in Gen%s\")\n}\n", name)
+	fmt.Fprintf(&b, "\t}\n\tpanic(\"goplus: impossible variant index in Gen%s\")\n}\n", name)
 	return b.String(), true
 }
 
@@ -141,8 +141,8 @@ func GenSiblings(enums []*registry.Enum) map[string]bool {
 }
 
 // planGenTests emits the opt-in generator test file for a package:
-// enums marked //gpp:derive gen get their Gen<Enum> in a single
-// <dir>/gpp_gen_test.go — a TEST file, so rapid stays a test-only
+// enums marked //goplus:derive gen get their Gen<Enum> in a single
+// <dir>/goplus_gen_test.go — a TEST file, so rapid stays a test-only
 // concern and only for packages that asked.
 func planGenTests(idx *pkgIndex, plan *enumPlan, pkgPath, dir string) (map[string][]byte, []diag.Diagnostic) {
 	byName := map[string]*registry.Enum{}
@@ -212,7 +212,7 @@ func planGenTests(idx *pkgIndex, plan *enumPlan, pkgPath, dir string) (map[strin
 	if err != nil {
 		return nil, []diag.Diagnostic{diag.Errorf("internal error: formatting generators for %s: %v", pkgPath, err)}
 	}
-	return map[string][]byte{filepath.Join(dir, "gpp_gen_test.go"): formatted}, nil
+	return map[string][]byte{filepath.Join(dir, "goplus_gen_test.go"): formatted}, nil
 }
 
 // indexPkgName reads the package name from any parsed file.

@@ -9,23 +9,23 @@ import (
 	"sort"
 	"strings"
 
-	"goforge.dev/gpp/internal/diag"
-	"goforge.dev/gpp/internal/emit"
-	"goforge.dev/gpp/internal/registry"
+	"goforge.dev/goplus/internal/diag"
+	"goforge.dev/goplus/internal/emit"
+	"goforge.dev/goplus/internal/registry"
 )
 
 // Law-test generation (v0.5.0). DEFAULT-ON: every instance whose class
 // closure declares laws and whose type argument is concrete gets a
-// generated <file>_gpp_laws_test.go with rapid properties exercising
-// every inherited law (through the upcasts). Knobs, via //gpp:laws on
+// generated <file>_gp_laws_test.go with rapid properties exercising
+// every inherited law (through the upcasts). Knobs, via //goplus:laws on
 // the instance: `off`; explicit instantiations for generic instances
 // (`[int] [string]`); `gen=Name` for a custom rapid generator. A
-// package-level `//gpp:laws out=<reldir>` (on the package clause doc)
+// package-level `//goplus:laws out=<reldir>` (on the package clause doc)
 // emits an EXTERNAL test package instead — the std zero-dependency
 // mechanism.
 
 // LawsTestSuffix names generated law-test files.
-const LawsTestSuffix = "_gpp_laws_test.go"
+const LawsTestSuffix = "_gp_laws_test.go"
 
 // planLawTests renders one package's law tests into the outputs map.
 func planLawTests(reg *registry.Registry, pkgPath, dir, outRel string, instances []*registry.Instance, skipGens map[string]bool) (map[string][]byte, []diag.Diagnostic) {
@@ -50,10 +50,10 @@ func planLawTests(reg *registry.Registry, pkgPath, dir, outRel string, instances
 			continue
 		}
 		if inst.Generic && len(mode.instantiations) == 0 {
-			continue // generic instances opt in with //gpp:laws [T...]
+			continue // generic instances opt in with //goplus:laws [T...]
 		}
 		if outRel != "" && !inst.Exported() {
-			diags = append(diags, diag.Errorf("%s: instance %s is unexported but law tests are routed out of the package (//gpp:laws out=%s); export it or mark it //gpp:laws off",
+			diags = append(diags, diag.Errorf("%s: instance %s is unexported but law tests are routed out of the package (//goplus:laws out=%s); export it or mark it //goplus:laws off",
 				inst.SrcPath, inst.Name, outRel))
 			continue
 		}
@@ -66,7 +66,7 @@ func planLawTests(reg *registry.Registry, pkgPath, dir, outRel string, instances
 	out := map[string][]byte{}
 	sort.Strings(files)
 	for _, srcPath := range files {
-		base := strings.TrimSuffix(filepath.Base(srcPath), ".gpp")
+		base := strings.TrimSuffix(filepath.Base(srcPath), ".gp")
 		var path, pkgName, qual string
 		var extraImport string
 		declPkgName := byFile[srcPath][0].inst.PkgName
@@ -81,7 +81,7 @@ func planLawTests(reg *registry.Registry, pkgPath, dir, outRel string, instances
 		}
 
 		var b strings.Builder
-		b.WriteString(emit.Header(base + ".gpp"))
+		b.WriteString(emit.Header(base + ".gp"))
 		fmt.Fprintf(&b, "package %s\n\n", pkgName)
 		fmt.Fprintf(&b, "import (\n\t\"testing\"\n%s\n\t\"pgregory.net/rapid\"\n)\n", extraImport)
 
@@ -261,7 +261,7 @@ func firstWord(s string) string {
 }
 
 // findLawOrphans lists generated law-test files no longer produced (laws
-// switched off, instances removed, or the source .gpp gone).
+// switched off, instances removed, or the source .gp gone).
 func findLawOrphans(dirs []string, lawsOutByDir map[string]string, outputs map[string][]byte) []string {
 	var orphans []string
 	seen := map[string]bool{}

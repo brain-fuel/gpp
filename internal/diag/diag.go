@@ -1,4 +1,4 @@
-// Package diag defines gpp's user-facing diagnostics.
+// Package diag defines goplus's user-facing diagnostics.
 package diag
 
 import (
@@ -8,7 +8,7 @@ import (
 	"sort"
 )
 
-// Diagnostic is one user-facing error, positioned in .gpp source when
+// Diagnostic is one user-facing error, positioned in .gp source when
 // attributable.
 type Diagnostic struct {
 	Pos token.Position // zero value when the diagnostic has no position

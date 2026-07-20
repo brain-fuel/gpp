@@ -13,7 +13,7 @@ Feature: Match statements
       """
 
   Scenario: The canonical Option.Map
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -42,24 +42,24 @@ Feature: Match statements
       	fmt.Println(o.Map(strconv.Itoa), n.Map(strconv.Itoa))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "{41} {}"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      	switch __gpp_m0 := any(o).(type) {
+      	switch __gp_m0 := any(o).(type) {
       	case Some[T]:
-      		v := __gpp_m0.Value
+      		v := __gp_m0.Value
       		return Some[U]{Value: f(v)}
       	case None[T]:
       		return None[U]{}
       	default:
-      		panic("gpp: impossible enum value in match")
+      		panic("goplus: impossible enum value in match")
       	}
       """
 
   Scenario: Binders, field wildcards, and value semantics
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -90,14 +90,14 @@ Feature: Match statements
       	fmt.Println(describe(Point))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "circle 2"
     And stdout contains "rect 3 of 4"
     And stdout contains "point"
 
   Scenario: The wildcard arm becomes the default clause
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -121,12 +121,12 @@ Feature: Match statements
       	fmt.Println(kind)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "other"
 
   Scenario: Matching a cross-package enum by qualified patterns
-    Given a G++ file "lib/shape.gpp":
+    Given a Go+ file "lib/shape.gp":
       """
       package lib
 
@@ -135,7 +135,7 @@ Feature: Match statements
       	Point
       }
       """
-    And a G++ file "main.gpp":
+    And a Go+ file "main.gp":
       """
       package main
 
@@ -155,12 +155,12 @@ Feature: Match statements
       	}
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "r = 3"
 
   Scenario: Matches nest inside arm bodies
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -187,12 +187,12 @@ Feature: Match statements
       	}
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "HT"
 
   Scenario: A non-enum scrutinee is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -207,12 +207,12 @@ Feature: Match statements
       	}
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "match requires an enum-typed scrutinee; x has type int"
 
   Scenario: A bare break inside an arm is rejected
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -230,12 +230,12 @@ Feature: Match statements
       	}
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "break is not supported directly inside a match arm"
 
   Scenario: A multi-pattern arm unions constructors
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -263,7 +263,7 @@ Feature: Match statements
       	fmt.Println(rigid(App(Var(0), Var(1))))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -271,13 +271,13 @@ Feature: Match statements
       true
       false
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       	case Var, Ref, Univ:
       """
 
   Scenario: Multi-pattern arms count toward exhaustiveness and reachability
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -303,12 +303,12 @@ Feature: Match statements
       	fmt.Println(warm(c))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "true"
 
   Scenario: A redundant alternative in a multi-pattern arm is unreachable
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -328,12 +328,12 @@ Feature: Match statements
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "unreachable match arm"
 
   Scenario: Multi-pattern arms take only wildcard arguments and cannot bind
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -351,6 +351,6 @@ Feature: Match statements
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "patterns in a multi-pattern arm take only wildcard arguments"

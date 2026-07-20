@@ -12,7 +12,7 @@ Feature: Flow composes with enums and match
       """
 
   Scenario: Pipelines inside match arms feed constructors
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -39,12 +39,12 @@ Feature: Flow composes with enums and match
       	fmt.Println(o.MapDouble())
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "{42}"
 
   Scenario: A pipeline can be a match subject
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -73,12 +73,12 @@ Feature: Flow composes with enums and match
       	}
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "some 42"
 
   Scenario: Flows inside nested-mode match arms
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -106,7 +106,7 @@ Feature: Flow composes with enums and match
       	fmt.Println(eval(Add(Lit(20), Lit(1))))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "42"
 
@@ -117,7 +117,7 @@ Feature: Flow composes with enums and match
 
       go 1.24
       """
-    And a G++ file "dep/lib/option.gpp":
+    And a Go+ file "dep/lib/option.gp":
       """
       package lib
 
@@ -135,8 +135,8 @@ Feature: Flow composes with enums and match
       	}
       }
       """
-    And I run gpp in "dep" with arguments "gen ./..."
-    And the file "dep/lib/option.gpp" is deleted
+    And I run goplus in "dep" with arguments "gen ./..."
+    And the file "dep/lib/option.gp" is deleted
     And a file "app/go.mod":
       """
       module example.com/app
@@ -147,7 +147,7 @@ Feature: Flow composes with enums and match
 
       replace example.com/dep => ../dep
       """
-    And a G++ file "app/main.gpp":
+    And a Go+ file "app/main.gp":
       """
       package main
 
@@ -164,6 +164,6 @@ Feature: Flow composes with enums and match
       	fmt.Println(got)
       }
       """
-    When I run gpp in "app" with arguments "run ."
+    When I run goplus in "app" with arguments "run ."
     Then the exit code is 0
     And stdout contains "42"

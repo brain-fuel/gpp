@@ -12,10 +12,10 @@ import (
 // carry quantities or whose signature mentions nat erases to plain Go:
 // nat becomes int, 0-quantity parameters vanish (their arguments drop
 // at every call site), and the ORIGINAL signature travels in a
-// //gpp:dep marker above the erased func.
+// //goplus:dep marker above the erased func.
 
 // DepPrefix is the marker directive.
-const DepPrefix = "//gpp:dep"
+const DepPrefix = "//goplus:dep"
 
 // DepParam is one parameter of the original dependent signature.
 type DepParam struct {
@@ -141,7 +141,7 @@ func DepFnsFromMarkers(pkgPath, filename string, src []byte) ([]*DepFn, error) {
 	fset := token.NewFileSet()
 	astFile, err := parser.ParseFile(fset, filename, src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
-		return nil, fmt.Errorf("parsing %s for gpp markers: %w", filename, err)
+		return nil, fmt.Errorf("parsing %s for goplus markers: %w", filename, err)
 	}
 	var out []*DepFn
 	for _, decl := range astFile.Decls {

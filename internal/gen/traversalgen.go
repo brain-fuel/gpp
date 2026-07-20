@@ -10,8 +10,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"goforge.dev/gpp/internal/lower"
-	"goforge.dev/gpp/internal/naming"
+	"goforge.dev/goplus/internal/lower"
+	"goforge.dev/goplus/internal/naming"
 )
 
 // Deep-traversal derivation (v0.11.0). Every SELF-RECURSIVE monomorphic
@@ -25,7 +25,7 @@ import (
 // struct wrappers whose fields (transitively) hold the enum — a binder
 // wrapper like Scope{Name string; Body Tm} — and through slices of the
 // enum or of wrappers. Generic and indexed enums, non-recursive enums,
-// and `//gpp:derive off` enums derive nothing. Field shapes outside the
+// and `//goplus:derive off` enums derive nothing. Field shapes outside the
 // descendable set are not descended: traversals cover the reachable
 // enum spine.
 

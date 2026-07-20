@@ -4,8 +4,8 @@ import (
 	"go/ast"
 	"strconv"
 
-	"goforge.dev/gpp/internal/directive"
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/directive"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 // Instance lowering (v0.5.0). An instance becomes a package value built by
@@ -13,7 +13,7 @@ import (
 // witness (defaults filled by pass 2, mutual reference allowed). Member
 // bodies stay byte-in-place:
 //
-//	instance IntAdd Group[int] {        //gpp:instance IntAdd Group[int]
+//	instance IntAdd Group[int] {        //goplus:instance IntAdd Group[int]
 //		Combine(a, b int) int { … }     var IntAdd = func() Group[int] {
 //		…                           ⇒   	w := &Group[int]{
 //	}                                   		Combine: func(a, b int) int { … },

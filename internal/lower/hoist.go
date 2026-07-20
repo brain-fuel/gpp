@@ -5,9 +5,9 @@ package lower
 // with the expression site replaced by a type-deferred temp:
 //
 //	x := if c { e1 } else { e2 }
-//	⇒ __gpp_v0 := __gpp_val0()          // prelude (temp typed at resolve)
-//	  if c { __gpp_v0 = e1 } else { __gpp_v0 = e2 }
-//	  x := __gpp_v0
+//	⇒ __gp_v0 := __gp_val0()          // prelude (temp typed at resolve)
+//	  if c { __gp_v0 = e1 } else { __gp_v0 = e2 }
+//	  x := __gp_v0
 //
 // Match expressions emit the v0.2 match SKELETON with arm assignments, so
 // exhaustiveness, GADT filtering, and nested patterns come for free.
@@ -20,13 +20,13 @@ import (
 	"go/token"
 	"strings"
 
-	"goforge.dev/gpp/internal/diag"
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/diag"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 // ValCarrierPrefix defers an expression-form temp's type to resolution:
-// `__gpp_v0 := __gpp_val0()`.
-const ValCarrierPrefix = "__gpp_val"
+// `__gp_v0 := __gp_val0()`.
+const ValCarrierPrefix = "__gp_val"
 
 // Hoister renders a file's pass-1 flow and expression-form lowerings.
 type Hoister struct {
@@ -182,7 +182,7 @@ func (h *Hoister) renderTry(t *syntax.TryExpr) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	return fmt.Sprintf("__gpp_try%d(%s)", h.tryIndex(t), inner), true
+	return fmt.Sprintf("__gp_try%d(%s)", h.tryIndex(t), inner), true
 }
 
 // tryIndex is a try's stable pass-1 number: its index in the file's Tries.
@@ -304,7 +304,7 @@ func (h *Hoister) renderMatchExpr(e *syntax.MatchExpr) (string, bool) {
 	idx := h.matchN
 	h.matchN++
 	var b strings.Builder
-	fmt.Fprintf(&b, "switch __gpp_m%d := any(%s).(type) {\n", idx, subj)
+	fmt.Fprintf(&b, "switch __gp_m%d := any(%s).(type) {\n", idx, subj)
 	for _, arm := range e.Arms {
 		patStart := arm.Pattern.Pos()
 		if arm.Binder != nil {
@@ -345,8 +345,8 @@ func (h *Hoister) renderArmAssign(temp string, arm ast.Expr) (string, bool) {
 func (h *Hoister) newTemp() string {
 	n := h.valN
 	h.valN++
-	h.preludes = append(h.preludes, fmt.Sprintf("__gpp_v%d := %s%d()", n, ValCarrierPrefix, n))
-	return fmt.Sprintf("__gpp_v%d", n)
+	h.preludes = append(h.preludes, fmt.Sprintf("__gp_v%d := %s%d()", n, ValCarrierPrefix, n))
+	return fmt.Sprintf("__gp_v%d", n)
 }
 
 // renderPipe/renderCompose delegate to the v0.3 renderers, threading

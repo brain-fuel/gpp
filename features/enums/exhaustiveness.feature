@@ -13,7 +13,7 @@ Feature: Exhaustive matching
       """
 
   Scenario: A missing variant is named in the error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -31,12 +31,12 @@ Feature: Exhaustive matching
       	}
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "non-exhaustive match on Shape: missing Rect(_, _); add the missing cases or a 'case _:' arm"
 
   Scenario: The wildcard arm opts out of exhaustiveness
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -58,12 +58,12 @@ Feature: Exhaustive matching
       	}
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "other"
 
   Scenario: A duplicate arm is unreachable and rejected
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -81,12 +81,12 @@ Feature: Exhaustive matching
       	}
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "unreachable match arm: Heads is already covered by the arms above"
 
   Scenario: The wildcard must be the last arm
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -103,12 +103,12 @@ Feature: Exhaustive matching
       	}
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "'case _:' must be the last arm of a match"
 
   Scenario: GADT-impossible variants are excluded from the universe
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -133,12 +133,12 @@ Feature: Exhaustive matching
       	fmt.Println(evalInt(Lit(7)) + evalInt(Pair(1, 2)))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "10"
 
   Scenario: A GADT-impossible arm is a hard error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -158,6 +158,6 @@ Feature: Exhaustive matching
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "pattern Truth(_) can never match a value of type Expr[int]: Truth constructs Expr[bool]"

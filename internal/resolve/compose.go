@@ -7,11 +7,11 @@ import (
 	"go/types"
 	"strings"
 
-	"goforge.dev/gpp/internal/lower"
+	"goforge.dev/goplus/internal/lower"
 )
 
 // Composition. Pass 1 lowers `f >>> g >>> h` to the carrier
-// `__gpp_comp(f, g, h)`; once every operand's type is known, the chain
+// `__gp_comp(f, g, h)`; once every operand's type is known, the chain
 // lowers to one flat capture-once IIFE. The first operand may take any
 // parameters (one result); each later operand takes exactly one parameter
 // and returns one result. Constructor operands (`double >>> Some`) infer
@@ -217,7 +217,7 @@ func (r *fileResolver) inferComposeCtor(op *composeOp, incoming types.Type) bool
 		r.errorf(op.expr.Pos(), "internal error: rendering %s's field type: %v", v.Name, serr)
 		return false
 	}
-	op.text = fmt.Sprintf("func(__gpp_x %s) %s { return %s{%s: __gpp_x} }",
+	op.text = fmt.Sprintf("func(__gp_x %s) %s { return %s{%s: __gp_x} }",
 		paramText, enumText, litType, v.Params[0].FieldName)
 
 	// Synthesize the operand's signature for the chain walk.
@@ -259,7 +259,7 @@ func (r *fileResolver) emitCompose(call *ast.CallExpr, ops []*composeOp) {
 		if fail(err) {
 			return
 		}
-		outerParams = append(outerParams, fmt.Sprintf("__gpp_f%d %s", i, ft))
+		outerParams = append(outerParams, fmt.Sprintf("__gp_f%d %s", i, ft))
 		outerArgs = append(outerArgs, op.text)
 	}
 
@@ -267,7 +267,7 @@ func (r *fileResolver) emitCompose(call *ast.CallExpr, ops []*composeOp) {
 	var innerParams, innerTypes, callArgs []string
 	for i := 0; i < first.Params().Len(); i++ {
 		t := first.Params().At(i).Type()
-		name := fmt.Sprintf("__gpp_a%d", i)
+		name := fmt.Sprintf("__gp_a%d", i)
 		if first.Variadic() && i == first.Params().Len()-1 {
 			elem, err := r.typeText(t.(*types.Slice).Elem())
 			if fail(err) {
@@ -292,9 +292,9 @@ func (r *fileResolver) emitCompose(call *ast.CallExpr, ops []*composeOp) {
 		return
 	}
 
-	body := "__gpp_f0(" + strings.Join(callArgs, ", ") + ")"
+	body := "__gp_f0(" + strings.Join(callArgs, ", ") + ")"
 	for i := 1; i < len(ops); i++ {
-		body = fmt.Sprintf("__gpp_f%d(%s)", i, body)
+		body = fmt.Sprintf("__gp_f%d(%s)", i, body)
 	}
 	out := fmt.Sprintf("func(%s) func(%s) %s { return func(%s) %s { return %s } }(%s)",
 		strings.Join(outerParams, ", "), strings.Join(innerTypes, ", "), resText,

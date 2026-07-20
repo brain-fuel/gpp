@@ -7,7 +7,7 @@ Feature: Derived deep traversals
   same-package struct wrappers whose fields (transitively) hold the enum
   — a binder wrapper like Scope{Name string; Body Tm} is glass, not a
   wall — and through slices of the enum or of wrappers. Enums that are
-  not self-recursive, are generic or indexed, or carry `//gpp:derive
+  not self-recursive, are generic or indexed, or carry `//goplus:derive
   off` derive no traversals. Field shapes outside the descendable set
   (func fields, imported types, maps) are simply not descended: a
   traversal covers the reachable enum spine.
@@ -21,7 +21,7 @@ Feature: Derived deep traversals
       """
 
   Scenario: A self-recursive enum derives Children, Universe, and Transform
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -59,7 +59,7 @@ Feature: Derived deep traversals
       	fmt.Println(sum)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -67,24 +67,24 @@ Feature: Derived deep traversals
       5
       12
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       // TmChildren lists the direct Tm subterms of t.
       func TmChildren(t Tm) []Tm {
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       // TmUniverse yields t and all transitive Tm subterms, preorder.
       func TmUniverse(t Tm) iter.Seq[Tm] {
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       // TmTransform rewrites t bottom-up: children first, then f at each node.
       func TmTransform(t Tm, f func(Tm) Tm) Tm {
       """
 
   Scenario: Descent sees through a same-package struct wrapper
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -136,7 +136,7 @@ Feature: Derived deep traversals
       	}
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -147,7 +147,7 @@ Feature: Derived deep traversals
       """
 
   Scenario: Slice fields descend element-wise and Transform copies, never mutates
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -189,7 +189,7 @@ Feature: Derived deep traversals
       	}
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -199,7 +199,7 @@ Feature: Derived deep traversals
       """
 
   Scenario: Non-recursive, generic, and opted-out enums derive no traversals
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -215,7 +215,7 @@ Feature: Derived deep traversals
       	None
       }
 
-      //gpp:derive off
+      //goplus:derive off
       type Expr enum {
       	Num(n int)
       	Neg(e Expr)
@@ -225,14 +225,14 @@ Feature: Derived deep traversals
       	fmt.Println("ok")
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
-    And the file "main_gpp.go" does not contain "ColorChildren"
-    And the file "main_gpp.go" does not contain "OptionChildren"
-    And the file "main_gpp.go" does not contain "ExprChildren"
+    And the file "main_gp.go" does not contain "ColorChildren"
+    And the file "main_gp.go" does not contain "OptionChildren"
+    And the file "main_gp.go" does not contain "ExprChildren"
 
   Scenario: Nil optional fields are skipped, never handed to the rewrite
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -271,7 +271,7 @@ Feature: Derived deep traversals
       	}
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """

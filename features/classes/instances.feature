@@ -2,11 +2,11 @@ Feature: Instance declarations lower to witness values
   An instance lowers to a package value built by a constructor over a heap
   witness, so member closures see the completed witness (defaults filled
   at resolution, sibling reference allowed). Generic instances lower to
-  functions. The //gpp:instance marker makes instances discoverable
+  functions. The //goplus:instance marker makes instances discoverable
   cross-package.
 
   Scenario: Ground and generic instances
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -28,13 +28,13 @@ Feature: Instance declarations lower to witness values
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 0
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       // IntAdd is addition.
       //
-      //gpp:instance IntAdd Monoid[int]
+      //goplus:instance IntAdd Monoid[int]
       var IntAdd = func() Monoid[int] {
       	w := &Monoid[int]{
       		Combine: func(a, b int) int { return a + b },
@@ -43,9 +43,9 @@ Feature: Instance declarations lower to witness values
       	return *w
       }()
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      //gpp:instance SliceConcat[T any] Monoid[[]T]
+      //goplus:instance SliceConcat[T any] Monoid[[]T]
       func SliceConcat[T any]() Monoid[[]T] {
       	w := &Monoid[[]T]{
       		Combine: func(a, b []T) []T { return append(append([]T{}, a...), b...) },
@@ -56,7 +56,7 @@ Feature: Instance declarations lower to witness values
       """
 
   Scenario: Duplicate implementations are rejected
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -69,7 +69,7 @@ Feature: Instance declarations lower to witness values
       	Combine(a, b int) int { return a * b }
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "instance X implements Combine twice"
 
@@ -80,7 +80,7 @@ Feature: Instance declarations lower to witness values
 
       go 1.24
       """
-    And a G++ file "main.gpp":
+    And a Go+ file "main.gp":
       """
       package main
 
@@ -96,6 +96,6 @@ Feature: Instance declarations lower to witness values
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "IntAdd"

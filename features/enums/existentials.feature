@@ -17,7 +17,7 @@ Feature: Bounded existential variants
       """
 
   Scenario: Erasure at the boundary — construct, store, match
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -46,16 +46,16 @@ Feature: Bounded existential variants
       	fmt.Println(describe(Packed[int](mins(3), mins(9), fmt.Errorf("boom"), "p")))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
       cell:7
       p:3m/9m/boom
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      //gpp:variant (Row[T]) Packed[A fmt.Stringer, B error](x A, y A, e B, tag string)
+      //goplus:variant (Row[T]) Packed[A fmt.Stringer, B error](x A, y A, e B, tag string)
       type Packed[T any] struct {
       	X   fmt.Stringer
       	Y   fmt.Stringer
@@ -65,7 +65,7 @@ Feature: Bounded existential variants
       """
 
   Scenario: Existential diagnostics
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -79,14 +79,14 @@ Feature: Bounded existential variants
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "existential type parameter X of variant A1 must have a plain interface bound: Go cannot express a match arm generic in a hidden type"
     And stderr contains "existential type parameter X of variant A2 must not appear in the result type; existentials are erased at the constructor boundary"
     And stderr contains "existential type parameter X of variant A3 is not used by any field"
 
   Scenario: Existential enums cross packages through markers
-    Given a G++ file "lib/lib.gpp":
+    Given a Go+ file "lib/lib.gp":
       """
       package lib
 
@@ -97,7 +97,7 @@ Feature: Bounded existential variants
       	Empty
       }
       """
-    And a G++ file "main.gpp":
+    And a Go+ file "main.gp":
       """
       package main
 
@@ -121,8 +121,8 @@ Feature: Bounded existential variants
       	}
       }
       """
-    When I run gpp with arguments "gen ./..."
+    When I run goplus with arguments "gen ./..."
     Then the exit code is 0
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "shown 4s"

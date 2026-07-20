@@ -1,11 +1,11 @@
 Feature: Parsing generic methods
-  G++ is a strict superset of Go. Its only v0.1.0 grammar extension is a type
+  Go+ is a strict superset of Go. Its only v0.1.0 grammar extension is a type
   parameter list on method declarations (spec/grammar-v0.1.0.ebnf). The
   frontend recovers those type parameters with original source positions and
   reports every other syntax error exactly as Go would.
 
   Scenario: A method may introduce its own type parameters
-    Given a G++ file "stack.gpp":
+    Given a Go+ file "stack.gp":
       """
       package stack
 
@@ -24,7 +24,7 @@ Feature: Parsing generic methods
     And generic method 1 is "(Stack[T]) Map[U]"
 
   Scenario: Constraint-rich method type parameters survive recovery
-    Given a G++ file "algo.gpp":
+    Given a Go+ file "algo.gp":
       """
       package algo
 
@@ -40,7 +40,7 @@ Feature: Parsing generic methods
     And generic method 1 is "(Bag[T]) Reduce[Acc, N]"
 
   Scenario: Pointer receivers and multiple generic methods
-    Given a G++ file "multi.gpp":
+    Given a Go+ file "multi.gp":
       """
       package multi
 
@@ -56,7 +56,7 @@ Feature: Parsing generic methods
     And generic method 2 is "(Box[T]) Get[V]"
 
   Scenario: A method on a non-generic receiver may still be generic
-    Given a G++ file "plainrecv.gpp":
+    Given a Go+ file "plainrecv.gp":
       """
       package plainrecv
 
@@ -68,8 +68,8 @@ Feature: Parsing generic methods
     Then parsing succeeds with 1 generic method
     And generic method 1 is "(Registry) Collect[U]"
 
-  Scenario: Plain Go is valid G++ with no generic methods
-    Given a G++ file "plain.gpp":
+  Scenario: Plain Go is valid Go+ with no generic methods
+    Given a Go+ file "plain.gp":
       """
       package plain
 
@@ -84,7 +84,7 @@ Feature: Parsing generic methods
     Then parsing succeeds with 0 generic methods
 
   Scenario: Genuine syntax errors are reported, not swallowed
-    Given a G++ file "broken.gpp":
+    Given a Go+ file "broken.gp":
       """
       package broken
 

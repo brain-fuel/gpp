@@ -8,10 +8,10 @@ Feature: Kleisli composition with >=>
   capture-once IIFE threading std/result combinators.
 
   Background:
-    Given a module "example.com/demo" using the gpp standard library
+    Given a module "example.com/demo" using the goplus standard library
 
   Scenario: A mixed chain lifts every operand shape
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -20,7 +20,7 @@ Feature: Kleisli composition with >=>
       	"strconv"
       	"strings"
 
-      	"goforge.dev/gpp/std/result"
+      	"goforge.dev/goplus/std/result"
       )
 
       var saved []int
@@ -43,7 +43,7 @@ Feature: Kleisli composition with >=>
       	fmt.Println(saved)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -53,7 +53,7 @@ Feature: Kleisli composition with >=>
       """
 
   Scenario: A (value, error) first operand enters the rail through Of
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -61,7 +61,7 @@ Feature: Kleisli composition with >=>
       	"fmt"
       	"strconv"
 
-      	"goforge.dev/gpp/std/result"
+      	"goforge.dev/goplus/std/result"
       )
 
       func double(n int) int { return n * 2 }
@@ -72,7 +72,7 @@ Feature: Kleisli composition with >=>
       	fmt.Println(result.IsErr(parse("x")))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -81,7 +81,7 @@ Feature: Kleisli composition with >=>
       """
 
   Scenario: A Result constructor operand infers its error type from the chain
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -89,7 +89,7 @@ Feature: Kleisli composition with >=>
       	"fmt"
       	"strconv"
 
-      	"goforge.dev/gpp/std/result"
+      	"goforge.dev/goplus/std/result"
       )
 
       func double(n int) int { return n * 2 }
@@ -100,13 +100,13 @@ Feature: Kleisli composition with >=>
       	fmt.Println(result.IsErr(f("x")))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "{42}"
     And stdout contains "true"
 
   Scenario: After the rail opens, >>> requires a Result-accepting operand
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -122,13 +122,13 @@ Feature: Kleisli composition with >=>
       	fmt.Println(f("1"))
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "after a failure-capable operand, >>> requires a stage that accepts the"
     And stderr contains "use >=> to stay on the railway"
 
   Scenario: A chain in which nothing can fail is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -142,12 +142,12 @@ Feature: Kleisli composition with >=>
       	fmt.Println(f(1))
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "no operand of this >=> chain can fail; use >>> for plain composition"
 
   Scenario: Railway laws hold on sampled inputs
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -155,7 +155,7 @@ Feature: Kleisli composition with >=>
       	"fmt"
       	"strconv"
 
-      	"goforge.dev/gpp/std/result"
+      	"goforge.dev/goplus/std/result"
       )
 
       func parse(s string) result.Result[int, error] {
@@ -207,6 +207,6 @@ Feature: Kleisli composition with >=>
       	fmt.Println(allOK)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "true"

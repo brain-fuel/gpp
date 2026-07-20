@@ -5,7 +5,7 @@ Feature: Type-directed GADT refinement
   in both directions (ground→T and T→ground). Only actual mismatches
   wrap: a value flowing through concretely-typed contexts stays bare.
   Function literals bound the walk. The machinery runs one fixpoint
-  iteration after the match resolves, via a //gpp:refine carrier that
+  iteration after the match resolves, via a //goplus:refine carrier that
   never survives into output.
 
   Background:
@@ -17,7 +17,7 @@ Feature: Type-directed GADT refinement
       """
 
   Scenario: Wraps land at every boundary, and only at mismatches
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -50,7 +50,7 @@ Feature: Type-directed GADT refinement
       	fmt.Println(eval(Str("hi")))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -58,19 +58,19 @@ Feature: Type-directed GADT refinement
       43
       hi
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       		v := n + 1
       		show(v)
       		return any(v).(T)
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       		return any(s).(T)
       """
 
   Scenario: Sub-position refinement through composite result arguments
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -94,16 +94,16 @@ Feature: Type-directed GADT refinement
       	fmt.Println(first[int](Ints([]int{7, 8})))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "[7 8]"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       		return any(vs).([]T)
       """
 
   Scenario: Function literals bound the refinement walk
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -129,10 +129,10 @@ Feature: Type-directed GADT refinement
       	fmt.Println(eval(Lit(5)))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "5"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       		f := func() int { return n }
       		return any(f()).(T)

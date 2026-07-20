@@ -11,8 +11,8 @@ import (
 
 	"github.com/cucumber/godog"
 
-	"goforge.dev/gpp/internal/emit"
-	"goforge.dev/gpp/internal/gen"
+	"goforge.dev/goplus/internal/emit"
+	"goforge.dev/goplus/internal/gen"
 )
 
 type genState struct {
@@ -63,17 +63,17 @@ func initGenSteps(sc *godog.ScenarioContext, w func() *World, gs *genState) {
 		return nil
 	})
 
-	sc.Step(`^the file "([^"]+)" is exactly the header for "([^"]+)" plus the source$`, func(name, gppName string) error {
+	sc.Step(`^the file "([^"]+)" is exactly the header for "([^"]+)" plus the source$`, func(name, goplusName string) error {
 		world := w()
 		got, err := world.readFile(name)
 		if err != nil {
 			return err
 		}
-		src, err := world.readFile(gppName)
+		src, err := world.readFile(goplusName)
 		if err != nil {
 			return err
 		}
-		want, err := emit.Finish(gppName, []byte(src))
+		want, err := emit.Finish(goplusName, []byte(src))
 		if err != nil {
 			return err
 		}
@@ -108,9 +108,9 @@ func initGenSteps(sc *godog.ScenarioContext, w func() *World, gs *genState) {
 		return nil
 	})
 
-	sc.Step(`^running gpp with arguments "([^"]*)" exits with (\d+)$`, func(args string, want int) error {
+	sc.Step(`^running goplus with arguments "([^"]*)" exits with (\d+)$`, func(args string, want int) error {
 		world := w()
-		if err := world.runGpp(splitArgs(args)); err != nil {
+		if err := world.runGoplus(splitArgs(args)); err != nil {
 			return err
 		}
 		if world.ExitCode != want {
@@ -137,7 +137,7 @@ func initGenSteps(sc *godog.ScenarioContext, w func() *World, gs *genState) {
 				return err
 			}
 			src := "package corpus\n\n" + gs.context + "\n\n" + method + " {\n\tpanic(\"corpus\")\n}\n"
-			if err := os.WriteFile(filepath.Join(dir, "in.gpp"), []byte(src), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "in.gp"), []byte(src), 0o644); err != nil {
 				return err
 			}
 			res, err := gen.Run(gen.Options{Dir: dir, Patterns: []string{"."}})
@@ -147,7 +147,7 @@ func initGenSteps(sc *godog.ScenarioContext, w func() *World, gs *genState) {
 			if !res.Ok() {
 				return fmt.Errorf("row %d (%s): diagnostics: %v", i+1, method, res.Diags)
 			}
-			out, err := os.ReadFile(filepath.Join(dir, "in_gpp.go"))
+			out, err := os.ReadFile(filepath.Join(dir, "in_gp.go"))
 			if err != nil {
 				return err
 			}
@@ -160,7 +160,7 @@ func initGenSteps(sc *godog.ScenarioContext, w func() *World, gs *genState) {
 	})
 }
 
-// generatedFiles maps relative path -> content for every *_gpp.go under dir.
+// generatedFiles maps relative path -> content for every *_gp.go under dir.
 func generatedFiles(dir string) (map[string]string, error) {
 	out := map[string]string{}
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {

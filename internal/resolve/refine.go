@@ -7,14 +7,14 @@ import (
 	"sort"
 	"strings"
 
-	"goforge.dev/gpp/internal/lower"
+	"goforge.dev/goplus/internal/lower"
 )
 
 // Type-directed GADT refinement (v0.6.0). Match resolution cannot type an
 // arm's body in its own iteration (the bindings land in the same edit),
 // so it leaves a carrier at the top of each refined arm:
 //
-//	//gpp:refine T=int	U=Pair[A, B]
+//	//goplus:refine T=int	U=Pair[A, B]
 //
 // One iteration later the bindings exist and the body types; this
 // candidate then wraps every MISMATCHED conversion boundary in the arm's
@@ -25,7 +25,7 @@ import (
 // Idempotent: a wrapped expression's type becomes the required type.
 
 // RefineCarrier is the carrier comment prefix.
-const RefineCarrier = "//gpp:refine "
+const RefineCarrier = "//goplus:refine "
 
 // refineCarrierLine renders a carrier for a refined-arm binding set,
 // deterministically ordered, tab-separated (type texts never contain

@@ -1,22 +1,22 @@
 Feature: parsec core combinators
-  goforge.dev/gpp/std/parsec is a parser-combinator library with
+  goforge.dev/goplus/std/parsec is a parser-combinator library with
   parsec-style consumed/empty semantics over streaming input: Or
   commits once a branch has consumed input; Try restores the lookahead.
-  The Reply type is a gpp enum, matched by the library and by user
+  The Reply type is a goplus enum, matched by the library and by user
   code. Errors carry line:col positions and Label'd expectations.
 
   Background:
-    Given a module "example.com/demo" using the gpp standard library
+    Given a module "example.com/demo" using the goplus standard library
 
   Scenario: Or commits on consumption; Try restores the lookahead
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
       import (
       	"fmt"
 
-      	"goforge.dev/gpp/std/parsec"
+      	"goforge.dev/goplus/std/parsec"
       )
 
       func main() {
@@ -29,7 +29,7 @@ Feature: parsec core combinators
       	fmt.Println("restored:", v, err2 == nil)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -38,14 +38,14 @@ Feature: parsec core combinators
       """
 
   Scenario: Errors carry positions and labels; user code matches Reply
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
       import (
       	"fmt"
 
-      	"goforge.dev/gpp/std/parsec"
+      	"goforge.dev/goplus/std/parsec"
       )
 
       func main() {
@@ -68,7 +68,7 @@ Feature: parsec core combinators
       	}
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """

@@ -1,13 +1,13 @@
 (*
-  G++ grammar, v0.1.0 — expressed as a delta over the Go specification
+  Go+ grammar, v0.1.0 — expressed as a delta over the Go specification
   (https://go.dev/ref/spec, "Method declarations").
 
-  G++ is a strict superset of Go: every production not listed here is
-  exactly the Go production. A .gpp file whose source uses no G++ extension
+  Go+ is a strict superset of Go: every production not listed here is
+  exactly the Go production. A .gp file whose source uses no Go+ extension
   is a valid Go file and passes through generation unchanged (plus header).
 
   This file and the Godog feature suite under features/ are together the
-  authoritative specification of G++.
+  authoritative specification of Go+.
 *)
 
 (* ------------------------------------------------------------------ *)
@@ -15,7 +15,7 @@
 (*   MethodDecl = "func" Receiver MethodName Signature [ FunctionBody ] . *)
 (* ------------------------------------------------------------------ *)
 
-(* G++ v0.1.0: a method may introduce type parameters of its own,       *)
+(* Go+ v0.1.0: a method may introduce type parameters of its own,       *)
 (* not present on the receiver.                                         *)
 
 MethodDecl = "func" Receiver MethodName [ TypeParameters ] Signature [ FunctionBody ] .
@@ -30,7 +30,7 @@ MethodDecl = "func" Receiver MethodName [ TypeParameters ] Signature [ FunctionB
   instantiated `s.Map[int](f)` are already syntactically valid Go
   (PrimaryExpr with Selector, Index/IndexList, Arguments). Method
   expressions/values `s.Map[int]` (without call) are likewise valid
-  PrimaryExpr syntax; their G++ semantics are defined by the feature suite.
+  PrimaryExpr syntax; their Go+ semantics are defined by the feature suite.
 
   Semantic notes (normative, enforced by the generator; specified in
   features/):
@@ -44,15 +44,15 @@ MethodDecl = "func" Receiver MethodName [ TypeParameters ] Signature [ FunctionB
   - Naming: generated name = concat(ReceiverBaseTypeName, MethodName),
     exported iff both parts are exported; otherwise first letter lowered.
     Any collision is a compile-time error, resolvable with the directive
-    comment `//gpp:name NewName` on the method declaration.
+    comment `//goplus:name NewName` on the method declaration.
 
   - Marker: each lowered function is preceded by a machine-readable
-    comment `//gpp:method (R[T…]) M[U…]` (pointer receivers render as
+    comment `//goplus:method (R[T…]) M[U…]` (pointer receivers render as
     `(*R[T…])`). These markers are how importing packages discover generic
     methods in distributed, toolchain-free Go artifacts.
 *)
 
 (* Directive comments recognized by the generator (comments per Go spec): *)
 
-GppNameDirective   = "//gpp:name"   identifier .
-GppMethodMarker    = "//gpp:method" "(" [ "*" ] TypeName [ TypeParameters ] ")" MethodName [ TypeParameters ] .
+GoplusNameDirective   = "//goplus:name"   identifier .
+GoplusMethodMarker    = "//goplus:method" "(" [ "*" ] TypeName [ TypeParameters ] ")" MethodName [ TypeParameters ] .

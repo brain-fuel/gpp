@@ -9,8 +9,8 @@ import (
 
 	"github.com/cucumber/godog"
 
-	"goforge.dev/gpp/internal/directive"
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/directive"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 // parseState holds frontend-parsing results for the current scenario.
@@ -20,22 +20,22 @@ type parseState struct {
 }
 
 func initParsingSteps(sc *godog.ScenarioContext, w func() *World, ps *parseState) {
-	sc.Step(`^a G\+\+ file "([^"]+)":$`, func(name string, doc *godog.DocString) error {
+	sc.Step(`^a Go\+ file "([^"]+)":$`, func(name string, doc *godog.DocString) error {
 		world := w()
-		world.LastGppFile = name
+		world.LastGoplusFile = name
 		return world.writeFile(name, doc.Content)
 	})
 
 	sc.Step(`^I parse it$`, func() error {
 		world := w()
-		if world.LastGppFile == "" {
-			return fmt.Errorf("no G++ file was written in this scenario")
+		if world.LastGoplusFile == "" {
+			return fmt.Errorf("no Go+ file was written in this scenario")
 		}
-		src, err := os.ReadFile(filepath.Join(world.Dir, world.LastGppFile))
+		src, err := os.ReadFile(filepath.Join(world.Dir, world.LastGoplusFile))
 		if err != nil {
 			return err
 		}
-		ps.file, ps.err = syntax.ParseFile(token.NewFileSet(), world.LastGppFile, src)
+		ps.file, ps.err = syntax.ParseFile(token.NewFileSet(), world.LastGoplusFile, src)
 		return nil
 	})
 
@@ -97,6 +97,6 @@ func renderMethod(m *syntax.GenericMethod) string {
 		Method:        m.Decl.Name.Name,
 		MethodTParams: strings.Join(tparams, ", "),
 	}
-	// Marker.String renders "//gpp:method (Stack[T]) Map[U]"; strip the prefix.
-	return strings.TrimPrefix(mk.String(), "//gpp:method ")
+	// Marker.String renders "//goplus:method (Stack[T]) Map[U]"; strip the prefix.
+	return strings.TrimPrefix(mk.String(), "//goplus:method ")
 }

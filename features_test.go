@@ -1,18 +1,18 @@
-package gpp_test
+package goplus_test
 
 import (
 	"testing"
 
 	"github.com/cucumber/godog"
 
-	"goforge.dev/gpp/internal/bddtest"
+	"goforge.dev/goplus/internal/bddtest"
 )
 
 // TestFeatures runs the Gherkin spec suite under features/ with Godog.
-// The feature files plus spec/grammar-*.ebnf are the gpp specification.
+// The feature files plus spec/grammar-*.ebnf are the goplus specification.
 func TestFeatures(t *testing.T) {
 	suite := godog.TestSuite{
-		Name: "gpp",
+		Name: "goplus",
 		ScenarioInitializer: func(sc *godog.ScenarioContext) {
 			bddtest.InitializeScenario(t, sc)
 		},

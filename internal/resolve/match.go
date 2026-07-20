@@ -8,13 +8,13 @@ import (
 	"go/types"
 	"strings"
 
-	"goforge.dev/gpp/internal/lower"
-	"goforge.dev/gpp/internal/registry"
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/lower"
+	"goforge.dev/goplus/internal/registry"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 // Match resolution. Pass 1 lowers every match to a type switch whose case
-// heads are `case nil:` placeholders followed by `//gpp:pattern` carrier
+// heads are `case nil:` placeholders followed by `//goplus:pattern` carrier
 // comments. Once the scrutinee's type is known, one pass resolves the
 // whole match. Flat matches stay type switches (idiomatic output); a match
 // with nested patterns is regenerated as a goto chain — type switches
@@ -221,7 +221,7 @@ func (r *fileResolver) matchCandidate(sw *ast.TypeSwitchStmt) {
 		return
 	}
 
-	// Refinement: leave a //gpp:refine carrier at the top of each refined
+	// Refinement: leave a //goplus:refine carrier at the top of each refined
 	// arm; a later fixpoint iteration applies type-directed wraps at every
 	// mismatched conversion boundary (refine.go), once the arm's bindings
 	// have made its body typable.
@@ -313,7 +313,7 @@ func (r *fileResolver) matchCandidate(sw *ast.TypeSwitchStmt) {
 		r.edits = append(r.edits, lower.Edit{
 			Start: rbrace,
 			End:   rbrace,
-			New:   "default:\n\tpanic(\"gpp: impossible enum value in match\")\n",
+			New:   "default:\n\tpanic(\"goplus: impossible enum value in match\")\n",
 		})
 	}
 	if totalBindings == 0 {
@@ -434,14 +434,14 @@ type matchArm struct {
 	carrier [2]int // byte range of the carrier line (incl. newline)
 }
 
-// skeletonGuard recognizes `switch __gpp_mN := any(subj).(type)`.
+// skeletonGuard recognizes `switch __gp_mN := any(subj).(type)`.
 func skeletonGuard(sw *ast.TypeSwitchStmt) (varName string, subj ast.Expr, ok bool) {
 	assign, isAssign := sw.Assign.(*ast.AssignStmt)
 	if !isAssign || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
 		return "", nil, false
 	}
 	id, isIdent := assign.Lhs[0].(*ast.Ident)
-	if !isIdent || !strings.HasPrefix(id.Name, "__gpp_m") {
+	if !isIdent || !strings.HasPrefix(id.Name, "__gp_m") {
 		return "", nil, false
 	}
 	ta, isTA := assign.Rhs[0].(*ast.TypeAssertExpr)

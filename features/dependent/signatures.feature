@@ -3,7 +3,7 @@ Feature: Dependent signatures
   DEPENDENT: nat erases to int, 0-quantity parameters vanish from the
   erased signature AND their arguments vanish from every call site (the
   surface stays fully applied — `Head(2, v)` — and erasure drops both
-  ends), and the original signature travels in a //gpp:dep marker.
+  ends), and the original signature travels in a //goplus:dep marker.
   Erased arguments must be pure index expressions: their evaluation
   does not survive erasure.
 
@@ -16,7 +16,7 @@ Feature: Dependent signatures
       """
 
   Scenario: Head and Replicate erase and run
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -47,26 +47,26 @@ Feature: Dependent signatures
       	fmt.Println(Head(2, v))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "a"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      //gpp:dep Head[T any](0 n nat, v Vec[T, n+1]) T
+      //goplus:dep Head[T any](0 n nat, v Vec[T, n+1]) T
       func Head[T any](v Vec[T]) T {
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      //gpp:dep Replicate[T any](n nat, x T) Vec[T, n]
+      //goplus:dep Replicate[T any](n nat, x T) Vec[T, n]
       func Replicate[T any](n int, x T) Vec[T] {
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       	fmt.Println(Head(v))
       """
 
   Scenario: Dependent functions cross packages through their markers
-    Given a G++ file "vec/vec.gpp":
+    Given a Go+ file "vec/vec.gp":
       """
       package vec
 
@@ -83,7 +83,7 @@ Feature: Dependent signatures
       	}
       }
       """
-    And a G++ file "main.gpp":
+    And a Go+ file "main.gp":
       """
       package main
 
@@ -98,18 +98,18 @@ Feature: Dependent signatures
       	fmt.Println(vec.First(0, v))
       }
       """
-    When I run gpp with arguments "gen ./..."
+    When I run goplus with arguments "gen ./..."
     Then the exit code is 0
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "7"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       	fmt.Println(vec.First(v))
       """
 
   Scenario: An effectful erased argument is rejected
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -137,12 +137,12 @@ Feature: Dependent signatures
       	_ = sideEffect
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "the argument for erased parameter n of Head must be an index expression (it is erased at runtime)"
 
   Scenario: Exported dependent functions guard their erased preconditions
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -165,18 +165,18 @@ Feature: Dependent signatures
       	fmt.Println(Head(0, Cons(9, Nil[int]())))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "9"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       	if _, ok := any(v).(Nil[T]); ok {
-      		panic("gpp: Head: v with index n+1 cannot be Nil")
+      		panic("goplus: Head: v with index n+1 cannot be Nil")
       	}
       """
 
   Scenario: The guard fires when plain Go passes an impossible value
-    Given a G++ file "lib/lib.gpp":
+    Given a Go+ file "lib/lib.gp":
       """
       package lib
 
@@ -210,14 +210,14 @@ Feature: Dependent signatures
       	fmt.Println(lib.Head[int](lib.Nil[int]{}))
       }
       """
-    When I run gpp with arguments "gen ./..."
+    When I run goplus with arguments "gen ./..."
     Then the exit code is 0
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
-    And stdout contains "recovered: gpp: Head: v with index n+1 cannot be Nil"
+    And stdout contains "recovered: goplus: Head: v with index n+1 cannot be Nil"
 
   Scenario: The scrutinee's index makes impossible arms an error and wildcards unnecessary
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -242,6 +242,6 @@ Feature: Dependent signatures
       	fmt.Println(Head(0, Cons(1, Nil[int]())))
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "pattern Nil() can never match: the scrutinee's index (n+1) rules out Nil (its index is 0)"

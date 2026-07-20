@@ -1,10 +1,10 @@
 Feature: Parsing enum declarations
-  G++ v0.2.0 adds sum types via a contextual `enum` keyword after a type
+  Go+ v0.2.0 adds sum types via a contextual `enum` keyword after a type
   name (spec/grammar-v0.2.0.ebnf). Variants carry constructor parameters,
   and an optional GADT result type.
 
   Scenario: A plain enum with parameterized and bare variants
-    Given a G++ file "shape.gpp":
+    Given a Go+ file "shape.gp":
       """
       package shape
 
@@ -20,7 +20,7 @@ Feature: Parsing enum declarations
     And enum 1 is "Shape: Circle(r float64) | Rect(w, h float64) | Point"
 
   Scenario: A generic enum
-    Given a G++ file "option.gpp":
+    Given a Go+ file "option.gp":
       """
       package option
 
@@ -34,7 +34,7 @@ Feature: Parsing enum declarations
     And enum 1 is "Option[T]: Some(value T) | None"
 
   Scenario: GADT variants declare result types
-    Given a G++ file "expr.gpp":
+    Given a Go+ file "expr.gp":
       """
       package expr
 
@@ -51,7 +51,7 @@ Feature: Parsing enum declarations
     And enum 1 variant "If" has result type ""
 
   Scenario: Nullary variants may be written with or without parentheses
-    Given a G++ file "u.gpp":
+    Given a Go+ file "u.gp":
       """
       package u
 
@@ -65,7 +65,7 @@ Feature: Parsing enum declarations
     And enum 1 is "Unit: U() | V"
 
   Scenario: Enums coexist with generic methods in one file
-    Given a G++ file "both.gpp":
+    Given a Go+ file "both.gp":
       """
       package both
 
@@ -85,7 +85,7 @@ Feature: Parsing enum declarations
     And parsing succeeds with 1 generic method
 
   Scenario: Unnamed variant fields are rejected
-    Given a G++ file "bad.gpp":
+    Given a Go+ file "bad.gp":
       """
       package bad
 
@@ -97,7 +97,7 @@ Feature: Parsing enum declarations
     Then parsing fails with an error containing "enum variant fields must be named"
 
   Scenario: Variadic variant fields are rejected
-    Given a G++ file "bad.gpp":
+    Given a Go+ file "bad.gp":
       """
       package bad
 
@@ -109,7 +109,7 @@ Feature: Parsing enum declarations
     Then parsing fails with an error containing "enum variant fields cannot be variadic"
 
   Scenario: Enum aliases are rejected
-    Given a G++ file "bad.gpp":
+    Given a Go+ file "bad.gp":
       """
       package bad
 

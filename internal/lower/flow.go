@@ -12,24 +12,24 @@ import (
 	"go/token"
 	"strings"
 
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 const (
 	// BareCarrierPrefix marks a pipeline segment awaiting member-vs-
-	// function resolution: __gpp_bare_Map(head, args…).
-	BareCarrierPrefix = "__gpp_bare_"
+	// function resolution: __gp_bare_Map(head, args…).
+	BareCarrierPrefix = "__gp_bare_"
 	// SegCarrierPrefix marks a direct-callee segment awaiting the flowing
-	// type: __gpp_seg1(head, callee, fixedArgs…) — the digit is the piped
+	// type: __gp_seg1(head, callee, fixedArgs…) — the digit is the piped
 	// value's insertion index among the final args.
-	SegCarrierPrefix = "__gpp_seg"
-	// DotCarrier wraps a dot-segment's receiver: __gpp_dot(head).Suffix…
-	DotCarrier = "__gpp_dot"
-	// ComposeCarrier marks a one-track composition: __gpp_comp(f, g, …).
-	ComposeCarrier = "__gpp_comp"
+	SegCarrierPrefix = "__gp_seg"
+	// DotCarrier wraps a dot-segment's receiver: __gp_dot(head).Suffix…
+	DotCarrier = "__gp_dot"
+	// ComposeCarrier marks a one-track composition: __gp_comp(f, g, …).
+	ComposeCarrier = "__gp_comp"
 	// KleisliCarrierPrefix marks a mixed/railway composition with per-link
-	// kinds encoded as letters: __gpp_kcomp_kc(f, g, h).
-	KleisliCarrierPrefix = "__gpp_kcomp_"
+	// kinds encoded as letters: __gp_kcomp_kc(f, g, h).
+	KleisliCarrierPrefix = "__gp_kcomp_"
 )
 
 // pipeTextCtx renders one pipeline through the hoister context.
@@ -101,14 +101,14 @@ func (h *Hoister) stageText(st *syntax.PipeStage, cur string) (string, bool) {
 		return "", false
 	}
 	for i := len(tries) - 1; i >= 0; i-- {
-		text = fmt.Sprintf("__gpp_try%d(%s)", h.tryIndex(tries[i]), text)
+		text = fmt.Sprintf("__gp_try%d(%s)", h.tryIndex(tries[i]), text)
 	}
 	return text, true
 }
 
 // segmentText renders the segment expression proper.
 func (h *Hoister) segmentText(st *syntax.PipeStage, expr ast.Expr, cur string) (string, bool) {
-	// Dot-segment: the __gpp_dot marker wraps the receiver so the whole
+	// Dot-segment: the __gp_dot marker wraps the receiver so the whole
 	// suffix chain waits for the flowing type.
 	if st.Dot.IsValid() {
 		if ph := topLevelPlaceholder(expr); ph != nil {

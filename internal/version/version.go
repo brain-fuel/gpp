@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-// Version is the gpp toolchain version.
-const Version = "v0.14.0"
+// Version is the goplus toolchain version.
+const Version = "v0.15.0"
 
 // Newer reports whether a is a strictly newer release than b. Inputs
 // are "vMAJOR.MINOR.PATCH"; anything unparseable compares as not newer

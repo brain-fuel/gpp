@@ -3,11 +3,11 @@ Feature: Class declarations lower to witness structs
   (embeds stay as anonymous fields until resolution flattens them), law
   members to Law* methods with an implicit bool result, and default
   operation bodies to Default* pointer-receiver methods. Bodies keep their
-  source bytes; //gpp:class, //gpp:law, and //gpp:default markers make the
+  source bytes; //goplus:class, //goplus:law, and //goplus:default markers make the
   generated Go self-describing for cross-package use.
 
   Scenario: The witness shape
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -30,43 +30,43 @@ Feature: Class declarations lower to witness structs
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 0
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       // Magma is a closed binary operation.
       //
-      //gpp:class Magma[T any]
+      //goplus:class Magma[T any]
       type Magma[T any] struct {
       	Combine func(a, b T) T
       }
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      //gpp:class Monoid[T any] embeds(Magma)
+      //goplus:class Monoid[T any] embeds(Magma)
       type Monoid[T any] struct {
       	Magma[T]
       	Empty func() T
       }
 
-      //gpp:law (Monoid[T]) LeftId(a T)
+      //goplus:law (Monoid[T]) LeftId(a T)
       func (m Monoid[T]) LawLeftId(a T) bool { return Combine(Empty(), a) == a }
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      //gpp:class Group[T any] embeds(Monoid)
+      //goplus:class Group[T any] embeds(Monoid)
       type Group[T any] struct {
       	Monoid[T]
       	Invert  func(a T) T
       	LeftDiv func(a, b T) T
       }
 
-      //gpp:default (Group[T]) LeftDiv(a, b T)
+      //goplus:default (Group[T]) LeftDiv(a, b T)
       func (m Group[T]) DefaultLeftDiv(a, b T) T { return Combine(Invert(b), a) }
       """
 
   Scenario: Generation is idempotent over classes
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -76,15 +76,15 @@ Feature: Class declarations lower to witness structs
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 0
     And I record the generated files
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 0
     And the generated files are unchanged
 
   Scenario: A class needs exactly one type parameter
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -92,12 +92,12 @@ Feature: Class declarations lower to witness structs
       	Combine(a A, b B) A
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "a class must have exactly one type parameter (v0.5.0); Pair has 2"
 
   Scenario: Duplicate members are rejected
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -106,12 +106,12 @@ Feature: Class declarations lower to witness structs
       	Combine(a T) T
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "class M declares operation Combine twice"
 
   Scenario: A grouped type block cannot hold a class
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -121,7 +121,7 @@ Feature: Class declarations lower to witness structs
       	}
       )
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "declare each class in its own type declaration"
 
@@ -132,7 +132,7 @@ Feature: Class declarations lower to witness structs
 
       go 1.24
       """
-    And a G++ file "main.gpp":
+    And a Go+ file "main.gp":
       """
       package main
 
@@ -167,6 +167,6 @@ Feature: Class declarations lower to witness structs
       	fmt.Println(lookup(h, "a"), lookup(h, "b"))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "1 ?"

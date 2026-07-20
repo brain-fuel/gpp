@@ -3,22 +3,22 @@ package lower
 import (
 	"fmt"
 
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 // PatternCarrier is the comment prefix threading pattern structure through
 // the resolution fixpoint. The resolver deletes each carrier as it expands
 // the arm — the fixpoint's progress signal for matches.
-const PatternCarrier = "//gpp:pattern "
+const PatternCarrier = "//goplus:pattern "
 
 // MatchSkeleton lowers one match statement to a parseable Go type switch
 // carrying its patterns as comments. Edits are surgical — the match header
 // and each case header only — so nested matches inside arm bodies edit
 // independently without overlap:
 //
-//	match s {              →  switch __gpp_m0 := any(s).(type) {
+//	match s {              →  switch __gp_m0 := any(s).(type) {
 //	case Circle(r):        →  case nil:
-//	                          //gpp:pattern Circle(r)
+//	                          //goplus:pattern Circle(r)
 //		<body verbatim>           <body verbatim>
 //	}                      →  }
 //
@@ -31,7 +31,7 @@ func skeletonEdits(f *syntax.File, m *syntax.MatchStmt, index int, subj string) 
 	edits = append(edits, Edit{
 		Start: f.Offset(m.Match),
 		End:   f.Offset(m.Lbrace) + 1,
-		New:   fmt.Sprintf("switch __gpp_m%d := any(%s).(type) {", index, subj),
+		New:   fmt.Sprintf("switch __gp_m%d := any(%s).(type) {", index, subj),
 	})
 	for _, c := range m.Cases {
 		patStart := c.Pattern.Pos()

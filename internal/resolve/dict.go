@@ -10,9 +10,9 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"goforge.dev/gpp/internal/directive"
-	"goforge.dev/gpp/internal/lower"
-	"goforge.dev/gpp/internal/registry"
+	"goforge.dev/goplus/internal/directive"
+	"goforge.dev/goplus/internal/lower"
+	"goforge.dev/goplus/internal/registry"
 )
 
 // Dictionary passing (v0.5.0). A class constraint `[T Monoid]` on a
@@ -159,7 +159,7 @@ func lowerCamel(s string) string {
 }
 
 // dictDeclCandidate rewrites a constrained function's declaration:
-// constraint text → any, dictionary parameters prepended, //gpp:fn
+// constraint text → any, dictionary parameters prepended, //goplus:fn
 // marker inserted. Idempotent: once the marker is present, skip.
 func (r *fileResolver) dictDeclCandidate(fd *ast.FuncDecl) {
 	if fd.Recv != nil || fd.Type.TypeParams == nil {
@@ -225,7 +225,7 @@ func (r *fileResolver) dictDeclCandidate(fd *ast.FuncDecl) {
 	}
 	edits = append(edits, lower.Edit{Start: opening, End: opening, New: strings.Join(params, ", ") + sep})
 
-	// //gpp:fn marker above the declaration.
+	// //goplus:fn marker above the declaration.
 	var constraints []string
 	for _, d := range fn.Dicts {
 		ref := d.Class
@@ -247,7 +247,7 @@ func (r *fileResolver) dictDeclCandidate(fd *ast.FuncDecl) {
 	r.edits = append(r.edits, edits...)
 }
 
-// hasFnMarker reports whether the decl already carries //gpp:fn.
+// hasFnMarker reports whether the decl already carries //goplus:fn.
 func hasFnMarker(fd *ast.FuncDecl) bool {
 	if fd.Doc == nil {
 		return false

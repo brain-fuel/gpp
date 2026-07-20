@@ -8,7 +8,7 @@ import (
 )
 
 // goplsClient manages a gopls subprocess speaking LSP over the
-// GENERATED Go files: gpp positions forward through the sourcemap,
+// GENERATED Go files: goplus positions forward through the sourcemap,
 // gopls answers over plain Go, results map back. One request in
 // flight at a time — editor traffic, not throughput.
 type goplsClient struct {

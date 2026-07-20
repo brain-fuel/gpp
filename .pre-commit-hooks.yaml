@@ -2,26 +2,26 @@
 # (https://pre-commit.com). Reference this repo in .pre-commit-config.yaml:
 #
 #   repos:
-#     - repo: https://github.com/brain-fuel/gpp
+#     - repo: https://github.com/brain-fuel/goplus
 #       rev: v0.1.0
 #       hooks:
-#         - id: gpp-gen
+#         - id: goplus-gen
 #
-# Note on gpp-gen: pre-commit fails any hook whose run modifies files. When
+# Note on goplus-gen: pre-commit fails any hook whose run modifies files. When
 # outputs are stale, the first `git commit` attempt regenerates AND stages the
 # fixed files, then aborts; simply retry the commit and it passes. This is the
 # standard auto-fixer UX (same as gofmt/black hooks).
-- id: gpp-gen
-  name: gpp generate (auto-regenerate and stage)
-  description: Regenerate Go from .gpp sources and stage the results.
-  entry: gpp gen -stage ./...
+- id: goplus-gen
+  name: goplus generate (auto-regenerate and stage)
+  description: Regenerate Go from .gp sources and stage the results.
+  entry: goplus gen -stage ./...
   language: golang
-  files: '\.gpp$'
+  files: '\.gp$'
   pass_filenames: false
-- id: gpp-check
-  name: gpp generate check
-  description: Fail if committed generated Go is stale relative to .gpp sources.
-  entry: gpp gen -check ./...
+- id: goplus-check
+  name: goplus generate check
+  description: Fail if committed generated Go is stale relative to .gp sources.
+  entry: goplus gen -check ./...
   language: golang
-  files: '\.(gpp|go)$'
+  files: '\.(goplus|go)$'
   pass_filenames: false

@@ -1,22 +1,22 @@
 Feature: The std/algebra hierarchy
-  goforge.dev/gpp/std/algebra ships the eight classes Magma through
+  goforge.dev/goplus/std/algebra ships the eight classes Magma through
   Group with their laws, stock instances, and the generic helpers
   Accumulate and FoldMap. Instances resolve implicitly; the Group
   instance IntAdd satisfies every weaker constraint by subsumption, and
   its divisions come from Group's defaults.
 
   Background:
-    Given a module "example.com/demo" using the gpp standard library
+    Given a module "example.com/demo" using the goplus standard library
 
   Scenario: Accumulate and FoldMap over stock instances
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
       import (
       	"fmt"
 
-      	"goforge.dev/gpp/std/algebra"
+      	"goforge.dev/goplus/std/algebra"
       )
 
       var _ = algebra.IntAdd
@@ -30,7 +30,7 @@ Feature: The std/algebra hierarchy
       	fmt.Println(algebra.IntAdd.LeftDiv(10, 4), algebra.IntAdd.RightDiv(10, 4))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -43,18 +43,18 @@ Feature: The std/algebra hierarchy
       """
 
   Scenario: Local instances of std classes dispatch implicitly, laws generate
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
       import (
       	"fmt"
 
-      	"goforge.dev/gpp/std/algebra"
+      	"goforge.dev/goplus/std/algebra"
       )
 
       // FloatAdd is addition over float64.
-      //gpp:laws off
+      //goplus:laws off
       instance FloatAdd algebra.Group[float64] {
       	Combine(a, b float64) float64 { return a + b }
       	Empty() float64 { return 0 }
@@ -66,7 +66,7 @@ Feature: The std/algebra hierarchy
       	fmt.Println(FloatAdd.LeftDiv(10, 4))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -75,14 +75,14 @@ Feature: The std/algebra hierarchy
       """
 
   Scenario: int has two monoids, and implicit resolution refuses to guess
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
       import (
       	"fmt"
 
-      	"goforge.dev/gpp/std/algebra"
+      	"goforge.dev/goplus/std/algebra"
       )
 
       var _ = algebra.IntAdd
@@ -91,21 +91,21 @@ Feature: The std/algebra hierarchy
       	fmt.Println(algebra.Accumulate([]int{2, 3, 4}))
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "ambiguous instance for Monoid[int]"
     And stderr contains "IntAdd"
     And stderr contains "IntMul"
 
   Scenario: Naming the structure disambiguates
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
       import (
       	"fmt"
 
-      	"goforge.dev/gpp/std/algebra"
+      	"goforge.dev/goplus/std/algebra"
       )
 
       func main() {
@@ -113,28 +113,28 @@ Feature: The std/algebra hierarchy
       	fmt.Println(algebra.Accumulate(algebra.IntMul, []int{2, 3, 4}))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
       9
       24
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       	fmt.Println(algebra.Accumulate(algebra.IntAdd.AsMonoid(), []int{2, 3, 4}))
       	fmt.Println(algebra.Accumulate(algebra.IntMul, []int{2, 3, 4}))
       """
 
   Scenario: MinInt and MaxInt are ambiguous for a bare Semigroup constraint
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
       import (
       	"fmt"
 
-      	"goforge.dev/gpp/std/algebra"
+      	"goforge.dev/goplus/std/algebra"
       )
 
       var _ = algebra.MinInt
@@ -151,7 +151,7 @@ Feature: The std/algebra hierarchy
       	fmt.Println(Squash([]int{5, 2, 9}))
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "ambiguous instance for Semigroup[int]"
     And stderr contains "pass a witness explicitly"

@@ -8,11 +8,11 @@ import (
 	"go/types"
 	"strings"
 
-	"goforge.dev/gpp/internal/lower"
-	"goforge.dev/gpp/internal/registry"
+	"goforge.dev/goplus/internal/lower"
+	"goforge.dev/goplus/internal/registry"
 )
 
-// Constructor resolution. G++ constructs variants call-style (Some(41),
+// Constructor resolution. Go+ constructs variants call-style (Some(41),
 // None) or qualified (Option.None, Option[int].Some(x)); all forms are
 // already valid Go syntax. Each use lowers to a named-field composite
 // literal of the variant struct. Type arguments come from explicit
@@ -115,7 +115,7 @@ func (r *fileResolver) recognizeCtors(name ast.Expr) []*ctorUse {
 			if info.Defs[n] != nil {
 				return nil
 			}
-			// Unresolved: a G++ variant name whose lowered struct is
+			// Unresolved: a Go+ variant name whose lowered struct is
 			// prefixed or renamed. Every declaring enum is a candidate.
 			for _, e := range r.reg.EnumsByVariantName(r.pkg.PkgPath, n.Name) {
 				if v, ok := e.Variant(n.Name); ok {
@@ -185,7 +185,7 @@ func (r *fileResolver) recognizeQualified(sel *ast.SelectorExpr) (*ctorUse, bool
 	}
 
 	// Case B: X (possibly instantiated, possibly pkg-qualified) names an
-	// enum; Sel is the G++ variant name.
+	// enum; Sel is the Go+ variant name.
 	base := sel.X
 	switch x := base.(type) {
 	case *ast.IndexExpr:
@@ -352,9 +352,9 @@ func (r *fileResolver) finishCtor(use *ctorUse, targs []string) {
 // emitCtorPartial lowers a constructor call with placeholder arguments to
 // a capture-once closure producing the enum value:
 //
-//	Cons(_, tail)  ⇒  func(__gpp_c0 List[int]) func(int) List[int] {
-//	                      return func(__gpp_p0 int) List[int] {
-//	                          return Cons[int]{Head: __gpp_p0, Tail: __gpp_c0}
+//	Cons(_, tail)  ⇒  func(__gp_c0 List[int]) func(int) List[int] {
+//	                      return func(__gp_p0 int) List[int] {
+//	                          return Cons[int]{Head: __gp_p0, Tail: __gp_c0}
 //	                      }
 //	                  }(tail)
 func (r *fileResolver) emitCtorPartial(use *ctorUse, targs []string, phIdx []int) {
@@ -397,14 +397,14 @@ func (r *fileResolver) emitCtorPartial(use *ctorUse, targs []string, phIdx []int
 			return
 		}
 		if isPH[i] {
-			name := fmt.Sprintf("__gpp_p%d", pi)
+			name := fmt.Sprintf("__gp_p%d", pi)
 			pi++
 			innerParams = append(innerParams, name+" "+pt)
 			innerTypes = append(innerTypes, pt)
 			fields = append(fields, p.FieldName+": "+name)
 			continue
 		}
-		name := fmt.Sprintf("__gpp_c%d", ci)
+		name := fmt.Sprintf("__gp_c%d", ci)
 		ci++
 		outerParams = append(outerParams, name+" "+pt)
 		outerArgs = append(outerArgs, r.text(use.call.Args[i].Pos(), use.call.Args[i].End()))

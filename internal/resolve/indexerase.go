@@ -5,7 +5,7 @@ import (
 	"go/token"
 	"strings"
 
-	"goforge.dev/gpp/internal/lower"
+	"goforge.dev/goplus/internal/lower"
 )
 
 // Cross-package index erasure (v0.7.0). Pass 1 erases index arguments

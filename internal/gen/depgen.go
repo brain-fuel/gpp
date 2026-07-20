@@ -4,10 +4,10 @@ import (
 	"go/ast"
 	"strings"
 
-	"goforge.dev/gpp/internal/core"
-	"goforge.dev/gpp/internal/diag"
-	"goforge.dev/gpp/internal/lower"
-	"goforge.dev/gpp/internal/registry"
+	"goforge.dev/goplus/internal/core"
+	"goforge.dev/goplus/internal/diag"
+	"goforge.dev/goplus/internal/lower"
+	"goforge.dev/goplus/internal/registry"
 )
 
 // Dependent signatures, pass 1 (v0.7.0). A plain function is DEPENDENT
@@ -15,7 +15,7 @@ import (
 // becomes int, 0-quantity parameters are deleted from the signature
 // (their call-site arguments drop in resolve), 1/mult quantities strip
 // to plain parameters, and the original signature travels in a
-// //gpp:dep marker. Total functions keep their own lowering; their
+// //goplus:dep marker. Total functions keep their own lowering; their
 // quantity prefixes (if any) just strip.
 
 // processDeps lowers one file's dependent signatures and quantity
@@ -25,7 +25,7 @@ func processDeps(f *sourceFile, pkgPath string, totals map[*ast.FuncDecl]bool, p
 	var edits []lower.Edit
 	var deps []*registry.DepFn
 	var diags []diag.Diagnostic
-	src := f.gpp
+	src := f.gp
 	errf := func(pos ast.Node, format string, args ...any) {
 		diags = append(diags, diag.At(src.Fset.Position(pos.Pos()), format, args...))
 	}
@@ -35,12 +35,12 @@ func processDeps(f *sourceFile, pkgPath string, totals map[*ast.FuncDecl]bool, p
 
 	// Quantity lookup by parameter-name identity.
 	qByName := map[*ast.Ident]string{}
-	for _, q := range f.gpp.Quantities {
+	for _, q := range f.gp.Quantities {
 		qByName[q.Name] = q.Quantity
 	}
 	qEditByName := map[*ast.Ident]bool{}
 
-	for _, decl := range f.gpp.AST.Decls {
+	for _, decl := range f.gp.AST.Decls {
 		fd, ok := decl.(*ast.FuncDecl)
 		if !ok || fd.Type.Params == nil {
 			continue
@@ -251,7 +251,7 @@ func processDeps(f *sourceFile, pkgPath string, totals map[*ast.FuncDecl]bool, p
 			droppedFields[p.field] = true
 			start := src.Offset(p.field.Pos())
 			// The quantity literal precedes the field start.
-			for _, q := range f.gpp.Quantities {
+			for _, q := range f.gp.Quantities {
 				if q.Name == p.name {
 					start = src.Offset(q.QPos)
 				}
@@ -259,7 +259,7 @@ func processDeps(f *sourceFile, pkgPath string, totals map[*ast.FuncDecl]bool, p
 			end := src.Offset(p.field.End())
 			if i+1 < len(params) {
 				end = src.Offset(params[i+1].field.Pos())
-				for _, q := range f.gpp.Quantities {
+				for _, q := range f.gp.Quantities {
 					if q.Name == params[i+1].name && src.Offset(q.QPos) < end {
 						end = src.Offset(q.QPos)
 					}
@@ -298,11 +298,11 @@ func processDeps(f *sourceFile, pkgPath string, totals map[*ast.FuncDecl]bool, p
 
 	// Quantity prefixes not consumed by 0-param deletion strip plainly
 	// (1/mult everywhere, and 0 inside func literals or totals).
-	for _, q := range f.gpp.Quantities {
+	for _, q := range f.gp.Quantities {
 		if qEditByName[q.Name] {
 			continue
 		}
-		edits = append(edits, lower.QuantityEdits(f.gpp, q)...)
+		edits = append(edits, lower.QuantityEdits(f.gp, q)...)
 	}
 	if fileHasLinear {
 		// The cell needs sync/atomic; inject the import right after the
@@ -310,13 +310,13 @@ func processDeps(f *sourceFile, pkgPath string, totals map[*ast.FuncDecl]bool, p
 		// import declaration before all other decls is legal Go, and
 		// gofmt normalizes the result).
 		hasAtomic := false
-		for _, imp := range f.gpp.AST.Imports {
+		for _, imp := range f.gp.AST.Imports {
 			if imp.Path.Value == `"sync/atomic"` {
 				hasAtomic = true
 			}
 		}
 		if !hasAtomic {
-			at := src.Offset(f.gpp.AST.Name.End())
+			at := src.Offset(f.gp.AST.Name.End())
 			edits = append(edits, lower.Edit{Start: at, End: at, New: "\n\nimport \"sync/atomic\""})
 		}
 		end := len(src.Src)
@@ -334,10 +334,10 @@ type guardParam struct {
 // guardEdits synthesizes runtime precondition checks for one exported
 // dependent function: a parameter typed at an indexed-enum instantiation
 // whose index makes a variant IMPOSSIBLE gets a fail-fast type check —
-// gpp callers proved the index statically; plain-Go callers panic with a
+// goplus callers proved the index statically; plain-Go callers panic with a
 // precise message instead of computing garbage.
 func guardEdits(f *sourceFile, fd *ast.FuncDecl, params []guardParam, plan *enumPlan) []lower.Edit {
-	src := f.gpp
+	src := f.gp
 	var guards []string
 	for _, p := range params {
 		base, argTexts := instantiationOf(p.typeText)
@@ -389,7 +389,7 @@ func guardEdits(f *sourceFile, fd *ast.FuncDecl, params []guardParam, plan *enum
 			if len(targs) > 0 {
 				head += "[" + strings.Join(targs, ", ") + "]"
 			}
-			guards = append(guards, "\tif _, ok := any("+p.name+").("+head+"); ok {\n\t\tpanic(\"gpp: "+fd.Name.Name+": "+p.name+" with index "+strings.Join(idxTerms, ", ")+" cannot be "+v.Name+"\")\n\t}")
+			guards = append(guards, "\tif _, ok := any("+p.name+").("+head+"); ok {\n\t\tpanic(\"goplus: "+fd.Name.Name+": "+p.name+" with index "+strings.Join(idxTerms, ", ")+" cannot be "+v.Name+"\")\n\t}")
 		}
 	}
 	if len(guards) == 0 {
@@ -472,12 +472,12 @@ func planTagOf(plan *enumPlan) func(string) (string, bool) {
 }
 
 // linCellText is the per-file use-once cell backing linear values in
-// erased Go. Plain-Go callers construct with LinOf and are policed; gpp
+// erased Go. Plain-Go callers construct with LinOf and are policed; goplus
 // callers proved the discipline statically. The flag is atomic, so even
 // racing consumers get exactly one winner and a deterministic panic.
 const linCellText = `
 
-//gpp:once
+//goplus:once
 // Lin carries a linear (use-exactly-once) value across the erased
 // boundary; Use panics on reuse.
 type Lin[T any] struct {
@@ -491,7 +491,7 @@ func LinOf[T any](v T) Lin[T] { return Lin[T]{v: v, taken: new(atomic.Bool)} }
 // Use consumes the value; a second Use panics.
 func (c Lin[T]) Use() T {
 	if !c.taken.CompareAndSwap(false, true) {
-		panic("gpp: linear value used more than once")
+		panic("goplus: linear value used more than once")
 	}
 	return c.v
 }

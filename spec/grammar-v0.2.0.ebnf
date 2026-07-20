@@ -1,15 +1,15 @@
 (*
-  G++ grammar, v0.2.0 — expressed as a delta over the Go specification and
+  Go+ grammar, v0.2.0 — expressed as a delta over the Go specification and
   spec/grammar-v0.1.0.ebnf. Every production not listed here is exactly the
   Go production; the v0.1.0 MethodDecl extension is carried forward
   unchanged.
 
   "enum" and "match" are contextual keywords: outside the positions defined
   below they are ordinary identifiers, so every valid Go program remains a
-  valid G++ program (strict superset).
+  valid Go+ program (strict superset).
 
   This file and the Godog feature suite under features/ are together the
-  authoritative specification of G++.
+  authoritative specification of Go+.
 *)
 
 (* ------------------------- Enum declarations ---------------------------- *)
@@ -33,7 +33,7 @@ VariantDecl = identifier [ Parameters ] [ Type ] .
     type argument must be either the corresponding enum type parameter or a
     ground named type.
   - Semicolons between VariantDecls follow Go's automatic-semicolon rules.
-  - A VariantDecl's doc comment may carry a GppNameDirective renaming the
+  - A VariantDecl's doc comment may carry a GoplusNameDirective renaming the
     lowered variant struct.
 *)
 
@@ -73,13 +73,13 @@ PatternElem     = "_" | Pattern .
 
   Construction sites need no grammar: `Some(41)`, `None`, `Circle(2.0)` and
   the qualified fallbacks `Option.None` / `Option[int].None` are already
-  valid Go expression syntax; their G++ semantics are defined by the
+  valid Go expression syntax; their Go+ semantics are defined by the
   feature suite.
 *)
 
 (* Directive comments (v0.1.0 forms unchanged; new marker forms): *)
 
-GppNameDirective = "//gpp:name" identifier .    (* on MethodDecl or VariantDecl *)
-GppMethodMarker  = "//gpp:method" "(" [ "*" ] TypeName [ TypeParameters ] ")" MethodName [ TypeParameters ] .
-GppEnumMarker    = "//gpp:enum" identifier [ TypeParameters ] .
-GppVariantMarker = "//gpp:variant" "(" identifier [ "[" IdentifierList "]" ] ")" VariantDecl .
+GoplusNameDirective = "//goplus:name" identifier .    (* on MethodDecl or VariantDecl *)
+GoplusMethodMarker  = "//goplus:method" "(" [ "*" ] TypeName [ TypeParameters ] ")" MethodName [ TypeParameters ] .
+GoplusEnumMarker    = "//goplus:enum" identifier [ TypeParameters ] .
+GoplusVariantMarker = "//goplus:variant" "(" identifier [ "[" IdentifierList "]" ] ")" VariantDecl .

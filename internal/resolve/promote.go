@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"go/types"
 
-	"goforge.dev/gpp/internal/registry"
+	"goforge.dev/goplus/internal/registry"
 )
 
 // hit is a resolved generic-method use: the method, the named type instance

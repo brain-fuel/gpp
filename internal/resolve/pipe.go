@@ -6,11 +6,11 @@ import (
 	"go/types"
 	"strings"
 
-	"goforge.dev/gpp/internal/lower"
+	"goforge.dev/goplus/internal/lower"
 )
 
 // Bare pipeline segments. Pass 1 lowers `x |> Map(f)` to the carrier
-// `__gpp_bare_Map(x, f)`; once the head's type is known, this resolver
+// `__gp_bare_Map(x, f)`; once the head's type is known, this resolver
 // decides member-vs-function per the locked policy: both resolving is a
 // hard error with the two explicit spellings (`.Map(f)` member,
 // `Map(_, f)` function); a tuple-typed head follows Go's spread rule.
@@ -44,7 +44,7 @@ func (r *fileResolver) pipeCandidate(call *ast.CallExpr) {
 		return
 	}
 
-	// Member candidate: full Go selector semantics plus gpp methods.
+	// Member candidate: full Go selector semantics plus goplus methods.
 	member := false
 	obj, _, _ := types.LookupFieldOrMethod(tv.Type, tv.Addressable(), r.pkg.Types, name)
 	switch o := obj.(type) {
@@ -55,17 +55,17 @@ func (r *fileResolver) pipeCandidate(call *ast.CallExpr) {
 			member = true // func-typed field
 		}
 	}
-	gppHit, perr := r.memberHit(tv.Type, name)
+	goplusHit, perr := r.memberHit(tv.Type, name)
 	if perr != nil {
 		r.errorf(call.Pos(), "%v", perr)
 		return
 	}
-	if gppHit != nil {
-		if gppHit.method.Pointer && !gppHit.finalPtr && !(tv.Addressable() || gppHit.throughPtr) {
-			gppHit = nil // pointer method on non-addressable head: not a candidate
+	if goplusHit != nil {
+		if goplusHit.method.Pointer && !goplusHit.finalPtr && !(tv.Addressable() || goplusHit.throughPtr) {
+			goplusHit = nil // pointer method on non-addressable head: not a candidate
 		}
 	}
-	member = member || gppHit != nil
+	member = member || goplusHit != nil
 
 	// Function candidate: lexical scope (locals shadow), builtins,
 	// conversions, indexed function values; plus local constructors.
@@ -96,12 +96,12 @@ func (r *fileResolver) pipeCandidate(call *ast.CallExpr) {
 		}
 	}
 	_ = fnKind
-	// A gpp method's own lowered function is the method, not a competing
+	// A goplus method's own lowered function is the method, not a competing
 	// function reading: bare names now lower to the method's own name, so
 	// the shadow's generated func would otherwise shadow every member hit.
-	if gppHit != nil && fnObj != nil {
+	if goplusHit != nil && fnObj != nil {
 		if fo, isFn := fnObj.(*types.Func); isFn &&
-			fo.Name() == gppHit.method.FuncName && fo.Pkg() != nil && fo.Pkg().Path() == gppHit.method.PkgPath {
+			fo.Name() == goplusHit.method.FuncName && fo.Pkg() != nil && fo.Pkg().Path() == goplusHit.method.PkgPath {
 			fn = false
 			fnObj = nil
 		}

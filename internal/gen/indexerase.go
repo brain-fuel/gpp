@@ -3,8 +3,8 @@ package gen
 import (
 	"go/ast"
 
-	"goforge.dev/gpp/internal/lower"
-	"goforge.dev/gpp/internal/registry"
+	"goforge.dev/goplus/internal/lower"
+	"goforge.dev/goplus/internal/registry"
 )
 
 // Ordinary-position index erasure (v0.7.0). Outside enum declarations,
@@ -28,7 +28,7 @@ import (
 // file's ordinary code.
 func eraseOrdinaryIndexUses(f *sourceFile, isIndexed registry.IndexArity) []lower.Edit {
 	var edits []lower.Edit
-	src := f.gpp
+	src := f.gp
 
 	drop := func(args []ast.Expr, idxPos map[int]bool, lbrack, rbrack int) {
 		kept := 0
@@ -75,7 +75,7 @@ func eraseOrdinaryIndexUses(f *sourceFile, isIndexed registry.IndexArity) []lowe
 	handled := map[ast.Node]bool{}
 
 	// Walk 1 — exact erasure for known indexed enums, any position.
-	ast.Inspect(f.gpp.AST, func(n ast.Node) bool {
+	ast.Inspect(f.gp.AST, func(n ast.Node) bool {
 		base, args, lbrack, rbrack, ok := decompose(n)
 		if !ok {
 			return true
@@ -129,7 +129,7 @@ func eraseOrdinaryIndexUses(f *sourceFile, isIndexed registry.IndexArity) []lowe
 			inType(fld.Type)
 		}
 	}
-	ast.Inspect(f.gpp.AST, func(n ast.Node) bool {
+	ast.Inspect(f.gp.AST, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.FuncDecl:
 			if x.Type != nil {

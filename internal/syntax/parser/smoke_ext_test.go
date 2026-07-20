@@ -4,10 +4,10 @@ import (
 	"go/token"
 	"testing"
 
-	forkparser "goforge.dev/gpp/internal/syntax/parser"
+	forkparser "goforge.dev/goplus/internal/syntax/parser"
 )
 
-const gppSrc = `package p
+const goplusSrc = `package p
 
 type Shape enum {
 	// Circle is round.
@@ -47,9 +47,9 @@ func superset() {
 }
 `
 
-func TestGppSmoke(t *testing.T) {
+func TestGoplusSmoke(t *testing.T) {
 	fset := token.NewFileSet()
-	f, ext, err := forkparser.ParseFileExt(fset, "p.gpp", []byte(gppSrc), forkparser.ParseComments|forkparser.SkipObjectResolution)
+	f, ext, err := forkparser.ParseFileExt(fset, "p.gp", []byte(goplusSrc), forkparser.ParseComments|forkparser.SkipObjectResolution)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}

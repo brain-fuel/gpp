@@ -90,7 +90,7 @@ func (t *Table) Has(name string) bool {
 // AddGenerated records a generated function name, returning an error if the
 // name is already taken by an authored declaration or another generated
 // function. origin describes the method, e.g. `method (Stack[T]) Map[U] at
-// stack.gpp:5:1`.
+// stack.gp:5:1`.
 func (t *Table) AddGenerated(name, origin string) error {
 	if prev, exists := t.entries[name]; exists {
 		kind := "declaration"

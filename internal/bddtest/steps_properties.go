@@ -11,18 +11,18 @@ import (
 	"github.com/cucumber/godog"
 	"pgregory.net/rapid"
 
-	"goforge.dev/gpp/internal/emit"
-	"goforge.dev/gpp/internal/gen"
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/emit"
+	"goforge.dev/goplus/internal/gen"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 func initPropertySteps(sc *godog.ScenarioContext, w func() *World) {
-	sc.Step(`^for any plain Go file, parsing as G\+\+ succeeds with no generic methods$`, func() error {
+	sc.Step(`^for any plain Go file, parsing as Go\+ succeeds with no generic methods$`, func() error {
 		return w().checkProperty(func(rt *rapid.T) {
 			src := plainGoSource(rt)
-			f, err := syntax.ParseFile(token.NewFileSet(), "prop.gpp", []byte(src))
+			f, err := syntax.ParseFile(token.NewFileSet(), "prop.gp", []byte(src))
 			if err != nil {
-				rt.Fatalf("valid Go rejected by the G++ frontend: %v\n%s", err, src)
+				rt.Fatalf("valid Go rejected by the Go+ frontend: %v\n%s", err, src)
 			}
 			if len(f.Methods) != 0 {
 				rt.Fatalf("plain Go produced %d generic methods\n%s", len(f.Methods), src)
@@ -35,50 +35,50 @@ func initPropertySteps(sc *godog.ScenarioContext, w func() *World) {
 		return world.checkProperty(func(rt *rapid.T) {
 			src := plainGoSource(rt)
 			dir := world.freshPropDir(rt)
-			mustWrite(rt, filepath.Join(dir, "in.gpp"), src)
+			mustWrite(rt, filepath.Join(dir, "in.gp"), src)
 			res := mustGen(rt, dir)
 			_ = res
-			got := mustRead(rt, filepath.Join(dir, "in_gpp.go"))
-			want := emit.Header("in.gpp") + src
+			got := mustRead(rt, filepath.Join(dir, "in_gp.go"))
+			want := emit.Header("in.gp") + src
 			if got != want {
 				rt.Fatalf("passthrough not lossless:\n--- got ---\n%s\n--- want ---\n%s", got, want)
 			}
 		})
 	})
 
-	sc.Step(`^for any G\+\+ package, generating twice produces identical bytes and no rewrites$`, func() error {
+	sc.Step(`^for any Go\+ package, generating twice produces identical bytes and no rewrites$`, func() error {
 		world := w()
 		return world.checkProperty(func(rt *rapid.T) {
-			p := gppPackageGen(rt)
+			p := goplusPackageGen(rt)
 			dir := world.freshPropDir(rt)
-			mustWrite(rt, filepath.Join(dir, "in.gpp"), p.Source(nil))
+			mustWrite(rt, filepath.Join(dir, "in.gp"), p.Source(nil))
 			mustGen(rt, dir)
-			first := mustRead(rt, filepath.Join(dir, "in_gpp.go"))
+			first := mustRead(rt, filepath.Join(dir, "in_gp.go"))
 			res := mustGen(rt, dir)
 			if len(res.Written) != 0 {
 				rt.Fatalf("second gen rewrote files: %v", res.Written)
 			}
-			second := mustRead(rt, filepath.Join(dir, "in_gpp.go"))
+			second := mustRead(rt, filepath.Join(dir, "in_gp.go"))
 			if first != second {
 				rt.Fatalf("output changed between identical runs")
 			}
 		})
 	})
 
-	sc.Step(`^for any G\+\+ package, permuting declarations preserves the lowered function names$`, func() error {
+	sc.Step(`^for any Go\+ package, permuting declarations preserves the lowered function names$`, func() error {
 		world := w()
 		return world.checkProperty(func(rt *rapid.T) {
-			p := gppPackageGen(rt)
+			p := goplusPackageGen(rt)
 			order := permutation(rt, len(p.Decls))
 
 			dirA := world.freshPropDir(rt)
 			dirB := world.freshPropDir(rt)
-			mustWrite(rt, filepath.Join(dirA, "in.gpp"), p.Source(nil))
-			mustWrite(rt, filepath.Join(dirB, "in.gpp"), p.Source(order))
+			mustWrite(rt, filepath.Join(dirA, "in.gp"), p.Source(nil))
+			mustWrite(rt, filepath.Join(dirB, "in.gp"), p.Source(order))
 			mustGen(rt, dirA)
 			mustGen(rt, dirB)
-			outA := mustRead(rt, filepath.Join(dirA, "in_gpp.go"))
-			outB := mustRead(rt, filepath.Join(dirB, "in_gpp.go"))
+			outA := mustRead(rt, filepath.Join(dirA, "in_gp.go"))
+			outB := mustRead(rt, filepath.Join(dirB, "in_gp.go"))
 			for _, name := range p.MethodNames {
 				needle := "func " + name + "["
 				if !strings.Contains(outA, needle) {
@@ -134,7 +134,7 @@ func initPropertySteps(sc *godog.ScenarioContext, w func() *World) {
 			if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/flow\n\ngo 1.24\n"), 0o644); err != nil {
 				return err
 			}
-			if err := os.WriteFile(filepath.Join(dir, "main.gpp"), []byte(b.String()), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "main.gp"), []byte(b.String()), 0o644); err != nil {
 				return err
 			}
 			res, err := gen.Run(gen.Options{Dir: dir, Patterns: []string{"."}})
@@ -144,14 +144,14 @@ func initPropertySteps(sc *godog.ScenarioContext, w func() *World) {
 			if !res.Ok() {
 				return fmt.Errorf("sample %d (%s): diagnostics: %v", sample, pipeline, res.Diags)
 			}
-			out, rerr := os.ReadFile(filepath.Join(dir, "main_gpp.go"))
+			out, rerr := os.ReadFile(filepath.Join(dir, "main_gp.go"))
 			if rerr != nil {
 				return rerr
 			}
 			for _, leftover := range []string{
-				"__gpp_bare_", "__gpp_comp(", "//gpp:pattern", "case nil:",
-				"__gpp_seg", "__gpp_dot(", "__gpp_kcomp_", "__gpp_try", "__gpp_val",
-				"//gpp:refine",
+				"__gp_bare_", "__gp_comp(", "//goplus:pattern", "case nil:",
+				"__gp_seg", "__gp_dot(", "__gp_kcomp_", "__gp_try", "__gp_val",
+				"//goplus:refine",
 			} {
 				if strings.Contains(string(out), leftover) {
 					return fmt.Errorf("sample %d: emitted file contains %q", sample, leftover)
@@ -208,7 +208,7 @@ func initPropertySteps(sc *godog.ScenarioContext, w func() *World) {
 			if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/oracle\n\ngo 1.24\n"), 0o644); err != nil {
 				return err
 			}
-			if err := os.WriteFile(filepath.Join(dir, "main.gpp"), []byte(b.String()), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "main.gp"), []byte(b.String()), 0o644); err != nil {
 				return err
 			}
 			res, err := gen.Run(gen.Options{Dir: dir, Patterns: []string{"."}})
@@ -222,11 +222,11 @@ func initPropertySteps(sc *godog.ScenarioContext, w func() *World) {
 					sample, len(covered), nVars, wildcard, res.Ok(), exhaustive, res.Diags)
 			}
 			if res.Ok() {
-				out, rerr := os.ReadFile(filepath.Join(dir, "main_gpp.go"))
+				out, rerr := os.ReadFile(filepath.Join(dir, "main_gp.go"))
 				if rerr != nil {
 					return rerr
 				}
-				if strings.Contains(string(out), "//gpp:pattern") || strings.Contains(string(out), "case nil:") {
+				if strings.Contains(string(out), "//goplus:pattern") || strings.Contains(string(out), "case nil:") {
 					return fmt.Errorf("sample %d: emitted file contains unresolved match artifacts", sample)
 				}
 			}

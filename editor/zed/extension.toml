@@ -1,15 +1,15 @@
-id = "gpp"
-name = "G++"
-description = "G++ language support: gpp language server and syntax."
+id = "goplus"
+name = "Go+"
+description = "Go+ language support: goplus language server and syntax."
 version = "0.9.0"
 schema_version = 1
 authors = ["Matt Laine"]
-repository = "https://github.com/brain-fuel/gpp"
+repository = "https://github.com/brain-fuel/goplus"
 
-[language_servers.gpp]
-name = "gpp language server"
-languages = ["G++"]
+[language_servers.gp]
+name = "goplus language server"
+languages = ["Go+"]
 
-[language_servers.gpp.binary]
-path = "gpp"
+[language_servers.gp.binary]
+path = "goplus"
 arguments = ["lsp"]

@@ -1,0 +1,93 @@
+// Package registry is a freeze-after-boot name registry: Register during
+// initialization, Freeze exactly once when wiring is complete, Lookup
+// forever after. Post-freeze registration panics — mis-ordered boot wiring
+// is a programming error, not a runtime condition — and freezing makes the
+// read path safe for concurrent lock-free use.
+//
+// Authored in Go+ and distributed as generated Go — consumers never need
+// the goplus toolchain.
+package registry
+
+import (
+	"fmt"
+	"sync"
+)
+
+// Registry maps names to values of T. The zero value is usable.
+type Registry[T any] struct {
+	mu     sync.Mutex
+	frozen bool
+	m      map[string]T
+}
+
+// New constructs an empty, unfrozen Registry.
+func New[T any]() *Registry[T] {
+	return &Registry[T]{m: make(map[string]T)}
+}
+
+// Register adds name → v. It panics if the registry is frozen or the name
+// is already registered — both are boot-wiring bugs.
+func (r *Registry[T]) Register(name string, v T) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.frozen {
+		panic(fmt.Sprintf("registry: Register(%q) after Freeze", name))
+	}
+	if r.m == nil {
+		r.m = make(map[string]T)
+	}
+	if _, dup := r.m[name]; dup {
+		panic(fmt.Sprintf("registry: duplicate Register(%q)", name))
+	}
+	r.m[name] = v
+}
+
+// Freeze seals the registry. Idempotent. After Freeze, Lookup reads the
+// map without locking (no writer can exist).
+func (r *Registry[T]) Freeze() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.frozen = true
+}
+
+// Frozen reports whether Freeze has been called.
+func (r *Registry[T]) Frozen() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.frozen
+}
+
+// Lookup returns the value registered under name; ok=false when absent.
+// Lock-free once frozen; before Freeze it takes the mutex (boot-time reads
+// are rare and must not race Register).
+func (r *Registry[T]) Lookup(name string) (T, bool) {
+	if !r.loadFrozen() {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		v, ok := r.m[name]
+		return v, ok
+	}
+	v, ok := r.m[name]
+	return v, ok
+}
+
+// Names returns the registered names in map order (callers sort if they
+// need determinism).
+func (r *Registry[T]) Names() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, 0, len(r.m))
+	for k := range r.m {
+		out = append(out, k)
+	}
+	return out
+}
+
+// loadFrozen reads the frozen flag under the mutex. The flag is monotonic
+// (never unset), so a stale false only costs a mutex on the read path
+// during the boot window.
+func (r *Registry[T]) loadFrozen() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.frozen
+}

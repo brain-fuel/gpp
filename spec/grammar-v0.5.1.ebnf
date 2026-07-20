@@ -1,8 +1,8 @@
 (*
-  G++ grammar, v0.5.1 — a delta over spec/grammar-v0.5.0.ebnf. Every
+  Go+ grammar, v0.5.1 — a delta over spec/grammar-v0.5.0.ebnf. Every
   production not listed here is unchanged.
 
-  REMOVED: GppNameDirective (`//gpp:name`, from v0.1.0/v0.2.0). Lowered
+  REMOVED: GoplusNameDirective (`//goplus:name`, from v0.1.0/v0.2.0). Lowered
   names never needed a directive — the names are contained in the code:
 
   - A generic method (R).M lowers to a package function named M itself,
@@ -16,5 +16,5 @@
     name, enum-prefixed when shared across enums), now with no override.
 
   This file and the Godog feature suite under features/ are together the
-  authoritative specification of G++.
+  authoritative specification of Go+.
 *)

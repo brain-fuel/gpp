@@ -11,8 +11,8 @@ import (
 	"reflect"
 	"strings"
 
-	"goforge.dev/gpp/internal/registry"
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/registry"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 // Chain-mode match lowering: when any pattern nests, the whole type-switch
@@ -21,28 +21,28 @@ import (
 // share a head constructor:
 //
 //	{
-//		__gpp_m0 := any(e)
+//		__gp_m0 := any(e)
 //		{
-//			__gpp_a0, __gpp_k0 := any(__gpp_m0).(Add)
-//			if __gpp_k0 {
-//				__gpp_a1, __gpp_k1 := any(__gpp_a0.L).(Lit)
-//				if __gpp_k1 {
-//					a := __gpp_a1.V
+//			__gp_a0, __gp_k0 := any(__gp_m0).(Add)
+//			if __gp_k0 {
+//				__gp_a1, __gp_k1 := any(__gp_a0.L).(Lit)
+//				if __gp_k1 {
+//					a := __gp_a1.V
 //					<body verbatim>
-//					goto __gpp_match0_done
+//					goto __gp_match0_done
 //				}
 //			}
 //		}
 //		…
-//		panic("gpp: impossible enum value in match")
-//	__gpp_match0_done:
+//		panic("goplus: impossible enum value in match")
+//	__gp_match0_done:
 //		;
 //	}
 
 // chainEmit renders the full replacement text for a nested-mode match.
 func (r *fileResolver) chainEmit(sw *ast.TypeSwitchStmt, varName string, subjText string, arms []*armAnalysis, hasWildcard bool) string {
-	idx := strings.TrimPrefix(varName, "__gpp_m")
-	done := fmt.Sprintf("__gpp_match%s_done", idx)
+	idx := strings.TrimPrefix(varName, "__gp_m")
+	done := fmt.Sprintf("__gp_match%s_done", idx)
 	var b strings.Builder
 	b.WriteString("{\n")
 	fmt.Fprintf(&b, "%s := any(%s)\n", varName, subjText)
@@ -87,7 +87,7 @@ func (r *fileResolver) chainEmit(sw *ast.TypeSwitchStmt, varName string, subjTex
 		b.WriteString("}\n")
 	}
 	if !hasWildcard {
-		b.WriteString("panic(\"gpp: impossible enum value in match\")\n")
+		b.WriteString("panic(\"goplus: impossible enum value in match\")\n")
 	}
 	if needLabel {
 		fmt.Fprintf(&b, "%s:\n;\n", done)
@@ -173,9 +173,9 @@ func (r *fileResolver) emitPatChecks(b *strings.Builder, p *rpat, val string, te
 	}
 	a := "_"
 	if needVal {
-		a = fmt.Sprintf("__gpp_a%d", *temps)
+		a = fmt.Sprintf("__gp_a%d", *temps)
 	}
-	k := fmt.Sprintf("__gpp_k%d", *temps)
+	k := fmt.Sprintf("__gp_k%d", *temps)
 	*temps++
 	fmt.Fprintf(b, "%s, %s := any(%s).(%s)\n", a, k, val, head)
 	fmt.Fprintf(b, "if %s {\n", k)
@@ -358,7 +358,7 @@ type rpat struct {
 }
 
 // normPat renders an rpat back to a normalized PatNode (binders → wilds,
-// names → G++ variant names) for the usefulness engine.
+// names → Go+ variant names) for the usefulness engine.
 func normPat(p *rpat) (out syntax.PatNode) {
 	if p.wild || p.binder != "" {
 		return syntax.PatNode{Wild: true}

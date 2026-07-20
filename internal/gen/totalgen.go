@@ -5,10 +5,10 @@ import (
 	"strconv"
 	"strings"
 
-	"goforge.dev/gpp/internal/core"
-	"goforge.dev/gpp/internal/diag"
-	"goforge.dev/gpp/internal/lower"
-	"goforge.dev/gpp/internal/registry"
+	"goforge.dev/goplus/internal/core"
+	"goforge.dev/goplus/internal/diag"
+	"goforge.dev/goplus/internal/lower"
+	"goforge.dev/goplus/internal/registry"
 )
 
 // Total functions, pass 1 (v0.7.0). The declaration is validated
@@ -16,7 +16,7 @@ import (
 // `nat`, no receiver), elaborated into the core, and checked locally:
 // subtraction obligations under path facts, structural termination
 // (import-qualified callees defer existence to resolve). Lowering
-// erases nat to int and plants the //gpp:total marker; the erased body
+// erases nat to int and plants the //goplus:total marker; the erased body
 // is the definition importers re-elaborate.
 
 // processTotals validates and lowers one file's total functions.
@@ -25,14 +25,14 @@ func processTotals(f *sourceFile, pkgPath string, locals map[string]bool, defs c
 	var totals []*registry.Total
 	var diags []diag.Diagnostic
 	errf := func(pos ast.Node, format string, args ...any) {
-		diags = append(diags, diag.At(f.gpp.Fset.Position(pos.Pos()), format, args...))
+		diags = append(diags, diag.At(f.gp.Fset.Position(pos.Pos()), format, args...))
 	}
 	text := func(from, to ast.Node) string {
-		return string(f.gpp.Src[f.gpp.Offset(from.Pos()):f.gpp.Offset(to.End())])
+		return string(f.gp.Src[f.gp.Offset(from.Pos()):f.gp.Offset(to.End())])
 	}
 
-	resolve := gppCallResolver(pkgPath, f.gpp.AST)
-	for _, t := range f.gpp.Totals {
+	resolve := goplusCallResolver(pkgPath, f.gp.AST)
+	for _, t := range f.gp.Totals {
 		fd := t.Decl
 		if fd.Recv != nil {
 			errf(fd, "a total function cannot have a receiver")
@@ -99,16 +99,16 @@ func processTotals(f *sourceFile, pkgPath string, locals map[string]bool, defs c
 		if fd.Type.Results != nil {
 			sig += " " + text(fd.Type.Results, fd.Type.Results)
 		}
-		start := f.gpp.Offset(t.TotalPos)
+		start := f.gp.Offset(t.TotalPos)
 		end := start + len("total")
-		for end < len(f.gpp.Src) && (f.gpp.Src[end] == ' ' || f.gpp.Src[end] == '\t') {
+		for end < len(f.gp.Src) && (f.gp.Src[end] == ' ' || f.gp.Src[end] == '\t') {
 			end++
 		}
 		edits = append(edits, lower.Edit{Start: start, End: end, New: registry.TotalPrefix + " " + sig + "\n"})
 		for _, id := range natIdents {
 			edits = append(edits, lower.Edit{
-				Start: f.gpp.Offset(id.Pos()),
-				End:   f.gpp.Offset(id.End()),
+				Start: f.gp.Offset(id.Pos()),
+				End:   f.gp.Offset(id.End()),
 				New:   "int",
 			})
 		}
@@ -117,9 +117,9 @@ func processTotals(f *sourceFile, pkgPath string, locals map[string]bool, defs c
 	return edits, totals, diags
 }
 
-// gppCallResolver canonicalizes callees in a .gpp file (same shape as
+// goplusCallResolver canonicalizes callees in a .gp file (same shape as
 // the registry's marker resolver, over the original imports).
-func gppCallResolver(pkgPath string, file *ast.File) core.CallResolver {
+func goplusCallResolver(pkgPath string, file *ast.File) core.CallResolver {
 	imports := map[string]string{}
 	for _, imp := range file.Imports {
 		path, err := strconv.Unquote(imp.Path.Value)
@@ -162,4 +162,3 @@ func paramNamesOf(fd *ast.FuncDecl) []string {
 	}
 	return out
 }
-

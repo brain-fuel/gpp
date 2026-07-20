@@ -1,4 +1,4 @@
-module goforge.dev/gpp
+module goforge.dev/goplus
 
 go 1.26.0
 

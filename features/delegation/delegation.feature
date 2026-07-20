@@ -16,7 +16,7 @@ Feature: Interface delegation
       """
 
   Scenario: Forwarders generate; overrides win
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -58,26 +58,26 @@ Feature: Interface delegation
       	fmt.Println(v, s.Len())
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
       put a
       1 1
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      //gpp:delegate Logged.inner
+      //goplus:delegate Logged.inner
       func (l Logged) Get(p0 string) (string, error) { return l.inner.Get(p0) }
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      //gpp:delegate Logged.inner
+      //goplus:delegate Logged.inner
       func (l Logged) Len() int { return l.inner.Len() }
       """
 
   Scenario: Generic outer types forward with their type parameters
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -115,17 +115,17 @@ Feature: Interface delegation
       	fmt.Println(a, b)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "5 6"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      //gpp:delegate Counted.src
+      //goplus:delegate Counted.src
       func (c Counted[T]) Next() (T, bool) { return c.src.Next() }
       """
 
   Scenario: Two delegates offering one method is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -140,12 +140,12 @@ Feature: Interface delegation
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "type Both delegates Read through both a and b; declare Read on Both to take ownership"
 
   Scenario: A non-interface delegate type is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -157,12 +157,12 @@ Feature: Interface delegation
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "delegate field inner of Wrapper must have an interface type"
 
   Scenario: Delegation does not promote unrelated members
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -186,6 +186,6 @@ Feature: Interface delegation
       	fmt.Println(b.Name())
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "ada"

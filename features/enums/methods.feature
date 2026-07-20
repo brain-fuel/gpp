@@ -1,7 +1,7 @@
 Feature: Methods on enums
   Interfaces cannot carry method bodies, so every method on an enum — plain
   or generic — lowers to a package-level function exactly like a v0.1.0
-  generic method, and G++ keeps method-call syntax. Pointer receivers are
+  generic method, and Go+ keeps method-call syntax. Pointer receivers are
   errors: the lowered receiver type is the sealed interface.
 
   Background:
@@ -13,7 +13,7 @@ Feature: Methods on enums
       """
 
   Scenario: A plain method on an enum lowers to a package function
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -34,21 +34,21 @@ Feature: Methods on enums
       	_ = s
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "2"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      //gpp:method (Size) Doubled
+      //goplus:method (Size) Doubled
       func Doubled(s Size) int {
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       fmt.Println(Doubled(s))
       """
 
   Scenario: A generic method on a generic enum composes both machineries
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -69,21 +69,21 @@ Feature: Methods on enums
       	fmt.Println(tag, back == Some[int]{Value: 41})
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "x true"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      //gpp:method (Option[T]) Pair[U]
+      //goplus:method (Option[T]) Pair[U]
       func Pair[T any, U any](o Option[T], u U) (Option[T], U) {
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       back, tag := Pair(o, "x")
       """
 
   Scenario: A plain enum method works as a bare method value
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -104,12 +104,12 @@ Feature: Methods on enums
       	fmt.Println(f())
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "sized"
 
   Scenario: A pointer receiver on an enum is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -122,6 +122,6 @@ Feature: Methods on enums
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "enum receiver must not be a pointer; Size is an interface after lowering"

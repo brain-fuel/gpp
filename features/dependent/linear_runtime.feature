@@ -1,10 +1,10 @@
 Feature: Linear runtime cells
   A linear (quantity-1) parameter travels through erased Go as a
   use-once cell: `1 b T` erases to `b Lin[T]`, the body's single
-  consumption takes through Use(), gpp call sites wrap arguments with
+  consumption takes through Use(), goplus call sites wrap arguments with
   LinOf automatically (qualified across packages), and the Lin/LinOf/Use
-  trio is generated once per file needing it under a //gpp:once marker.
-  gpp callers proved exactly-once statically; plain-Go callers construct
+  trio is generated once per file needing it under a //goplus:once marker.
+  goplus callers proved exactly-once statically; plain-Go callers construct
   with LinOf and a second Use panics.
 
   Background:
@@ -16,7 +16,7 @@ Feature: Linear runtime cells
       """
 
   Scenario: Linear signatures erase to cells and calls wrap
-    Given a G++ file "res/res.gpp":
+    Given a Go+ file "res/res.gp":
       """
       package res
 
@@ -26,7 +26,7 @@ Feature: Linear runtime cells
       	return b.String()
       }
       """
-    And a G++ file "main.gpp":
+    And a Go+ file "main.gp":
       """
       package main
 
@@ -51,35 +51,35 @@ Feature: Linear runtime cells
       	fmt.Println(local(&b, true) == "")
       }
       """
-    When I run gpp with arguments "gen ./..."
+    When I run goplus with arguments "gen ./..."
     Then the exit code is 0
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
       hi
       true
       """
-    And the file "res/res_gpp.go" contains:
+    And the file "res/res_gp.go" contains:
       """
       func Consume(b Lin[*strings.Builder]) string {
       	return b.Use().String()
       """
-    And the file "res/res_gpp.go" contains:
+    And the file "res/res_gp.go" contains:
       """
-      //gpp:once
+      //goplus:once
       """
-    And the file "res/res_gpp.go" contains:
+    And the file "res/res_gp.go" contains:
       """
       	taken *atomic.Bool
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       	fmt.Println(res.Consume(res.LinOf(&a)))
       """
 
   Scenario: A second Use panics for plain-Go callers
-    Given a G++ file "res/res.gpp":
+    Given a Go+ file "res/res.gp":
       """
       package res
 
@@ -110,8 +110,8 @@ Feature: Linear runtime cells
       	_ = cell.Use()
       }
       """
-    When I run gpp with arguments "gen ./..."
+    When I run goplus with arguments "gen ./..."
     Then the exit code is 0
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
-    And stdout contains "recovered: gpp: linear value used more than once"
+    And stdout contains "recovered: goplus: linear value used more than once"

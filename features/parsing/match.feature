@@ -4,7 +4,7 @@ Feature: Parsing match statements
   binders. `match` remains an ordinary identifier everywhere else.
 
   Scenario: A basic match with constructor, bare, and wildcard arms
-    Given a G++ file "m.gpp":
+    Given a Go+ file "m.gp":
       """
       package m
 
@@ -28,7 +28,7 @@ Feature: Parsing match statements
     And match 1 case 3 is "_"
 
   Scenario: Nested patterns, per-field wildcards, and binders
-    Given a G++ file "m.gpp":
+    Given a Go+ file "m.gp":
       """
       package m
 
@@ -52,7 +52,7 @@ Feature: Parsing match statements
     And match 1 case 3 is "c := Lit(v)"
 
   Scenario: Qualified constructor patterns
-    Given a G++ file "m.gpp":
+    Given a Go+ file "m.gp":
       """
       package m
 
@@ -71,7 +71,7 @@ Feature: Parsing match statements
     And match 1 case 1 is "opt.Some(v)"
 
   Scenario: Matches nest inside arm bodies, recorded pre-order
-    Given a G++ file "m.gpp":
+    Given a Go+ file "m.gp":
       """
       package m
 
@@ -92,7 +92,7 @@ Feature: Parsing match statements
     And match 2 has subject "b"
 
   Scenario: Complex subjects parse like switch tags
-    Given a G++ file "m.gpp":
+    Given a Go+ file "m.gp":
       """
       package m
 
@@ -113,7 +113,7 @@ Feature: Parsing match statements
     And match 2 has subject "x + 1"
 
   Scenario: default is rejected inside match
-    Given a G++ file "m.gpp":
+    Given a Go+ file "m.gp":
       """
       package m
 
@@ -128,7 +128,7 @@ Feature: Parsing match statements
     Then parsing fails with an error containing "match statements do not have a default case; use 'case _:'"
 
   Scenario: Binders may not appear inside argument patterns
-    Given a G++ file "m.gpp":
+    Given a Go+ file "m.gp":
       """
       package m
 
@@ -142,7 +142,7 @@ Feature: Parsing match statements
     Then parsing fails with an error containing "binder patterns may only appear at the top of a case"
 
   Scenario: A wildcard cannot be bound
-    Given a G++ file "m.gpp":
+    Given a Go+ file "m.gp":
       """
       package m
 

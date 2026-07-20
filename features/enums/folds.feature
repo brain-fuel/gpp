@@ -2,7 +2,7 @@ Feature: Derived folds
   Every enum derives a one-level fold by default: an <Enum>Cases struct
   with one handler per variant plus a fold function under the v0.5.1
   naming rule (bare Fold when this is the package's only deriving enum;
-  two deriving enums both prefix). `//gpp:derive off` opts an enum out;
+  two deriving enums both prefix). `//goplus:derive off` opts an enum out;
   an enum whose result arguments leave a variant's type parameters
   undetermined under the identity instantiation silently derives nothing
   (the same erasure wall as unmatchable arms). Fold dispatches ALL
@@ -17,7 +17,7 @@ Feature: Derived folds
       """
 
   Scenario: A lone enum derives a bare Fold
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -43,14 +43,14 @@ Feature: Derived folds
       	}))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
       7
       -
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       // OptionCases selects one handler per Option variant for Fold.
       type OptionCases[T any, R any] struct {
@@ -66,13 +66,13 @@ Feature: Derived folds
       	case None[T]:
       		return cs.None()
       	default:
-      		panic("gpp: impossible enum value in Fold")
+      		panic("goplus: impossible enum value in Fold")
       	}
       }
       """
 
   Scenario: Two deriving enums both prefix; GADT enums fold all variants
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -103,7 +103,7 @@ Feature: Derived folds
       	}))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -112,7 +112,7 @@ Feature: Derived folds
       """
 
   Scenario: derive off and underivable enums release the bare name
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -126,7 +126,7 @@ Feature: Derived folds
       	None
       }
 
-      //gpp:derive off
+      //goplus:derive off
       type Hidden enum {
       	H1
       }
@@ -143,12 +143,12 @@ Feature: Derived folds
       	}))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "7"
 
   Scenario: Existential variants fold at their bounds
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -170,23 +170,23 @@ Feature: Derived folds
       	}))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "9s"
 
   Scenario: An unknown derive argument is rejected
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
-      //gpp:derive visitors
+      //goplus:derive visitors
       type E enum {
       	V
       }
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
-    And stderr contains "unknown //gpp:derive argument"
+    And stderr contains "unknown //goplus:derive argument"
     And stderr contains "supported arguments: 'off', 'gen'"

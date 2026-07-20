@@ -1,4 +1,4 @@
-// Package sourcemap maps positions in emitted Go back to .gpp source.
+// Package sourcemap maps positions in emitted Go back to .gp source.
 //
 // Because emission is text-edit-based (intra-line splices plus inserted
 // header/marker lines) and then gofmt-formatted, a line-level diff between
@@ -12,21 +12,21 @@ import (
 	"strings"
 )
 
-// Map maps one emitted file's positions to its .gpp source.
+// Map maps one emitted file's positions to its .gp source.
 type Map struct {
-	GppPath string
-	// gppLine[i] is the 1-based .gpp line for emitted line i+1; 0 for
+	GoplusPath string
+	// goplusLine[i] is the 1-based .gp line for emitted line i+1; 0 for
 	// inserted lines with no counterpart.
-	gppLine []int
+	gpLine []int
 	// exact[i]: the line text is identical, so columns carry over.
 	exact []bool
 }
 
-// Build diffs gpp source against emitted output.
-func Build(gppPath string, gppSrc, emitted []byte) *Map {
-	a := splitLines(gppSrc)
+// Build diffs goplus source against emitted output.
+func Build(goplusPath string, goplusSrc, emitted []byte) *Map {
+	a := splitLines(goplusSrc)
 	b := splitLines(emitted)
-	m := &Map{GppPath: gppPath, gppLine: make([]int, len(b)), exact: make([]bool, len(b))}
+	m := &Map{GoplusPath: goplusPath, gpLine: make([]int, len(b)), exact: make([]bool, len(b))}
 
 	// Patience-style anchoring: only lines whose text is UNIQUE in both
 	// files anchor (then the longest increasing chain of those pairs).
@@ -38,7 +38,7 @@ func Build(gppPath string, gppSrc, emitted []byte) *Map {
 	if len(a) > cap || len(b) > cap {
 		for i := range b {
 			if i < len(a) {
-				m.gppLine[i] = i + 1
+				m.gpLine[i] = i + 1
 			}
 		}
 		return m
@@ -91,7 +91,7 @@ func Build(gppPath string, gppSrc, emitted []byte) *Map {
 			}
 		}
 		for at := tails[len(tails)-1]; at >= 0; at = links[at] {
-			m.gppLine[pairs[at].bj] = pairs[at].ai + 1
+			m.gpLine[pairs[at].bj] = pairs[at].ai + 1
 			m.exact[pairs[at].bj] = true
 		}
 	}
@@ -99,19 +99,19 @@ func Build(gppPath string, gppSrc, emitted []byte) *Map {
 	// braces still correspond when sandwiched between anchors).
 	prevA, prevB := 0, 0
 	for j := 0; j <= len(b); j++ {
-		if j < len(b) && m.gppLine[j] == 0 {
+		if j < len(b) && m.gpLine[j] == 0 {
 			continue
 		}
 		endA := len(a)
 		endB := len(b)
 		if j < len(b) {
-			endA = m.gppLine[j] - 1
+			endA = m.gpLine[j] - 1
 			endB = j
 		}
 		ai, bj := prevA, prevB
 		for ai < endA && bj < endB {
 			if a[ai] == b[bj] {
-				m.gppLine[bj] = ai + 1
+				m.gpLine[bj] = ai + 1
 				m.exact[bj] = true
 				ai++
 				bj++
@@ -122,7 +122,7 @@ func Build(gppPath string, gppSrc, emitted []byte) *Map {
 			bj++
 		}
 		if j < len(b) {
-			prevA = m.gppLine[j]
+			prevA = m.gpLine[j]
 			prevB = j + 1
 		}
 	}
@@ -133,15 +133,15 @@ func Build(gppPath string, gppSrc, emitted []byte) *Map {
 	// remaining unmatched output lines to unmatched source lines that are
 	// equal modulo leading whitespace, in order.
 	srcUsed := make([]bool, len(a)+1)
-	for _, ln := range m.gppLine {
+	for _, ln := range m.gpLine {
 		if ln > 0 {
 			srcUsed[ln] = true
 		}
 	}
 	si := 0
-	for j := range m.gppLine {
-		if m.gppLine[j] != 0 {
-			si = m.gppLine[j] // advance the source cursor past the anchor
+	for j := range m.gpLine {
+		if m.gpLine[j] != 0 {
+			si = m.gpLine[j] // advance the source cursor past the anchor
 			continue
 		}
 		trimmed := strings.TrimLeft(b[j], " \t")
@@ -153,7 +153,7 @@ func Build(gppPath string, gppSrc, emitted []byte) *Map {
 				continue
 			}
 			if strings.TrimLeft(a[k-1], " \t") == trimmed {
-				m.gppLine[j] = k
+				m.gpLine[j] = k
 				srcUsed[k] = true
 				si = k
 				break
@@ -163,27 +163,27 @@ func Build(gppPath string, gppSrc, emitted []byte) *Map {
 	// Remaining inserted lines attribute to the previous mapped line's
 	// successor region (e.g. generated headers and prologues).
 	prev := 0
-	for j := range m.gppLine {
-		if m.gppLine[j] != 0 {
-			prev = m.gppLine[j]
+	for j := range m.gpLine {
+		if m.gpLine[j] != 0 {
+			prev = m.gpLine[j]
 			continue
 		}
 		if prev > 0 && prev < len(a) {
-			m.gppLine[j] = prev + 1
+			m.gpLine[j] = prev + 1
 		}
 	}
 	return m
 }
 
-// Map translates an emitted-file position to a .gpp position. ok is false
+// Map translates an emitted-file position to a .gp position. ok is false
 // when the line has no plausible source counterpart (e.g. the header).
 func (m *Map) Map(pos token.Position) (token.Position, bool) {
-	if pos.Line < 1 || pos.Line > len(m.gppLine) || m.gppLine[pos.Line-1] == 0 {
+	if pos.Line < 1 || pos.Line > len(m.gpLine) || m.gpLine[pos.Line-1] == 0 {
 		return token.Position{}, false
 	}
 	out := token.Position{
-		Filename: m.GppPath,
-		Line:     m.gppLine[pos.Line-1],
+		Filename: m.GoplusPath,
+		Line:     m.gpLine[pos.Line-1],
 		Column:   pos.Column,
 	}
 	if !m.exact[pos.Line-1] && out.Column > 1 {
@@ -207,13 +207,13 @@ func splitLines(b []byte) []string {
 	return lines
 }
 
-// Forward maps a .gpp position to its emitted counterpart — the
+// Forward maps a .gp position to its emitted counterpart — the
 // inverse direction, built from the same line pairing (the first
-// emitted line attributed to the .gpp line wins; columns carry over on
-// exact lines and clamp to column 1 otherwise). ok is false for .gpp
+// emitted line attributed to the .gp line wins; columns carry over on
+// exact lines and clamp to column 1 otherwise). ok is false for .gp
 // lines with no emitted counterpart.
 func (m *Map) Forward(pos token.Position) (token.Position, bool) {
-	for i, g := range m.gppLine {
+	for i, g := range m.gpLine {
 		if g != pos.Line {
 			continue
 		}

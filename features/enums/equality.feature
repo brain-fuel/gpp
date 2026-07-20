@@ -8,7 +8,7 @@ Feature: Derived structural equality
   derived base. Names are always enum-prefixed. Enums with func-, map-,
   or chan-typed content anywhere in their reachable spine are
   UNDERIVABLE and silently derive no equality, as are generic and
-  indexed enums and `//gpp:derive off` enums; a field typed as another
+  indexed enums and `//goplus:derive off` enums; a field typed as another
   same-package enum recurses through that enum's derived equality and
   inherits its underivability.
 
@@ -21,7 +21,7 @@ Feature: Derived structural equality
       """
 
   Scenario: A recursive enum derives structural equality
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -41,7 +41,7 @@ Feature: Derived structural equality
       	fmt.Println(TmEqual(Lit(1), Add(Lit(1), Lit(1))))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -49,18 +49,18 @@ Feature: Derived structural equality
       false
       false
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       // TmEqual reports structural equality of a and b.
       func TmEqual(a, b Tm) bool {
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       // TmEqOverrides carries optional per-variant hooks for TmEqualWith.
       """
 
   Scenario: An override makes a field proof-irrelevant
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -85,7 +85,7 @@ Feature: Derived structural equality
       	fmt.Println(TmEqualWith(c1, c3, irrelevant))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -95,7 +95,7 @@ Feature: Derived structural equality
       """
 
   Scenario: Equality descends wrappers and slices
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -125,7 +125,7 @@ Feature: Derived structural equality
       	fmt.Println(TmEqual(k1, k3))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -136,7 +136,7 @@ Feature: Derived structural equality
       """
 
   Scenario: Func-typed content and its dependents are underivable
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -164,12 +164,12 @@ Feature: Derived structural equality
       	fmt.Println(ColorEqual(r, g))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
       true
       false
       """
-    And the file "main_gpp.go" does not contain "ThunkEqual"
-    And the file "main_gpp.go" does not contain "ValEqual"
+    And the file "main_gp.go" does not contain "ThunkEqual"
+    And the file "main_gp.go" does not contain "ValEqual"

@@ -15,7 +15,7 @@ Feature: Propositional equality
       """
 
   Scenario: refl discharges ground and symbolic equalities
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -42,28 +42,28 @@ Feature: Propositional equality
       	fmt.Println(Swap(3, 4, refl))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
       cast ok
       commutes
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       func Cast[T any](v Vec[T]) Vec[T] {
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       	w := Cast(v)
       """
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
       	fmt.Println(Swap())
       """
 
   Scenario: An unprovable equality is an error naming both sides
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -81,12 +81,12 @@ Feature: Propositional equality
       	_ = Cast(1, 2, refl, v)
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "cannot prove 1 = 2 at this call to Cast; the arithmetic decider could not discharge refl"
 
   Scenario: A proof argument must be refl
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -99,12 +99,12 @@ Feature: Propositional equality
       	_ = Claim(1, x)
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "the proof argument for p of Claim must be refl in v0.7.0"
 
   Scenario: A proof parameter must be erased
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -114,6 +114,6 @@ Feature: Propositional equality
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "a proof parameter (Eq[n, n]) must be erased: give p quantity 0"

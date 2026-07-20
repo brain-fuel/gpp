@@ -4,7 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 
-	"goforge.dev/gpp/internal/registry"
+	"goforge.dev/goplus/internal/registry"
 )
 
 // Structural GADT unification (v0.6.0). A variant's result arguments are

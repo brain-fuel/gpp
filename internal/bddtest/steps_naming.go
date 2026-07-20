@@ -9,9 +9,9 @@ import (
 
 	"github.com/cucumber/godog"
 
-	"goforge.dev/gpp/internal/naming"
-	"goforge.dev/gpp/internal/registry"
-	"goforge.dev/gpp/internal/syntax"
+	"goforge.dev/goplus/internal/naming"
+	"goforge.dev/goplus/internal/registry"
+	"goforge.dev/goplus/internal/syntax"
 )
 
 type namingState struct {
@@ -43,12 +43,12 @@ func initNamingSteps(sc *godog.ScenarioContext, w func() *World, ns *namingState
 
 	sc.Step(`^I compute lowered names$`, func() error {
 		world := w()
-		src, err := os.ReadFile(filepath.Join(world.Dir, world.LastGppFile))
+		src, err := os.ReadFile(filepath.Join(world.Dir, world.LastGoplusFile))
 		if err != nil {
 			return err
 		}
 		fset := token.NewFileSet()
-		f, err := syntax.ParseFile(fset, world.LastGppFile, src)
+		f, err := syntax.ParseFile(fset, world.LastGoplusFile, src)
 		if err != nil {
 			return fmt.Errorf("parse: %w", err)
 		}

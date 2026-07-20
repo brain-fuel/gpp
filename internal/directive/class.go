@@ -6,16 +6,16 @@ import (
 )
 
 const (
-	classPrefix    = "//gpp:class"
-	lawPrefix      = "//gpp:law"
-	defaultPrefix  = "//gpp:default"
-	instancePrefix = "//gpp:instance"
-	fnPrefix       = "//gpp:fn"
+	classPrefix    = "//goplus:class"
+	lawPrefix      = "//goplus:law"
+	defaultPrefix  = "//goplus:default"
+	instancePrefix = "//goplus:instance"
+	fnPrefix       = "//goplus:fn"
 )
 
 // ClassMarker is rendered above the generated witness struct:
 //
-//	//gpp:class Monoid[T any] embeds(Semigroup, "example.com/x".Eq)
+//	//goplus:class Monoid[T any] embeds(Semigroup, "example.com/x".Eq)
 //
 // Embeds name sibling classes bare and imported classes as a quoted
 // package path plus .Name. Unknown trailing clauses are ignored by the
@@ -63,7 +63,7 @@ func ParseClassMarker(line string) (ClassMarker, bool) {
 
 // LawMarker is rendered above each generated law method:
 //
-//	//gpp:law (Semigroup[T]) Assoc(a, b, c T)
+//	//goplus:law (Semigroup[T]) Assoc(a, b, c T)
 type LawMarker struct {
 	ClassName   string
 	ClassTParam string // tparam name only, e.g. "T"
@@ -82,7 +82,7 @@ func ParseLawMarker(line string) (LawMarker, bool) {
 
 // DefaultMarker is rendered above each generated default-op method:
 //
-//	//gpp:default (Group[T]) LeftDiv(a, b T)
+//	//goplus:default (Group[T]) LeftDiv(a, b T)
 type DefaultMarker = LawMarker
 
 // ParseDefaultMarker parses a comment line rendered for a default op.
@@ -135,9 +135,9 @@ func parseRecvMember(line, prefix string) (LawMarker, bool) {
 
 // InstanceMarker is rendered above each generated instance value:
 //
-//	//gpp:instance IntAdd Group[int]
-//	//gpp:instance SliceConcat[T any] Monoid[[]T]
-//	//gpp:instance Lex "goforge.dev/gpp/std/algebra".Monoid[string]
+//	//goplus:instance IntAdd Group[int]
+//	//goplus:instance SliceConcat[T any] Monoid[[]T]
+//	//goplus:instance Lex "goforge.dev/goplus/std/algebra".Monoid[string]
 type InstanceMarker struct {
 	Name    string
 	TParams string // generic instances; "" otherwise
@@ -172,8 +172,8 @@ func ParseInstanceMarker(line string) (InstanceMarker, bool) {
 
 // FnMarker is rendered above each dictionary-taking generated function:
 //
-//	//gpp:fn Accumulate[T Monoid]
-//	//gpp:fn Lex[T "goforge.dev/gpp/std/algebra".Monoid]
+//	//goplus:fn Accumulate[T Monoid]
+//	//goplus:fn Lex[T "goforge.dev/goplus/std/algebra".Monoid]
 //
 // The bracket list holds one `tparam class` pair per dictionary parameter,
 // in dictionary order, comma-separated.

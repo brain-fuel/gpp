@@ -1,13 +1,13 @@
-Feature: Typed-failure features compose with the rest of G++
+Feature: Typed-failure features compose with the rest of Go+
   The v0.4.0 constructs nest: railway pipelines can be match-expression
   arms, ? early-returns work inside chain-mode (nested-pattern) match
   arms, and expression conditionals can head a pipeline.
 
   Background:
-    Given a module "example.com/demo" using the gpp standard library
+    Given a module "example.com/demo" using the goplus standard library
 
   Scenario: A railway pipeline as a match-expression arm
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -16,7 +16,7 @@ Feature: Typed-failure features compose with the rest of G++
       	"strconv"
       	"strings"
 
-      	"goforge.dev/gpp/std/result"
+      	"goforge.dev/goplus/std/result"
       )
 
       type Source enum {
@@ -44,12 +44,12 @@ Feature: Typed-failure features compose with the rest of G++
       	fmt.Println(load(a), load(b), load(c))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "21 7 -1"
 
   Scenario: ? inside a chain-mode match arm early-returns from the function
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -89,13 +89,13 @@ Feature: Typed-failure features compose with the rest of G++
       	fmt.Println(err != nil)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "5 <nil>"
     And stdout contains "true"
 
   Scenario: An expression if heads a pipeline
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -111,6 +111,6 @@ Feature: Typed-failure features compose with the rest of G++
       	fmt.Println(pick(true), pick(false))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "20 40"

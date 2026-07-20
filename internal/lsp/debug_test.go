@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"goforge.dev/gpp/internal/sourcemap"
+	"goforge.dev/goplus/internal/sourcemap"
 )
 
 func TestMapsBuiltAfterDiagnostics(t *testing.T) {

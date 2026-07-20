@@ -6,7 +6,7 @@ import (
 	"go/types"
 	"strings"
 
-	"goforge.dev/gpp/internal/lower"
+	"goforge.dev/goplus/internal/lower"
 )
 
 // Partial application: a call with top-level `_` arguments lowers to a
@@ -137,7 +137,7 @@ func (r *fileResolver) partialCandidate(call *ast.CallExpr) {
 	r.emitPartial(call, sig, placeholders, calleeText, pureRef)
 }
 
-// isCarrierCallee reports whether a callee is any gpp carrier family.
+// isCarrierCallee reports whether a callee is any goplus carrier family.
 func isCarrierCallee(fun ast.Expr) bool {
 	base := fun
 	switch fn := fun.(type) {
@@ -147,7 +147,7 @@ func isCarrierCallee(fun ast.Expr) bool {
 		base = fn.X
 	}
 	id, ok := base.(*ast.Ident)
-	return ok && strings.HasPrefix(id.Name, "__gpp_")
+	return ok && strings.HasPrefix(id.Name, "__gp_")
 }
 
 // isPureFuncRef reports whether a callee expression is a side-effect-free
@@ -196,9 +196,9 @@ func (r *fileResolver) emitPartial(call *ast.CallExpr, sig *types.Signature, pla
 		if fail(err) {
 			return
 		}
-		outerParams = append(outerParams, "__gpp_f "+ft)
+		outerParams = append(outerParams, "__gp_f "+ft)
 		outerArgs = append(outerArgs, calleeText)
-		calleeText = "__gpp_f"
+		calleeText = "__gp_f"
 	}
 	ci, pi := 0, 0
 	for i, a := range call.Args {
@@ -212,14 +212,14 @@ func (r *fileResolver) emitPartial(call *ast.CallExpr, sig *types.Signature, pla
 			return
 		}
 		if isPlaceholder[i] {
-			name := fmt.Sprintf("__gpp_p%d", pi)
+			name := fmt.Sprintf("__gp_p%d", pi)
 			pi++
 			innerParams = append(innerParams, name+" "+tt)
 			innerTypes = append(innerTypes, tt)
 			bodyArgs = append(bodyArgs, name)
 			continue
 		}
-		name := fmt.Sprintf("__gpp_c%d", ci)
+		name := fmt.Sprintf("__gp_c%d", ci)
 		ci++
 		outerParams = append(outerParams, name+" "+tt)
 		outerArgs = append(outerArgs, r.text(a.Pos(), a.End()))

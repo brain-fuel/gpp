@@ -4,9 +4,9 @@ import (
 	"go/ast"
 	"strings"
 
-	"goforge.dev/gpp/internal/core"
-	"goforge.dev/gpp/internal/lower"
-	"goforge.dev/gpp/internal/registry"
+	"goforge.dev/goplus/internal/core"
+	"goforge.dev/goplus/internal/lower"
+	"goforge.dev/goplus/internal/registry"
 )
 
 // Dependent call sites (v0.7.0). The surface passes every argument —
@@ -162,7 +162,7 @@ func pureIndexArg(e ast.Expr) bool {
 
 // scrutineeIndexTerms recovers a match scrutinee's index terms when the
 // scrutinee is a parameter of the enclosing dependent function — its
-// //gpp:dep marker preserves the unerased type. Unknown otherwise
+// //goplus:dep marker preserves the unerased type. Unknown otherwise
 // (conservative: every variant stays possible).
 func (r *fileResolver) scrutineeIndexTerms(e *registry.Enum, subj ast.Expr) []string {
 	if len(e.Indices) == 0 {

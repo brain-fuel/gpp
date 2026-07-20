@@ -4,8 +4,8 @@ import (
 	"go/ast"
 	"go/types"
 
-	"goforge.dev/gpp/internal/lower"
-	"goforge.dev/gpp/internal/registry"
+	"goforge.dev/goplus/internal/lower"
+	"goforge.dev/goplus/internal/registry"
 )
 
 // Bare operation names (v0.5.0). Inside constrained functions, law and

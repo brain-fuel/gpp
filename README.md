@@ -1,13 +1,12 @@
-# G++ (`gpp`)
+# Go+ (`goplus`)
 
-G++ is a language for authoring richer abstractions while emitting **portable,
+Go+ is a language for authoring richer abstractions while emitting **portable,
 idiomatic Go**. It is a **strict superset of Go**: every valid Go file is a
-valid G++ file (`.gpp`), and every G++ construct has a specific Go lowering.
+valid Go+ file (`.gp`), and every Go+ construct has a specific Go lowering.
 Generated packages compile with the standard Go toolchain and may be
-distributed and consumed **without** G++ — the same interoperability story
+distributed and consumed **without** Go+ — the same interoperability story
 Kotlin, Scala, and Clojure have with Java.
 
-<<<<<<< HEAD
 ## v0.14.0 — Multi-Pattern Arms
 
 Driven by rune's elaborate/store rewrite — rigidity and spine
@@ -26,31 +25,6 @@ Alternatives take only wildcard arguments and the arm cannot bind the
 value (split the arm to bind); every alternative is its own
 reachability row, so a redundant alternative is an unreachable-arm
 error and alternatives count toward exhaustiveness.
-=======
-## v0.13.0 — The Standard Library Grows Nine
-
-Every package extracted from the first whole-system G++ rewrite
-([envoy-go](https://github.com/pgdad/envoy-go), ~360k lines): patterns that
-appeared three-plus times across an L7 proxy, generalized and shipped where
-every G++ program can reach them.
-
-```go
-import "goforge.dev/gpp/std/kleene"    // K3 three-valued logic: All/Any short-circuit, Undetermined absorbs
-import "goforge.dev/gpp/std/latch"     // one-shot quiescence rendezvous: Inc/Dec/Trip/Done, lock-free hot path
-import "goforge.dev/gpp/std/clock"     // time seam + deterministic Fake: (deadline, insertion-seq) Advance ordering
-import "goforge.dev/gpp/std/guarded"   // Guarded[T]/RWGuarded[T]: the mutex owns the value, not a comment
-import "goforge.dev/gpp/std/deepmap"   // two-level map with defensive Snapshot, nil-receiver tolerant
-import "goforge.dev/gpp/std/retry"     // bounded ctx-aware exponential backoff, last-error surfaced
-import "goforge.dev/gpp/std/registry"  // freeze-after-boot sealed registry: post-freeze Register panics
-import "goforge.dev/gpp/std/memo"      // compute-once cache: compute outside the lock, first-writer-wins identity
-import "goforge.dev/gpp/std/closeonce" // idempotent Close with cached first error
-```
-
-All nine are authored in G++, tested under -race, and consumed in anger:
-envoy-go's drain manager is a latch, its clock package re-exports std/clock,
-and its dynamic-metadata bucket embeds a deepmap. No language changes in this
-release; the toolchain version moves with std per the one-version discipline.
->>>>>>> origin/main
 
 ## v0.11.0 — Deep Structure
 
@@ -84,12 +58,12 @@ generated Go documents itself on pkg.go.dev.
 ## v0.10.0 — The Dogfood Rewrite
 
 [goforge.dev/cadence](https://goforge.dev/cadence) v0.2.0 is authored
-in G++ — the first external artifact rewritten in the language — and
+in Go+ — the first external artifact rewritten in the language — and
 the rewrite drove three features home:
 
 ```go
 // Derived rapid generators for every enum (emission is demand-driven —
-// law tests, or //gpp:derive gen — so rapid never enters go.mod uninvited):
+// law tests, or //goplus:derive gen — so rapid never enters go.mod uninvited):
 s := GenStrategy(rt)
 
 // Laws quantify over enums, drawn through the derived generator:
@@ -100,8 +74,8 @@ type Interpreter[T any] class {
 // → every instance gets a generated rapid property; violations shrink
 //   to counterexamples like m={-1}
 
-// Operations declare multiple results; tests are G++ too:
-//   foo_test.gpp → foo_gpp_test.go (still a _test.go to the go tool)
+// Operations declare multiple results; tests are Go+ too:
+//   foo_test.gp → foo_gp_test.go (still a _test.go to the go tool)
 ```
 
 In cadence, Strategy became a real sum (illegal states unrepresentable),
@@ -111,21 +85,21 @@ anyone writes.
 
 ## v0.9.0 — Tooling: LSP, Editors, go generate
 
-No language changes — this release is about living with gpp:
+No language changes — this release is about living with goplus:
 
-- **`gpp lsp`** ships inside the binary (one version, always in
+- **`goplus lsp`** ships inside the binary (one version, always in
   lockstep): diagnostics as you type from the real gen pipeline run in
   memory, plus hover, goto-definition, and completion delegated to
   gopls over the generated Go and mapped back through the sourcemap.
-  The server's dispatch layer is authored in gpp itself.
+  The server's dispatch layer is authored in goplus itself.
 - **Editors**: VS Code (marketplace-ready extension), Neovim, Zed, and
-  GoLand/IntelliJ (platform LSP API) — all thin clients of `gpp lsp`;
+  GoLand/IntelliJ (platform LSP API) — all thin clients of `goplus lsp`;
   see editor/.
-- **go generate is canonical**: `gpp init` scaffolds
-  `//go:generate go tool gpp gen ./...`; the workflow is
-  `go generate ./... && go build ./...`, with the gpp wrapper as
+- **go generate is canonical**: `goplus init` scaffolds
+  `//go:generate go tool goplus gen ./...`; the workflow is
+  `go generate ./... && go build ./...`, with the goplus wrapper as
   convenience.
-- **Cross-package hardening**: generated files carry a `//gpp:v`
+- **Cross-package hardening**: generated files carry a `//goplus:v`
   vintage stamp (a newer file tells you the exact upgrade command);
   marker reconstruction is package-wide; index domains cross packages
   (`Socket[s states.State]`); imported Eq propositions unfold their
@@ -135,7 +109,7 @@ No language changes — this release is about living with gpp:
 ## v0.8.0 — Parser Combinators (std/parsec)
 
 ```go
-import "goforge.dev/gpp/std/parsec"
+import "goforge.dev/goplus/std/parsec"
 
 // A complete arithmetic evaluator: precedence, parens, whitespace.
 func grammar() parsec.Parser[int] {
@@ -158,8 +132,8 @@ any io.Reader: the buffer retains only what a live `Try` could rewind
 to, split UTF-8 runes decode across read boundaries, and a
 byte-at-a-time reader parses identically to a string (rapid-tested,
 along with the monad identities, Or associativity, and
-Try-never-consumes). The library is gpp eating its own cooking: Reply
-is a gpp enum matched in every combinator, its derived Fold consumes
+Try-never-consumes). The library is goplus eating its own cooking: Reply
+is a goplus enum matched in every combinator, its derived Fold consumes
 replies without a match, and Run's output rides the v0.4 railway.
 Also in this release: the linear-value cell is atomic
 (`CompareAndSwap`), so even racing double-users get exactly one winner.
@@ -197,7 +171,7 @@ w := Cast(1+1, 2, refl, v) // proves 1+1 = 2; erases to the identity
 func Process(1 f *os.File) error { return f.Close() }
 ```
 
-gpp now carries a real dependent core: quantities (QTT's 0/1/ω plus
+goplus now carries a real dependent core: quantities (QTT's 0/1/ω plus
 multiplicity variables), total functions with structural termination
 and guarded nat subtraction, enums indexed by nats, enum tags
 (typestate: `Socket[Open]`), and structured first-order data
@@ -225,7 +199,7 @@ type Row[T any] enum {
 	Packed[A fmt.Stringer](x A, tag string)
 }
 
-// Every enum derives a one-level fold (opt out: //gpp:derive off):
+// Every enum derives a one-level fold (opt out: //goplus:derive off):
 n := Fold(Some(7), OptionCases[int, string]{
 	Some: strconv.Itoa,
 	None: func() string { return "-" },
@@ -310,9 +284,9 @@ satisfies a weaker constraint** (a `Group[int]` instance answers a
 escape hatch is calling the lowered signature directly. `law` members
 declare boolean properties over the operations, and **law tests generate
 by default** for every concrete instance (rapid properties, inherited
-laws included) with `//gpp:laws` knobs (`off`, `[int] [string]`
+laws included) with `//goplus:laws` knobs (`off`, `[int] [string]`
 instantiations for generic instances, `gen=`, package-level `out=`).
-`goforge.dev/gpp/std/algebra` ships the Magma→Group hierarchy, stock
+`goforge.dev/goplus/std/algebra` ships the Magma→Group hierarchy, stock
 instances, and `Accumulate`/`FoldMap`.
 
 ## v0.4.0 — Typed Failure
@@ -322,7 +296,7 @@ Railway-Oriented error handling in the Wlaschin style: a shipped
 postfix `?` propagation, and expression-oriented control flow.
 
 ```go
-import "goforge.dev/gpp/std/result"
+import "goforge.dev/goplus/std/result"
 
 // Track-aware |>: once a Result flows, stages lift by shape —
 // T→Result binds, T→(U, error) adapts, T→U maps, T→() tees (Ok only),
@@ -354,8 +328,8 @@ case Rect(w, h):
 }
 ```
 
-`goforge.dev/gpp/std` is a nested module with **zero dependencies**,
-written in G++ and shipped as generated Go (`go get goforge.dev/gpp/std`).
+`goforge.dev/goplus/std` is a nested module with **zero dependencies**,
+written in Go+ and shipped as generated Go (`go get goforge.dev/goplus/std`).
 `Result[T any, E error]` carries typed failures; `Of` enters the railway
 from a Go-shaped `(value, error)` pair, `Unpack` leaves it. `?` works with
 Result values, `(…, error)` calls, and bare errors, in both Go-shaped and
@@ -383,7 +357,7 @@ between:= clamp(_, lo, hi)             // placeholder anywhere in a call
 `x |> f(a)` inserts the piped value as the first argument (a placeholder
 `_` picks a different slot); bare-name segments are **method-aware**: they
 resolve against the piped value's members — full Go selector semantics
-plus G++ generic and enum methods — and against functions, constructors,
+plus Go+ generic and enum methods — and against functions, constructors,
 builtins, and conversions in scope. Resolving to *both* is a hard error
 naming the two explicit spellings (`.Map(f)` for the member, `Map(_, f)`
 for the function). Multi-result stages follow Go's spread rule
@@ -399,7 +373,7 @@ initial GADT support — lowered to sealed interfaces plus variant structs
 that plain Go consumes with an ordinary type switch:
 
 ```go
-// option.gpp
+// option.gp
 package option
 
 type Option[T any] enum {
@@ -426,7 +400,7 @@ function position (`xs.Map(Some)`), and qualify (`Option[int].None`) when a
 name is genuinely ambiguous. GADT variants may pin their result type —
 `Lit(v int) Expr[int]` — excluding impossible arms and refining type
 parameters inside matching arms (the classic typed interpreter works).
-Emitted enums carry `//gpp:enum`/`//gpp:variant` markers, so importing
+Emitted enums carry `//goplus:enum`/`//goplus:variant` markers, so importing
 packages get constructors, matching, and exhaustiveness from the committed
 Go artifact alone.
 
@@ -448,7 +422,7 @@ case option.Some[int]:
 Methods may introduce type parameters not present on their receivers:
 
 ```go
-// stack.gpp
+// stack.gp
 package stack
 
 type Stack[T any] struct{ items []T }
@@ -462,52 +436,52 @@ func (s Stack[T]) Map[U any](f func(T) U) Stack[U] {
 }
 ```
 
-`gpp gen` emits `stack_gpp.go` beside the source — committed to your repo,
+`goplus gen` emits `stack_gp.go` beside the source — committed to your repo,
 protobuf-style — lowering each generic method to a package-level generic
 function:
 
 ```go
-// Code generated by gpp from stack.gpp. DO NOT EDIT.
+// Code generated by goplus from stack.gp. DO NOT EDIT.
 
-//gpp:method (Stack[T]) Map[U]
+//goplus:method (Stack[T]) Map[U]
 func StackMap[T any, U any](s Stack[T], f func(T) U) Stack[U] { … }
 ```
 
-G++ callers keep method syntax — `s.Map(strconv.Itoa)` — including chained
+Go+ callers keep method syntax — `s.Map(strconv.Itoa)` — including chained
 calls, explicit instantiation (`s.Map[string](f)`), method values
 (`f := s.Map[string]`), and promotion through embedded fields. Plain-Go
 consumers of your published package call `stack.StackMap(s, strconv.Itoa)`.
-The `//gpp:method` marker makes the emitted file self-describing, so packages
+The `//goplus:method` marker makes the emitted file self-describing, so packages
 that import yours get method syntax too — even when your package is fetched
 as ordinary Go with `go get`.
 
 ## CLI
 
 ```
-# Canonical workflow: the go toolchain drives, gpp only generates.
-gpp init                 # scaffold //go:generate wiring (flag: -hook)
-go get -tool goforge.dev/gpp/cmd/gpp@latest   # pin gpp in go.mod (Go 1.24+)
-go generate ./...        # regenerate *_gpp.go from *.gpp
+# Canonical workflow: the go toolchain drives, goplus only generates.
+goplus init                 # scaffold //go:generate wiring (flag: -hook)
+go get -tool goforge.dev/goplus/cmd/goplus@latest   # pin goplus in go.mod (Go 1.24+)
+go generate ./...        # regenerate *_gp.go from *.gp
 go build ./...           # plain Go from here (test/vet/run likewise)
 
 # Convenience wrapper: same thing, one word shorter.
-gpp gen ./...            # generate *_gpp.go from *.gpp
-gpp gen -check ./...     # exit 1 if any generated file is stale (CI)
-gpp gen -stage ./...     # regenerate and git-add results (pre-commit)
-gpp build|test|run|vet   # generate, then delegate to the go tool
-gpp version
+goplus gen ./...            # generate *_gp.go from *.gp
+goplus gen -check ./...     # exit 1 if any generated file is stale (CI)
+goplus gen -stage ./...     # regenerate and git-add results (pre-commit)
+goplus build|test|run|vet   # generate, then delegate to the go tool
+goplus version
 ```
 
 ## Install
 
 ```
-go install goforge.dev/gpp/cmd/gpp@latest
+go install goforge.dev/goplus/cmd/goplus@latest
 ```
 
 The standard library is a separate, dependency-free module:
 
 ```
-go get goforge.dev/gpp/std@latest
+go get goforge.dev/goplus/std@latest
 ```
 
 ## Keeping generated code fresh
@@ -517,15 +491,15 @@ Use the [pre-commit](https://pre-commit.com) framework:
 ```yaml
 # .pre-commit-config.yaml
 repos:
-  - repo: https://github.com/brain-fuel/gpp
+  - repo: https://github.com/brain-fuel/goplus
     rev: v0.1.0
     hooks:
-      - id: gpp-gen
+      - id: goplus-gen
 ```
 
 When outputs are stale, the first `git commit` attempt regenerates **and
 stages** the fixed files, then aborts (pre-commit's behavior for any hook that
-modifies files); retry the commit and it passes. `gpp-check` is a
+modifies files); retry the commit and it passes. `goplus-check` is a
 verify-only variant for CI.
 
 ## Specification
@@ -570,8 +544,8 @@ The spec is executable: the Godog/Cucumber feature suite under
 | v0.6.0  | Folds, structural GADTs, bounded existentials, delegation — shipped |
 | v0.7.0  | The dependent core: QTT quantities, total functions, indexed enums, Eq, linearity, std/vec — shipped |
 | v0.8.0  | std/parsec: streaming parser combinators — shipped |
-| v0.9.0  | Tooling: gpp lsp + four editors, go generate canonical, cross-package hardening — shipped |
-| v0.10.0 | The dogfood rewrite: cadence v0.2.0 in G++; derived generators, laws over enums, multi-result ops, G++ tests — shipped |
+| v0.9.0  | Tooling: goplus lsp + four editors, go generate canonical, cross-package hardening — shipped |
+| v0.10.0 | The dogfood rewrite: cadence v0.2.0 in Go+; derived generators, laws over enums, multi-result ops, Go+ tests — shipped |
 | v0.11.0 | Deep structure: derived traversals (Children/Universe/Transform), derived structural equality with overrides, std/option, variant doc preservation — shipped |
 | v0.13.0 | The standard library grows nine: kleene, latch, clock, guarded, deepmap, retry, registry, memo, closeonce (from the envoy-go rewrite) — shipped |
 | v0.14.0 | Multi-pattern match arms — shipped |

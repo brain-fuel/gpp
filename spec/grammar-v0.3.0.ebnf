@@ -1,5 +1,5 @@
 (*
-  G++ grammar, v0.3.0 — expressed as a delta over the Go specification and
+  Go+ grammar, v0.3.0 — expressed as a delta over the Go specification and
   spec/grammar-v0.2.0.ebnf. Every production not listed here is exactly the
   Go production; the v0.1.0 MethodDecl and v0.2.0 EnumType/MatchStmt
   extensions are carried forward unchanged.
@@ -13,7 +13,7 @@
   do "||>", "|>=", "|>>", ">>>=", and ">>>>".
 
   This file and the Godog feature suite under features/ are together the
-  authoritative specification of G++.
+  authoritative specification of Go+.
 *)
 
 (* ----------------------- Pipeline & composition ------------------------- *)
@@ -30,7 +30,7 @@ TypeArgs     = "[" TypeList [ "," ] "]" .
 Arguments    = (* Go's production *) .
 
 (*
-  - Precedence: "|>" is the lowest-precedence operator in G++; ">>>" sits
+  - Precedence: "|>" is the lowest-precedence operator in Go+; ">>>" sits
     between "|>" and "||". Both are left-associative. Every Go operator
     binds tighter than either: `a + b |> f` is `(a + b) |> f`;
     `x |> f && y` is `x |> (f && y)` (rejected at resolution unless the
@@ -56,7 +56,7 @@ Arguments    = (* Go's production *) .
   Placeholders need no grammar: `_` in a call argument position, e.g.
   `add(1, _)` or `clamp(_, lo, hi)`, already parses as a blank-identifier
   operand in Go (it is only *semantically* invalid there: "cannot use _
-  as value"). G++ claims that semantic space: a call expression with one
+  as value"). Go+ claims that semantic space: a call expression with one
   or more top-level `_` arguments denotes a partial application, lowered
   to a function literal with one parameter per `_` in argument order,
   capturing the callee and the fixed arguments once at creation. Inside a
@@ -69,7 +69,7 @@ Arguments    = (* Go's production *) .
   - Pipeline stages insert the piped value as the FIRST argument
     (`x |> f(a)` is `f(x, a)`; bare `x |> f` is `f(x)`) unless a
     placeholder chooses the slot. A bare-name stage resolves against the
-    piped value's members (full Go selector semantics plus G++ generic
+    piped value's members (full Go selector semantics plus Go+ generic
     and enum methods) and against functions/constructors in scope;
     resolving to both is an error, fixed by writing `.Name(args)` for the
     member or a placeholder call for the function. Builtins and type

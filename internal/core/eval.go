@@ -28,14 +28,14 @@ func NewEvaluator(defs Defs) *Evaluator {
 func (ev *Evaluator) Eval(t Term, env Env) (Value, error) {
 	ev.Fuel--
 	if ev.Fuel <= 0 {
-		return nil, fmt.Errorf("gpp internal: evaluation fuel exhausted (non-terminating total function?)")
+		return nil, fmt.Errorf("goplus internal: evaluation fuel exhausted (non-terminating total function?)")
 	}
 	switch x := t.(type) {
 	case Var:
 		if v, ok := env[x.Name]; ok {
 			return v, nil
 		}
-		return nil, fmt.Errorf("gpp internal: unbound variable %s", x.Name)
+		return nil, fmt.Errorf("goplus internal: unbound variable %s", x.Name)
 	case Nat:
 		return linConst(x.N), nil
 	case Prim:
@@ -67,7 +67,7 @@ func (ev *Evaluator) Eval(t Term, env Env) (Value, error) {
 			}
 			return out, nil
 		}
-		return nil, fmt.Errorf("gpp internal: unknown primitive %q", x.Op)
+		return nil, fmt.Errorf("goplus internal: unknown primitive %q", x.Op)
 	case Ctor:
 		args := make([]Value, len(x.Args))
 		for i, a := range x.Args {
@@ -92,10 +92,10 @@ func (ev *Evaluator) Eval(t Term, env Env) (Value, error) {
 			if ev.Permissive {
 				return VNeu{N: NCall{Fn: x.Fn, Args: args}}, nil
 			}
-			return nil, fmt.Errorf("gpp internal: call to unknown total function %s", x.Fn)
+			return nil, fmt.Errorf("goplus internal: call to unknown total function %s", x.Fn)
 		}
 		if len(args) != len(def.Params) {
-			return nil, fmt.Errorf("gpp internal: %s expects %d arguments, got %d", x.Fn, len(def.Params), len(args))
+			return nil, fmt.Errorf("goplus internal: %s expects %d arguments, got %d", x.Fn, len(def.Params), len(args))
 		}
 		inner := make(Env, len(args))
 		for i, p := range def.Params {
@@ -149,7 +149,7 @@ func (ev *Evaluator) Eval(t Term, env Env) (Value, error) {
 				inner := env.clone()
 				if arm.Ctor != "_" {
 					if len(arm.Binds) != len(sv.Args) {
-						return nil, fmt.Errorf("gpp internal: arm %s binds %d fields of %d", arm.Ctor, len(arm.Binds), len(sv.Args))
+						return nil, fmt.Errorf("goplus internal: arm %s binds %d fields of %d", arm.Ctor, len(arm.Binds), len(sv.Args))
 					}
 					for i, b := range arm.Binds {
 						inner[b] = sv.Args[i]
@@ -157,7 +157,7 @@ func (ev *Evaluator) Eval(t Term, env Env) (Value, error) {
 				}
 				return ev.Eval(arm.Body, inner)
 			}
-			return nil, fmt.Errorf("gpp internal: no arm for constructor %s", sv.Name)
+			return nil, fmt.Errorf("goplus internal: no arm for constructor %s", sv.Name)
 		case VNeu:
 			arms := make([]NArm, len(x.Arms))
 			for i, a := range x.Arms {
@@ -165,10 +165,10 @@ func (ev *Evaluator) Eval(t Term, env Env) (Value, error) {
 			}
 			return VNeu{N: NMatch{Scrut: sv.N, Arms: arms}}, nil
 		default:
-			return nil, fmt.Errorf("gpp internal: match scrutinee is not data: %s", s)
+			return nil, fmt.Errorf("goplus internal: match scrutinee is not data: %s", s)
 		}
 	}
-	return nil, fmt.Errorf("gpp internal: unknown term %T", t)
+	return nil, fmt.Errorf("goplus internal: unknown term %T", t)
 }
 
 // isStuckRoot reports whether a value is stuck at its root on control

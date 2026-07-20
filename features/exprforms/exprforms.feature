@@ -14,7 +14,7 @@ Feature: Expression-oriented if, switch, and match
       """
 
   Scenario: An if expression lowers to a hoisted statement
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -26,22 +26,22 @@ Feature: Expression-oriented if, switch, and match
       	fmt.Println(y)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "big"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      	var __gpp_v0 string
+      	var __gp_v0 string
       	if x > 2 {
-      		__gpp_v0 = "big"
+      		__gp_v0 = "big"
       	} else {
-      		__gpp_v0 = "small"
+      		__gp_v0 = "small"
       	}
-      	y := __gpp_v0
+      	y := __gp_v0
       """
 
   Scenario: A switch expression with a tag and multi-value cases
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -60,25 +60,25 @@ Feature: Expression-oriented if, switch, and match
       	fmt.Println(n)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "20"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      	var __gpp_v0 int
+      	var __gp_v0 int
       	switch x {
       	case 1:
-      		__gpp_v0 = 10
+      		__gp_v0 = 10
       	case 2, 3:
-      		__gpp_v0 = 20
+      		__gp_v0 = 20
       	default:
-      		__gpp_v0 = 0
+      		__gp_v0 = 0
       	}
-      	n := __gpp_v0
+      	n := __gp_v0
       """
 
   Scenario: A match expression reuses the whole match machinery
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -102,28 +102,28 @@ Feature: Expression-oriented if, switch, and match
       	fmt.Println(area(Circle(2)), area(Rect(3, 4)))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "12.56 12"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      	var __gpp_v0 float64
-      	switch __gpp_m0 := any(s).(type) {
+      	var __gp_v0 float64
+      	switch __gp_m0 := any(s).(type) {
       	case Circle:
-      		r := __gpp_m0.R
-      		__gpp_v0 = 3.14 * r * r
+      		r := __gp_m0.R
+      		__gp_v0 = 3.14 * r * r
       	case Rect:
-      		w := __gpp_m0.W
-      		h := __gpp_m0.H
-      		__gpp_v0 = w * h
+      		w := __gp_m0.W
+      		h := __gp_m0.H
+      		__gp_v0 = w * h
       	default:
-      		panic("gpp: impossible enum value in match")
+      		panic("goplus: impossible enum value in match")
       	}
-      	return __gpp_v0
+      	return __gp_v0
       """
 
   Scenario: A non-exhaustive match expression is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -141,13 +141,13 @@ Feature: Expression-oriented if, switch, and match
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "non-exhaustive match"
     And stderr contains "Rect"
 
   Scenario: GADT-refined match-expression arms are wrapped for erasure
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -171,27 +171,27 @@ Feature: Expression-oriented if, switch, and match
       	fmt.Println(eval(Lit(21))*2, eval(Str("hi")))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "42 hi"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      	var __gpp_v0 T
-      	switch __gpp_m0 := any(e).(type) {
+      	var __gp_v0 T
+      	switch __gp_m0 := any(e).(type) {
       	case Lit:
-      		n := __gpp_m0.N
-      		__gpp_v0 = any(n).(T)
+      		n := __gp_m0.N
+      		__gp_v0 = any(n).(T)
       	case Str:
-      		s := __gpp_m0.S
-      		__gpp_v0 = any(s).(T)
+      		s := __gp_m0.S
+      		__gp_v0 = any(s).(T)
       	default:
-      		panic("gpp: impossible enum value in match")
+      		panic("goplus: impossible enum value in match")
       	}
-      	return __gpp_v0
+      	return __gp_v0
       """
 
   Scenario: The context's expected type wins over the arms' default type
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -203,16 +203,16 @@ Feature: Expression-oriented if, switch, and match
       	fmt.Println(f + 0.5)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "1.5"
-    And the file "main_gpp.go" contains:
+    And the file "main_gp.go" contains:
       """
-      	var __gpp_v0 float64
+      	var __gp_v0 float64
       """
 
   Scenario: Mismatched arm types without a determining context are an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -224,13 +224,13 @@ Feature: Expression-oriented if, switch, and match
       	fmt.Println(x)
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
-    And stderr contains "main.gpp:7:"
+    And stderr contains "main.gp:7:"
     And stderr contains "mismatched arm types in this expression form: int vs string"
 
   Scenario: An expression switch without a default arm is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -245,12 +245,12 @@ Feature: Expression-oriented if, switch, and match
       	fmt.Println(n)
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "an expression switch must have a default arm"
 
   Scenario: Expression forms nest, and arms hoist inside their own arm
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -268,12 +268,12 @@ Feature: Expression-oriented if, switch, and match
       	fmt.Println(y, z)
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "big 100"
 
   Scenario: Hoisted sites evaluate before the rest of their statement, in source order
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -288,7 +288,7 @@ Feature: Expression-oriented if, switch, and match
       	fmt.Println(step(1), if step(2) > 0 { step(3) } else { -1 }, if step(4) > 0 { step(5) } else { -1 })
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains:
       """
@@ -301,7 +301,7 @@ Feature: Expression-oriented if, switch, and match
       """
 
   Scenario: An expression form in a for condition is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -312,12 +312,12 @@ Feature: Expression-oriented if, switch, and match
       	}
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "cannot appear in a for condition or post statement"
 
   Scenario: An expression form in an else-if condition is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -332,12 +332,12 @@ Feature: Expression-oriented if, switch, and match
       	}
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "cannot appear in an else-if condition"
 
   Scenario: An expression form on the right of && is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -350,12 +350,12 @@ Feature: Expression-oriented if, switch, and match
       	}
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "cannot appear on the right side of &&"
 
   Scenario: An expression form in a statement-switch case value is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -369,12 +369,12 @@ Feature: Expression-oriented if, switch, and match
       	}
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "cannot appear in a case value"
 
   Scenario: An expression form at package level is an error
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -382,6 +382,6 @@ Feature: Expression-oriented if, switch, and match
 
       func main() {}
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "use an init function for package-level values"

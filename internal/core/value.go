@@ -265,8 +265,8 @@ func linMul(a, b VLin) VLin {
 		}
 		return linAdd(dst, scaled, 1)
 	}
-	out = addScaled(out, b, a.Const)  // a.Const · b.atoms — wait: b's atoms only
-	out = addScaled(out, a, b.Const)  // b.Const · a.atoms
+	out = addScaled(out, b, a.Const) // a.Const · b.atoms — wait: b's atoms only
+	out = addScaled(out, a, b.Const) // b.Const · a.atoms
 	// cross products of atoms: opaque nonlinear atoms.
 	for ka, ca := range a.Coef {
 		for kb, cb := range b.Coef {

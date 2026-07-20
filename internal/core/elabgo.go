@@ -12,8 +12,8 @@ import (
 // admitted fragment is deliberately small: if/else and return over nat
 // expressions built from parameters, integer literals, + - *, parens,
 // and calls to total functions. The SAME elaborator serves the original
-// .gpp declaration (gen pass 1) and the erased Go body behind a
-// //gpp:total marker (registry reconstruction) — the generated body is
+// .gp declaration (gen pass 1) and the erased Go body behind a
+// //goplus:total marker (registry reconstruction) — the generated body is
 // the definition.
 
 // CallResolver canonicalizes a callee expression to the registry key

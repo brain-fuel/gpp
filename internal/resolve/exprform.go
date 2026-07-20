@@ -7,16 +7,16 @@ import (
 	"regexp"
 	"strings"
 
-	"goforge.dev/gpp/internal/lower"
+	"goforge.dev/goplus/internal/lower"
 )
 
 // Expression-form temp typing (v0.4.0 Engine B). Pass 1 hoists an
-// expression if/switch/match to statements assigning `__gpp_vN = arm`
-// behind a type-deferred decl `__gpp_vN := __gpp_valN()`. Resolution picks
+// expression if/switch/match to statements assigning `__gp_vN = arm`
+// behind a type-deferred decl `__gp_vN := __gp_valN()`. Resolution picks
 // the temp's type — the context's expected type first, otherwise the arms'
-// shared default type — and rewrites the decl to `var __gpp_vN T`.
+// shared default type — and rewrites the decl to `var __gp_vN T`.
 
-var valTempName = regexp.MustCompile(`^__gpp_v\d+$`)
+var valTempName = regexp.MustCompile(`^__gp_v\d+$`)
 
 // exprformCandidate types one temp decl carrier.
 func (r *fileResolver) exprformCandidate(as *ast.AssignStmt) {
@@ -75,7 +75,7 @@ func (r *fileResolver) exprformCandidate(as *ast.AssignStmt) {
 	})
 }
 
-// valDeclName recognizes `__gpp_vN := __gpp_valN()`.
+// valDeclName recognizes `__gp_vN := __gp_valN()`.
 func valDeclName(as *ast.AssignStmt) (string, bool) {
 	if as.Tok != token.DEFINE || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
 		return "", false
@@ -95,7 +95,7 @@ func valDeclName(as *ast.AssignStmt) (string, bool) {
 	return lhs.Name, true
 }
 
-// tempAssignments collects the temp's arm assignments (`__gpp_vN = expr`).
+// tempAssignments collects the temp's arm assignments (`__gp_vN = expr`).
 func (r *fileResolver) tempAssignments(name string) []*ast.AssignStmt {
 	var out []*ast.AssignStmt
 	ast.Inspect(r.file, func(n ast.Node) bool {

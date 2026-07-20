@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	forkparser "goforge.dev/gpp/internal/syntax/parser"
+	forkparser "goforge.dev/goplus/internal/syntax/parser"
 )
 
 func parseBoth(t *testing.T, src string) (stockErr, forkErr error, ext *forkparser.Extensions) {
@@ -137,7 +137,7 @@ func TestClaimBoundary(t *testing.T) {
 
 	t.Run("v0.4 claimed forms", func(t *testing.T) {
 		for _, tc := range []struct {
-			expr                              string
+			expr                             string
 			tries, ifs, switches, matchExprs int
 		}{
 			{"f()?", 1, 0, 0, 0},

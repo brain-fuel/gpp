@@ -1,11 +1,11 @@
 Feature: Strict superset — enum and match remain ordinary identifiers
-  Every valid Go program is a valid G++ program. The contextual keywords
+  Every valid Go program is a valid Go+ program. The contextual keywords
   claim only token sequences that are invalid Go; each scenario here is a
   valid Go form that must keep its Go meaning, parsing with zero enums and
   zero match statements.
 
   Scenario: match as a variable
-    Given a G++ file "s.gpp":
+    Given a Go+ file "s.gp":
       """
       package s
 
@@ -20,7 +20,7 @@ Feature: Strict superset — enum and match remain ordinary identifiers
     Then parsing succeeds with 0 match statements
 
   Scenario: match as a function, call syntax
-    Given a G++ file "s.gpp":
+    Given a Go+ file "s.gp":
       """
       package s
 
@@ -34,7 +34,7 @@ Feature: Strict superset — enum and match remain ordinary identifiers
     Then parsing succeeds with 0 match statements
 
   Scenario: match as a type in composite literals and indexing
-    Given a G++ file "s.gpp":
+    Given a Go+ file "s.gp":
       """
       package s
 
@@ -52,7 +52,7 @@ Feature: Strict superset — enum and match remain ordinary identifiers
     Then parsing succeeds with 0 match statements
 
   Scenario: match as a channel and a label
-    Given a G++ file "s.gpp":
+    Given a Go+ file "s.gp":
       """
       package s
 
@@ -68,7 +68,7 @@ Feature: Strict superset — enum and match remain ordinary identifiers
     Then parsing succeeds with 0 match statements
 
   Scenario: match as a selector base
-    Given a G++ file "s.gpp":
+    Given a Go+ file "s.gp":
       """
       package s
 
@@ -83,7 +83,7 @@ Feature: Strict superset — enum and match remain ordinary identifiers
     Then parsing succeeds with 0 match statements
 
   Scenario: enum as a type name
-    Given a G++ file "s.gpp":
+    Given a Go+ file "s.gp":
       """
       package s
 
@@ -99,7 +99,7 @@ Feature: Strict superset — enum and match remain ordinary identifiers
     Then parsing succeeds with 0 enums
 
   Scenario: Spaced near-misses of |> and >>> stay ordinary Go
-    Given a G++ file "s.gpp":
+    Given a Go+ file "s.gp":
       """
       package s
 
@@ -117,7 +117,7 @@ Feature: Strict superset — enum and match remain ordinary identifiers
     And parsing succeeds with 0 compositions
 
   Scenario: Blank identifiers in calls parse as plain Go
-    Given a G++ file "s.gpp":
+    Given a Go+ file "s.gp":
       """
       package s
 
@@ -134,7 +134,7 @@ Feature: Strict superset — enum and match remain ordinary identifiers
     Then parsing succeeds with 0 pipelines
 
   Scenario: enum and match as parameters and struct fields
-    Given a G++ file "s.gpp":
+    Given a Go+ file "s.gp":
       """
       package s
 

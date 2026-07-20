@@ -7,10 +7,10 @@ import (
 )
 
 // PatText is a match pattern re-parsed from carrier text (the
-// `//gpp:pattern <verbatim>` lines that thread pattern structure through
+// `//goplus:pattern <verbatim>` lines that thread pattern structure through
 // the resolution fixpoint).
 type PatText struct {
-	Binder string    // whole-value binder name; "" if absent
+	Binder string // whole-value binder name; "" if absent
 	Root   PatNode
 	Alts   []PatNode // additional alternatives of a multi-pattern arm (v0.12.0)
 }

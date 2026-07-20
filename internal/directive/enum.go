@@ -6,14 +6,14 @@ import (
 )
 
 const (
-	enumPrefix    = "//gpp:enum"
-	variantPrefix = "//gpp:variant"
+	enumPrefix    = "//goplus:enum"
+	variantPrefix = "//goplus:variant"
 )
 
 // EnumMarker is the machine-readable description of a lowered enum,
 // rendered above the generated sealed interface:
 //
-//	//gpp:enum Option[T any]
+//	//goplus:enum Option[T any]
 type EnumMarker struct {
 	Name    string // enum type name, e.g. "Option"
 	TParams string // type parameter list with constraints, e.g. "T any"; "" if none
@@ -41,13 +41,13 @@ func ParseEnumMarker(line string) (EnumMarker, bool) {
 
 // VariantMarker is rendered above each generated variant struct:
 //
-//	//gpp:variant (Option[T]) Some(value T)
-//	//gpp:variant (Expr[T]) Lit(v int) Expr[int]
-//	//gpp:variant (Row[T]) Packed[A fmt.Stringer](x A) Row[T]
+//	//goplus:variant (Option[T]) Some(value T)
+//	//goplus:variant (Expr[T]) Lit(v int) Expr[int]
+//	//goplus:variant (Row[T]) Packed[A fmt.Stringer](x A) Row[T]
 type VariantMarker struct {
 	EnumName    string // "Option"
 	EnumTParams string // tparam names only, e.g. "T"; "" if none
-	Name        string // variant name as written in G++, e.g. "Some"
+	Name        string // variant name as written in Go+, e.g. "Some"
 	TParams     string // bounded existential tparams verbatim (v0.6.0); "" if none
 	Params      string // constructor params verbatim, e.g. "value T"; "" if nullary
 	HasParams   bool   // distinguishes None from None()
@@ -161,11 +161,11 @@ func cutDirective(line, prefix string) (string, bool) {
 	return strings.TrimSpace(rest), true
 }
 
-// DeriveMarker is the //gpp:derive directive on an enum declaration.
+// DeriveMarker is the //goplus:derive directive on an enum declaration.
 // v0.6.0 recognizes only `off` (suppress fold derivation).
-const derivePrefix = "//gpp:derive"
+const derivePrefix = "//goplus:derive"
 
-// ParseDeriveMarker parses a //gpp:derive line, returning its argument.
+// ParseDeriveMarker parses a //goplus:derive line, returning its argument.
 func ParseDeriveMarker(line string) (string, bool) {
 	rest, ok := cutDirective(line, derivePrefix)
 	if !ok {
@@ -176,4 +176,4 @@ func ParseDeriveMarker(line string) (string, bool) {
 
 // DelegatePrefix marks generated delegation forwarders and pass-1
 // delegate fields (v0.6.0).
-const DelegatePrefix = "//gpp:delegate"
+const DelegatePrefix = "//goplus:delegate"

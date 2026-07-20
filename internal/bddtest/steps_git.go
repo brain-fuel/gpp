@@ -14,7 +14,7 @@ func initGitSteps(sc *godog.ScenarioContext, w func() *World) {
 		for _, args := range [][]string{
 			{"init", "-q"},
 			{"config", "user.email", "spec@example.com"},
-			{"config", "user.name", "gpp spec"},
+			{"config", "user.name", "goplus spec"},
 			{"add", "-A"},
 			{"commit", "-q", "-m", "fixture", "--allow-empty"},
 		} {

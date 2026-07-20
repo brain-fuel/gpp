@@ -15,7 +15,7 @@ Feature: Class operations as bare names, receiver sugar, and pipes
       """
 
   Scenario: A bare op colliding with a package name demands qualification
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -40,12 +40,12 @@ Feature: Class operations as bare names, receiver sugar, and pipes
       	fmt.Println(Combine("a", "b"))
       }
       """
-    When I run gpp with arguments "gen ."
+    When I run goplus with arguments "gen ."
     Then the exit code is 2
     And stderr contains "Combine is both an operation of Monoid and a name in scope; write monoid.Combine for the operation or qualify the other use"
 
   Scenario: Qualifying through the witness parameter resolves the collision
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -75,12 +75,12 @@ Feature: Class operations as bare names, receiver sugar, and pipes
       	fmt.Println(Accumulate([]int{2, 3}), Combine("a", "b"))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "5 ab"
 
   Scenario: Instance members reference siblings and inherited defaults
-    Given a G++ file "main.gpp":
+    Given a Go+ file "main.gp":
       """
       package main
 
@@ -99,6 +99,6 @@ Feature: Class operations as bare names, receiver sugar, and pipes
       	fmt.Println(IntStep.Step(10), IntStep.Twice(10))
       }
       """
-    When I run gpp with arguments "run ."
+    When I run goplus with arguments "run ."
     Then the exit code is 0
     And stdout contains "9 8"
