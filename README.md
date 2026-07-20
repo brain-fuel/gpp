@@ -549,6 +549,8 @@ The spec is executable: the Godog/Cucumber feature suite under
 | v0.11.0 | Deep structure: derived traversals (Children/Universe/Transform), derived structural equality with overrides, std/option, variant doc preservation — shipped |
 | v0.13.0 | The standard library grows nine: kleene, latch, clock, guarded, deepmap, retry, registry, memo, closeonce (from the envoy-go rewrite) — shipped |
 | v0.14.0 | Multi-pattern match arms — shipped |
+| v0.15.0 | Generalized typed failures and release hardening — shipped |
+| v0.16.0 | Cross-package class laws retain qualified type imports in generated tests — shipped |
 
 ## License
 

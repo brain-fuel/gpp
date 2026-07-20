@@ -83,7 +83,7 @@ func planLawTests(reg *registry.Registry, pkgPath, dir, outRel string, instances
 		var b strings.Builder
 		b.WriteString(emit.Header(base + ".gp"))
 		fmt.Fprintf(&b, "package %s\n\n", pkgName)
-		fmt.Fprintf(&b, "import (\n\t\"testing\"\n%s\n\t\"pgregory.net/rapid\"\n)\n", extraImport)
+		fmt.Fprintf(&b, "import (\n\t\"testing\"\n%s\n\t// goplus:law-imports\n\t\"pgregory.net/rapid\"\n)\n", extraImport)
 
 		neededGens := map[string]bool{}
 		for _, e := range byFile[srcPath] {
@@ -114,7 +114,10 @@ func planLawTests(reg *registry.Registry, pkgPath, dir, outRel string, instances
 				}
 			}
 		}
-		formatted, err := format.Source([]byte(b.String()))
+		rendered := b.String()
+		imports := lawTypeImports(srcPath, rendered, pkgPath)
+		rendered = strings.Replace(rendered, "\t// goplus:law-imports\n", imports, 1)
+		formatted, err := format.Source([]byte(rendered))
 		if err != nil {
 			diags = append(diags, diag.Errorf("internal error: formatting law tests for %s: %v", srcPath, err))
 			continue
@@ -122,6 +125,52 @@ func planLawTests(reg *registry.Registry, pkgPath, dir, outRel string, instances
 		out[path] = formatted
 	}
 	return out, diags
+}
+
+var sourceImportRE = regexp.MustCompile(`(?m)^[ \t]*(?:([A-Za-z_][A-Za-z0-9_]*)[ \t]+)?"([^"]+)"`)
+var qualifiedTypeRE = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\.`)
+
+// lawTypeImports carries imports referenced by law parameter types into the
+// generated test. Class laws are stored as source-level type text (for example
+// schema.Package), so the test must retain the source file's qualifier mapping.
+func lawTypeImports(srcPath, generated, pkgPath string) string {
+	src, err := os.ReadFile(srcPath)
+	if err != nil {
+		return ""
+	}
+	type imp struct{ alias, path string }
+	byAlias := map[string]imp{}
+	for _, m := range sourceImportRE.FindAllSubmatch(src, -1) {
+		path := string(m[2])
+		alias := string(m[1])
+		if alias == "" {
+			alias = filepath.Base(path)
+		}
+		if alias != "_" && alias != "." {
+			byAlias[alias] = imp{alias: string(m[1]), path: path}
+		}
+	}
+	used := map[string]imp{}
+	for _, m := range qualifiedTypeRE.FindAllStringSubmatch(generated, -1) {
+		if i, ok := byAlias[m[1]]; ok && i.path != pkgPath && i.path != "pgregory.net/rapid" {
+			used[i.path] = i
+		}
+	}
+	paths := make([]string, 0, len(used))
+	for path := range used {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	var b strings.Builder
+	for _, path := range paths {
+		i := used[path]
+		if i.alias == "" {
+			fmt.Fprintf(&b, "\t%q\n", path)
+		} else {
+			fmt.Fprintf(&b, "\t%s %q\n", i.alias, path)
+		}
+	}
+	return b.String()
 }
 
 type lawsMode struct {
