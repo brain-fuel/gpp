@@ -233,3 +233,124 @@ Feature: Match statements
     When I run gpp with arguments "gen ."
     Then the exit code is 2
     And stderr contains "break is not supported directly inside a match arm"
+
+  Scenario: A multi-pattern arm unions constructors
+    Given a G++ file "main.gpp":
+      """
+      package main
+
+      import "fmt"
+
+      type Tm enum {
+      	Var(idx int)
+      	Ref(name string)
+      	Univ(lvl int)
+      	App(fn Tm, arg Tm)
+      }
+
+      func rigid(t Tm) bool {
+      	match t {
+      	case Var(_), Ref(_), Univ(_):
+      		return true
+      	case App(_, _):
+      		return false
+      	}
+      }
+
+      func main() {
+      	fmt.Println(rigid(Var(0)))
+      	fmt.Println(rigid(Univ(1)))
+      	fmt.Println(rigid(App(Var(0), Var(1))))
+      }
+      """
+    When I run gpp with arguments "run ."
+    Then the exit code is 0
+    And stdout contains:
+      """
+      true
+      true
+      false
+      """
+    And the file "main_gpp.go" contains:
+      """
+      	case Var, Ref, Univ:
+      """
+
+  Scenario: Multi-pattern arms count toward exhaustiveness and reachability
+    Given a G++ file "main.gpp":
+      """
+      package main
+
+      import "fmt"
+
+      type Color enum {
+      	Red
+      	Green
+      	Blue
+      }
+
+      func warm(c Color) bool {
+      	match c {
+      	case Red, Green:
+      		return true
+      	case Blue:
+      		return false
+      	}
+      }
+
+      func main() {
+      	var c Color = Red
+      	fmt.Println(warm(c))
+      }
+      """
+    When I run gpp with arguments "run ."
+    Then the exit code is 0
+    And stdout contains "true"
+
+  Scenario: A redundant alternative in a multi-pattern arm is unreachable
+    Given a G++ file "main.gpp":
+      """
+      package main
+
+      type Color enum {
+      	Red
+      	Green
+      }
+
+      func f(c Color) bool {
+      	match c {
+      	case Red, Red:
+      		return true
+      	case Green:
+      		return false
+      	}
+      }
+
+      func main() {}
+      """
+    When I run gpp with arguments "gen ."
+    Then the exit code is 2
+    And stderr contains "unreachable match arm"
+
+  Scenario: Multi-pattern arms take only wildcard arguments and cannot bind
+    Given a G++ file "main.gpp":
+      """
+      package main
+
+      type Tm enum {
+      	Var(idx int)
+      	Univ(lvl int)
+      }
+
+      func f(t Tm) int {
+      	match t {
+      	case Var(n), Univ(_):
+      		return n
+      	}
+      }
+
+      func main() {}
+      """
+    When I run gpp with arguments "gen ."
+    Then the exit code is 2
+    And stderr contains "patterns in a multi-pattern arm take only wildcard arguments"

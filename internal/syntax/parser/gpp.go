@@ -341,6 +341,16 @@ func (p *parser) parseMatchCase() *CaseClause {
 		}
 	}
 	cc.Pattern = p.parsePattern()
+	for p.tok == token.COMMA {
+		p.next()
+		if p.tok == token.IDENT && p.lit == "_" {
+			p.error(p.pos, "'_' matches everything; it cannot be an alternative in a multi-pattern arm")
+		}
+		cc.Alts = append(cc.Alts, p.parsePattern())
+	}
+	if _, wild := cc.Pattern.(*WildcardPattern); wild && len(cc.Alts) > 0 {
+		p.error(cc.Pattern.Pos(), "'_' matches everything; it cannot be combined with other patterns")
+	}
 	cc.Colon = p.expect(token.COLON)
 	cc.Body = p.parseStmtList()
 	return cc

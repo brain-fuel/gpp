@@ -120,6 +120,7 @@ type CaseClause struct {
 	Binder  *ast.Ident // c in `case c := Circle(r):`; nil if absent
 	Define  token.Pos  // position of ":="; NoPos if absent
 	Pattern Pattern    // WildcardPattern for `case _:`
+	Alts    []Pattern  // additional alternatives of a multi-pattern arm (v0.12.0); nil otherwise
 	Colon   token.Pos
 	Body    []ast.Stmt // stock statements; nested matches appear as *ast.BadStmt
 }
