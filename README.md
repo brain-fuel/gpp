@@ -551,6 +551,7 @@ The spec is executable: the Godog/Cucumber feature suite under
 | v0.14.0 | Multi-pattern match arms — shipped |
 | v0.15.0 | Generalized typed failures and release hardening — shipped |
 | v0.16.0 | Cross-package class laws retain qualified type imports in generated tests — shipped |
+| v0.16.1 | Cross-package law imports support both grouped and single import declarations — shipped |
 
 ## License
 

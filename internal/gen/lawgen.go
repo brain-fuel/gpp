@@ -127,7 +127,7 @@ func planLawTests(reg *registry.Registry, pkgPath, dir, outRel string, instances
 	return out, diags
 }
 
-var sourceImportRE = regexp.MustCompile(`(?m)^[ \t]*(?:([A-Za-z_][A-Za-z0-9_]*)[ \t]+)?"([^"]+)"`)
+var sourceImportRE = regexp.MustCompile(`(?m)^[ \t]*(?:import[ \t]+)?(?:([A-Za-z_][A-Za-z0-9_]*)[ \t]+)?"([^"]+)"`)
 var qualifiedTypeRE = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\.`)
 
 // lawTypeImports carries imports referenced by law parameter types into the
