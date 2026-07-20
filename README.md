@@ -7,6 +7,32 @@ Generated packages compile with the standard Go toolchain and may be
 distributed and consumed **without** G++ — the same interoperability story
 Kotlin, Scala, and Clojure have with Java.
 
+<<<<<<< HEAD
+## v0.13.0 — The Standard Library Grows Nine
+
+Every package extracted from the first whole-system G++ rewrite
+([envoy-go](https://github.com/pgdad/envoy-go), ~360k lines): patterns that
+appeared three-plus times across an L7 proxy, generalized and shipped where
+every G++ program can reach them.
+
+```go
+import "goforge.dev/gpp/std/kleene"    // K3 three-valued logic: All/Any short-circuit, Undetermined absorbs
+import "goforge.dev/gpp/std/latch"     // one-shot quiescence rendezvous: Inc/Dec/Trip/Done, lock-free hot path
+import "goforge.dev/gpp/std/clock"     // time seam + deterministic Fake: (deadline, insertion-seq) Advance ordering
+import "goforge.dev/gpp/std/guarded"   // Guarded[T]/RWGuarded[T]: the mutex owns the value, not a comment
+import "goforge.dev/gpp/std/deepmap"   // two-level map with defensive Snapshot, nil-receiver tolerant
+import "goforge.dev/gpp/std/retry"     // bounded ctx-aware exponential backoff, last-error surfaced
+import "goforge.dev/gpp/std/registry"  // freeze-after-boot sealed registry: post-freeze Register panics
+import "goforge.dev/gpp/std/memo"      // compute-once cache: compute outside the lock, first-writer-wins identity
+import "goforge.dev/gpp/std/closeonce" // idempotent Close with cached first error
+```
+
+All nine are authored in G++, tested under -race, and consumed in anger:
+envoy-go's drain manager is a latch, its clock package re-exports std/clock,
+and its dynamic-metadata bucket embeds a deepmap. No language changes in this
+release; the toolchain version moves with std per the one-version discipline.
+>>>>>>> origin/main
+
 ## v0.12.1 — Multi-Pattern Arms
 
 Driven by rune's elaborate/store rewrite — rigidity and spine
@@ -25,7 +51,7 @@ Alternatives take only wildcard arguments and the arm cannot bind the
 value (split the arm to bind); every alternative is its own
 reachability row, so a redundant alternative is an unreachable-arm
 error and alternatives count toward exhaustiveness.
-
+=======
 ## v0.11.0 — Deep Structure
 
 The release that arms the rune kernel rewrite: every enum's recursive
@@ -548,6 +574,7 @@ The spec is executable: the Godog/Cucumber feature suite under
 | v0.10.0 | The dogfood rewrite: cadence v0.2.0 in G++; derived generators, laws over enums, multi-result ops, G++ tests — shipped |
 | v0.11.0 | Deep structure: derived traversals (Children/Universe/Transform), derived structural equality with overrides, std/option, variant doc preservation — shipped |
 | v0.12.1 | Multi-pattern match arms — shipped |
+| v0.13.0 | The standard library grows nine: kleene, latch, clock, guarded, deepmap, retry, registry, memo, closeonce (from the envoy-go rewrite) — shipped |
 
 ## License
 
