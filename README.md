@@ -7,6 +7,30 @@ Generated packages compile with the standard Go toolchain and may be
 distributed and consumed **without** G++ — the same interoperability story
 Kotlin, Scala, and Clojure have with Java.
 
+## v0.13.0 — The Standard Library Grows Nine
+
+Every package extracted from the first whole-system G++ rewrite
+([envoy-go](https://github.com/pgdad/envoy-go), ~360k lines): patterns that
+appeared three-plus times across an L7 proxy, generalized and shipped where
+every G++ program can reach them.
+
+```go
+import "goforge.dev/gpp/std/kleene"    // K3 three-valued logic: All/Any short-circuit, Undetermined absorbs
+import "goforge.dev/gpp/std/latch"     // one-shot quiescence rendezvous: Inc/Dec/Trip/Done, lock-free hot path
+import "goforge.dev/gpp/std/clock"     // time seam + deterministic Fake: (deadline, insertion-seq) Advance ordering
+import "goforge.dev/gpp/std/guarded"   // Guarded[T]/RWGuarded[T]: the mutex owns the value, not a comment
+import "goforge.dev/gpp/std/deepmap"   // two-level map with defensive Snapshot, nil-receiver tolerant
+import "goforge.dev/gpp/std/retry"     // bounded ctx-aware exponential backoff, last-error surfaced
+import "goforge.dev/gpp/std/registry"  // freeze-after-boot sealed registry: post-freeze Register panics
+import "goforge.dev/gpp/std/memo"      // compute-once cache: compute outside the lock, first-writer-wins identity
+import "goforge.dev/gpp/std/closeonce" // idempotent Close with cached first error
+```
+
+All nine are authored in G++, tested under -race, and consumed in anger:
+envoy-go's drain manager is a latch, its clock package re-exports std/clock,
+and its dynamic-metadata bucket embeds a deepmap. No language changes in this
+release; the toolchain version moves with std per the one-version discipline.
+
 ## v0.11.0 — Deep Structure
 
 The release that arms the rune kernel rewrite: every enum's recursive
