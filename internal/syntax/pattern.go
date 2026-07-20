@@ -10,8 +10,9 @@ import (
 // `//gpp:pattern <verbatim>` lines that thread pattern structure through
 // the resolution fixpoint).
 type PatText struct {
-	Binder string // whole-value binder name; "" if absent
+	Binder string    // whole-value binder name; "" if absent
 	Root   PatNode
+	Alts   []PatNode // additional alternatives of a multi-pattern arm (v0.12.0)
 }
 
 // PatNode is one node of a textual pattern tree.
@@ -49,10 +50,18 @@ func ParsePatternText(text string) (PatText, error) {
 	if err != nil {
 		return PatText{}, err
 	}
+	out.Root = root
+	for p.tok == token.COMMA {
+		p.next()
+		alt, err := p.pattern()
+		if err != nil {
+			return PatText{}, err
+		}
+		out.Alts = append(out.Alts, alt)
+	}
 	if p.tok != token.EOF && p.tok != token.SEMICOLON {
 		return PatText{}, fmt.Errorf("unexpected %s in pattern %q", p.tok, text)
 	}
-	out.Root = root
 	return out, nil
 }
 

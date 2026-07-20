@@ -28,6 +28,7 @@ type armAnalysis struct {
 	clause     *ast.CaseClause
 	carrier    [2]int
 	pat        *rpat
+	alts       []*rpat // additional alternatives of a multi-pattern arm (v0.12.0)
 	binderName string
 	body       string // verbatim body text (chain mode)
 	nested     bool
@@ -136,6 +137,43 @@ func (r *fileResolver) matchCandidate(sw *ast.TypeSwitchStmt) {
 			continue
 		}
 		a.pat = rp
+		// Multi-pattern arm (v0.12.0): every pattern is flat — a
+		// constructor whose arguments are all wildcards (the arm body
+		// cannot know which alternative matched, so nothing can bind).
+		if len(raw.pat.Alts) > 0 {
+			if a.binderName != "" {
+				fail(raw.clause.Case, "a multi-pattern arm cannot bind the value (the alternatives have different types); bind by splitting the arm")
+				continue
+			}
+			if !flatWildOnly(raw.pat.Root) {
+				fail(raw.clause.Case, "patterns in a multi-pattern arm take only wildcard arguments; bind by splitting the arm")
+				continue
+			}
+			altsOK := true
+			for _, altNode := range raw.pat.Alts {
+				if !flatWildOnly(altNode) {
+					fail(raw.clause.Case, "patterns in a multi-pattern arm take only wildcard arguments; bind by splitting the arm")
+					altsOK = false
+					break
+				}
+				arp, altErr := r.resolveRPat(altNode, rootCol, true, tparamNames)
+				if altErr != "" {
+					fail(raw.clause.Case, "%s", altErr)
+					altsOK = false
+					break
+				}
+				if !possible[arp.variant.Name] {
+					fail(raw.clause.Case, "pattern %s can never match a value of type %s",
+						altNode.String(), r.localTypeString(tv.Type))
+					altsOK = false
+					break
+				}
+				a.alts = append(a.alts, arp)
+			}
+			if !altsOK {
+				continue
+			}
+		}
 		if !possible[rp.variant.Name] {
 			if idxOut[rp.variant.Name] {
 				fail(raw.clause.Case, "pattern %s can never match: the scrutinee's index (%s) rules out %s (its index is %s)",
@@ -162,11 +200,13 @@ func (r *fileResolver) matchCandidate(sw *ast.TypeSwitchStmt) {
 	cols := []patCol{rootCol}
 	var rows [][]syntax.PatNode
 	for _, a := range arms {
-		row := []syntax.PatNode{normPat(a.pat)}
-		if ok, _ := u.useful(cols, rows, row); !ok && !u.overflow {
-			fail(a.clause.Case, "unreachable match arm: %s is already covered by the arms above", renderWitness(row))
+		for _, rp := range append([]*rpat{a.pat}, a.alts...) {
+			row := []syntax.PatNode{normPat(rp)}
+			if ok, _ := u.useful(cols, rows, row); !ok && !u.overflow {
+				fail(a.clause.Case, "unreachable match arm: %s is already covered by the arms above", renderWitness(row))
+			}
+			rows = append(rows, row)
 		}
-		rows = append(rows, row)
 	}
 	if !failed {
 		if ok, w := u.useful(cols, rows, []syntax.PatNode{{Wild: true}}); ok {
@@ -196,6 +236,14 @@ func (r *fileResolver) matchCandidate(sw *ast.TypeSwitchStmt) {
 
 	subjText := r.text(subj.Pos(), subj.End())
 	if anyNested {
+		for _, a := range arms {
+			if len(a.alts) > 0 {
+				fail(a.clause.Case, "a multi-pattern arm cannot share a match with nested patterns; split the arm")
+			}
+		}
+		if failed {
+			return
+		}
 		r.edits = append(r.edits, lower.Edit{
 			Start: r.off(sw.Pos()),
 			End:   r.off(sw.End()),
@@ -230,6 +278,13 @@ func (r *fileResolver) matchCandidate(sw *ast.TypeSwitchStmt) {
 		head, headOK := r.rpatCaseType(a.pat, a.clause.Case)
 		if !headOK {
 			return
+		}
+		for _, alt := range a.alts {
+			altHead, altOK := r.rpatCaseType(alt, a.clause.Case)
+			if !altOK {
+				return
+			}
+			head += ", " + altHead
 		}
 		plans = append(plans, armPlan{arm: a, head: head, bindings: bindings})
 	}
@@ -271,6 +326,17 @@ func (r *fileResolver) matchCandidate(sw *ast.TypeSwitchStmt) {
 			New:   "",
 		})
 	}
+}
+
+// flatWildOnly reports whether a pattern is a constructor whose arguments
+// are all wildcards (the multi-pattern arm shape).
+func flatWildOnly(n syntax.PatNode) bool {
+	for _, a := range n.Args {
+		if !a.Wild {
+			return false
+		}
+	}
+	return true
 }
 
 // patNested reports whether any argument is itself a constructor pattern.
