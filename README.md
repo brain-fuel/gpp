@@ -7,7 +7,7 @@ Generated packages compile with the standard Go toolchain and may be
 distributed and consumed **without** Go+ — the same interoperability story
 Kotlin, Scala, and Clojure have with Java.
 
-## v0.24.0 — Durable Workflows and Effect Boundaries
+## v0.24.1 — Durable Workflows and Effect Boundaries
 
 Six Go+-authored standard-library packages make command-line and delivery
 workflows explicit without pretending external systems are transactional:
@@ -29,6 +29,9 @@ These packages deliberately separate locally provable workflow state from
 facts that must be observed again at an external mutation boundary. Go+
 enums make CAS outcomes exhaustive, while generated Go keeps every package
 usable by ordinary Go programs.
+
+The v0.24.1 patch expands compact control flow for consistent analysis across
+Go 1.26 hosts and gives workflow journal records an explicit stable JSON schema.
 
 ## v0.23.0 — QUIC v2, CBOR, and Proven DAG-CBOR
 
@@ -643,6 +646,7 @@ The spec is executable: the Godog/Cucumber feature suite under
 | v0.22.0 | Refinement types and structural GADT elimination — shipped |
 | v0.23.0 | QUIC v2, CBOR, serde, and proven DAG-CBOR — shipped |
 | v0.24.0 | Process, SemVer, durable workflows, validated config, atomic files, and CAS — implemented |
+| v0.24.1 | Cross-host analyzer compatibility and stable workflow-journal JSON — implemented |
 
 ## License
 

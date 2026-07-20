@@ -24,12 +24,16 @@ func Parse(s string) (Version, error) {
 	core := s
 	if i := strings.IndexByte(core, '+'); i >= 0 {
 		v.Build = strings.Split(core[i+1:], ".")
-		if err := validIdentifiers(v.Build, false); err != nil { return Version{}, err }
+		if err := validIdentifiers(v.Build, false); err != nil {
+			return Version{}, err
+		}
 		core = core[:i]
 	}
 	if i := strings.IndexByte(core, '-'); i >= 0 {
 		v.Pre = strings.Split(core[i+1:], ".")
-		if err := validIdentifiers(v.Pre, true); err != nil { return Version{}, err }
+		if err := validIdentifiers(v.Pre, true); err != nil {
+			return Version{}, err
+		}
 		core = core[:i]
 	}
 	parts := strings.Split(core, ".")
@@ -44,7 +48,13 @@ func Parse(s string) (Version, error) {
 	return v, nil
 }
 
-func MustParse(s string) Version { v, err := Parse(s); if err != nil { panic(err) }; return v }
+func MustParse(s string) Version {
+	v, err := Parse(s)
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
 
 func validIdentifiers(ids []string, rejectLeadingZero bool) error {
 	if len(ids) == 0 { return fmt.Errorf("empty identifier") }
@@ -68,19 +78,38 @@ func (v Version) String() string {
 }
 
 func (v Version) Compare(o Version) int {
-	if v.Major != o.Major { if v.Major < o.Major { return -1 }; return 1 }
-	if v.Minor != o.Minor { if v.Minor < o.Minor { return -1 }; return 1 }
-	if v.Patch != o.Patch { if v.Patch < o.Patch { return -1 }; return 1 }
-	if len(v.Pre) == 0 && len(o.Pre) == 0 { return 0 }
-	if len(v.Pre) == 0 { return 1 }; if len(o.Pre) == 0 { return -1 }
-	for i := 0; i < len(v.Pre) && i < len(o.Pre); i++ {
-		a, b := v.Pre[i], o.Pre[i]; if a == b { continue }
-		an, ae := strconv.ParseUint(a, 10, 64); bn, be := strconv.ParseUint(b, 10, 64)
-		if ae == nil && be == nil { if an < bn { return -1 }; return 1 }
-		if ae == nil { return -1 }; if be == nil { return 1 }
-		if a < b { return -1 }; return 1
+	if v.Major != o.Major {
+		if v.Major < o.Major { return -1 }
+		return 1
 	}
-	if len(v.Pre) < len(o.Pre) { return -1 }; if len(v.Pre) > len(o.Pre) { return 1 }; return 0
+	if v.Minor != o.Minor {
+		if v.Minor < o.Minor { return -1 }
+		return 1
+	}
+	if v.Patch != o.Patch {
+		if v.Patch < o.Patch { return -1 }
+		return 1
+	}
+	if len(v.Pre) == 0 && len(o.Pre) == 0 { return 0 }
+	if len(v.Pre) == 0 { return 1 }
+	if len(o.Pre) == 0 { return -1 }
+	for i := 0; i < len(v.Pre) && i < len(o.Pre); i++ {
+		a, b := v.Pre[i], o.Pre[i]
+		if a == b { continue }
+		an, ae := strconv.ParseUint(a, 10, 64)
+		bn, be := strconv.ParseUint(b, 10, 64)
+		if ae == nil && be == nil {
+			if an < bn { return -1 }
+			return 1
+		}
+		if ae == nil { return -1 }
+		if be == nil { return 1 }
+		if a < b { return -1 }
+		return 1
+	}
+	if len(v.Pre) < len(o.Pre) { return -1 }
+	if len(v.Pre) > len(o.Pre) { return 1 }
+	return 0
 }
 
 func (v Version) BumpMajor() Version { return Version{Major: v.Major + 1} }

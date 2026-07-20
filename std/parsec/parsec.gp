@@ -83,7 +83,6 @@ func Bind[T any, U any](p Parser[T], f func(T) Parser[U]) Parser[U] {
 		case EmptyErr(e):
 			return EmptyErr[U](e)
 		}
-		panic("unreachable")
 	}
 }
 
@@ -100,7 +99,6 @@ func Map[T any, U any](p Parser[T], f func(T) U) Parser[U] {
 		case EmptyErr(e):
 			return EmptyErr[U](e)
 		}
-		panic("unreachable")
 	}
 }
 
@@ -118,7 +116,6 @@ func Or[T any](p Parser[T], q Parser[T]) Parser[T] {
 		case ConsumedErr(e):
 			return ConsumedErr[T](e)
 		}
-		panic("unreachable")
 	}
 }
 
@@ -139,7 +136,6 @@ func Try[T any](p Parser[T]) Parser[T] {
 		case EmptyErr(e):
 			return EmptyErr[T](e)
 		}
-		panic("unreachable")
 	}
 }
 
@@ -157,7 +153,6 @@ func Label[T any](p Parser[T], name string) Parser[T] {
 		case ConsumedErr(e):
 			return ConsumedErr[T](e)
 		}
-		panic("unreachable")
 	}
 }
 
@@ -270,7 +265,6 @@ func Run[T any](p Parser[T], r io.Reader) (T, error) {
 		var zero T
 		return zero, e
 	}
-	panic("unreachable")
 }
 
 // RunString parses a string from the start.
