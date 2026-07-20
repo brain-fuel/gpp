@@ -554,6 +554,7 @@ The spec is executable: the Godog/Cucumber feature suite under
 | v0.16.1 | Cross-package law imports support both grouped and single import declarations — shipped |
 | v0.17.0 | RFC 6455 and RFC 7692 WebSockets with Go+ protocol states, exhaustive conformance, and optimized framing — shipped |
 | v0.17.1 | WebSocket completion audit: linear capabilities, full handwritten coverage, broader performance gates, and protocol hardening — shipped |
+| v0.18.0 | RFC 8441 WebSockets over HTTP/2 with transparent RFC 6455 fallback and stream multiplexing — shipped |
 
 ## License
 

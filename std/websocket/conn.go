@@ -27,7 +27,12 @@ type Conn struct {
 	compression   bool
 	writeWindow   int
 	manualControl bool
+	handshake     HandshakeProtocol
 }
+
+// HandshakeProtocol reports whether RFC 6455 Upgrade or RFC 8441 extended
+// CONNECT established the connection.
+func (c *Conn) HandshakeProtocol() HandshakeProtocol { return c.handshake }
 
 type ConnConfig struct {
 	MaxFrame   int64

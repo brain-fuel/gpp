@@ -41,6 +41,26 @@ _ = response
 return conn.WriteMessage(websocket.TextMessage{Payload: []byte("hello")})
 ```
 
+For `wss://` URLs, `Dial` first attempts RFC 8441 extended CONNECT over
+HTTP/2 and automatically retries with the RFC 6455 HTTP/1.1 Upgrade when the
+peer does not advertise `SETTINGS_ENABLE_CONNECT_PROTOCOL`. The same `Upgrade`
+handler accepts both forms and `Conn.HandshakeProtocol()` exposes which path
+was selected when metrics need it. Cleartext `ws://` remains RFC 6455 by
+default; use `HTTP2: websocket.HTTP2Only` for h2c prior knowledge.
+
+```go
+conn, response, err := websocket.Dial(ctx, "wss://example.test/events", websocket.DialOptions{})
+// conn is identical to use whether response.ProtoMajor is 2 or 1.
+```
+
+Go 1.24–1.26 guards server advertisement of RFC 8441 behind the upstream
+HTTP/2 compatibility switch. Start server processes with
+`GODEBUG=http2xconnect=1`; no handler changes are required. Clients do not
+need this setting. The zero-configuration secure client transport is shared,
+so concurrent WebSockets multiplex on one HTTP/2 connection. Supplying
+`HTTP2Transport` allows the application to own that shared transport when it
+needs custom TLS, dialing, or lifecycle policy.
+
 Go callers can use the concise `WriteText`, `WriteBinary`, `WritePing`,
 `WritePong`, and `WriteClose` methods. Go+ callers can instead construct and
 exhaustively match the closed `Message` enum; indexed `Capability[Phase]`

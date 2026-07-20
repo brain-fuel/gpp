@@ -9,7 +9,7 @@ import (
 )
 
 // Version is the goplus toolchain version.
-const Version = "v0.17.1"
+const Version = "v0.18.0"
 
 // Newer reports whether a is a strictly newer release than b. Inputs
 // are "vMAJOR.MINOR.PATCH"; anything unparseable compares as not newer

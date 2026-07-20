@@ -25,9 +25,23 @@ type DialOptions struct {
 	DialContext func(context.Context, string, string) (net.Conn, error)
 	Config      ConnConfig
 	Compression *CompressionOptions
+	// HTTP2 controls RFC 8441 extended CONNECT. Auto prefers HTTP/2 for wss
+	// URLs and transparently falls back to RFC 6455. Cleartext ws remains on
+	// HTTP/1.1 unless HTTP2Only is selected.
+	HTTP2 HTTP2Mode
+	// HTTP2Transport optionally supplies a shared HTTP/2-capable transport.
+	// It must preserve a streaming request body and response body.
+	HTTP2Transport http.RoundTripper
 }
 
+// Dial opens a WebSocket using RFC 8441 when selected and RFC 6455 otherwise.
+// On success the returned response is metadata only; Conn exclusively owns the
+// underlying transport stream, so callers may safely ignore response.Body.
 func Dial(ctx context.Context, rawURL string, opts DialOptions) (*Conn, *http.Response, error) {
+	return dial(ctx, rawURL, opts)
+}
+
+func dialRFC6455(ctx context.Context, rawURL string, opts DialOptions) (*Conn, *http.Response, error) {
 	seenProtocols := make(map[string]struct{}, len(opts.Protocols))
 	for _, protocol := range opts.Protocols {
 		if !validToken(protocol) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"sync"
 	"testing"
 )
 
@@ -143,10 +144,13 @@ func TestCompressionInflaterEdgesAndConcurrency(t *testing.T) {
 	if _, err := finishDeflate([]byte{1, 2, 3, 4}, nil); !errors.Is(err, ErrInvalidExtension) {
 		t.Fatalf("deflate trailer error: %v", err)
 	}
-	inflaterPool.Put(&inflaterDecoder{reader: io.NopCloser(bytes.NewReader(nil)), reset: failingResetter{wantReset}})
+	inflaterPool = sync.Pool{New: func() any {
+		return &inflaterDecoder{reader: io.NopCloser(bytes.NewReader(nil)), reset: failingResetter{wantReset}}
+	}}
 	if _, err := acquireInflater(bytes.NewReader(nil), nil); !errors.Is(err, wantReset) {
 		t.Fatalf("reset error: %v", err)
 	}
+	inflaterPool = sync.Pool{}
 	failingAcquire := func(io.Reader, []byte) (*inflaterDecoder, error) { return nil, wantReset }
 	if _, err := new(messageInflater).inflateWith(nil, 1, failingAcquire); !errors.Is(err, wantReset) {
 		t.Fatalf("inflate acquire error: %v", err)

@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -75,6 +76,9 @@ func Upgrade(w http.ResponseWriter, r *http.Request, opts UpgradeOptions) (*Conn
 			return nil, "", ErrHandshake
 		}
 	}
+	if isRFC8441Request(r) {
+		return upgradeRFC8441(w, r, opts)
+	}
 	key, err := ValidateServerRequest(r)
 	if err != nil {
 		return nil, "", err
@@ -125,6 +129,76 @@ func Upgrade(w http.ResponseWriter, r *http.Request, opts UpgradeOptions) (*Conn
 	}
 	fail = false
 	conn := NewConn(nc, ServerSide, rw.Reader, opts.Config)
+	if compressionResponse != "" {
+		conn.enableCompression(negotiated)
+	}
+	return conn, protocol, nil
+}
+
+// IsRFC8441Request reports whether r is an HTTP/2 WebSocket extended CONNECT
+// request. It does not imply that the rest of the opening handshake is valid.
+func IsRFC8441Request(r *http.Request) bool {
+	return isRFC8441Request(r)
+}
+
+func isRFC8441Request(r *http.Request) bool {
+	return r != nil && r.ProtoMajor == 2 && r.Method == http.MethodConnect && r.Header.Get(":protocol") == "websocket"
+}
+
+func validateRFC8441Request(r *http.Request) error {
+	if !isRFC8441Request(r) || r.Host == "" {
+		return ErrHandshake
+	}
+	for _, forbidden := range []string{"Connection", "Upgrade", "Sec-WebSocket-Key", "Sec-WebSocket-Accept"} {
+		if len(r.Header.Values(forbidden)) != 0 {
+			return ErrHandshake
+		}
+	}
+	version, ok := singleHeader(r.Header, "Sec-WebSocket-Version")
+	if !ok || version != "13" {
+		return ErrHandshake
+	}
+	for _, protocol := range strings.Split(joinedHeader(r.Header, "Sec-WebSocket-Protocol"), ",") {
+		protocol = strings.TrimSpace(protocol)
+		if protocol != "" && !validToken(protocol) {
+			return ErrHandshake
+		}
+	}
+	return nil
+}
+
+func upgradeRFC8441(w http.ResponseWriter, r *http.Request, opts UpgradeOptions) (*Conn, string, error) {
+	if err := validateRFC8441Request(r); err != nil {
+		return nil, "", err
+	}
+	if opts.CheckOrigin != nil && !opts.CheckOrigin(r) {
+		return nil, "", ErrHandshake
+	}
+	protocol := selectProtocol(joinedHeader(r.Header, "Sec-WebSocket-Protocol"), opts.Protocols)
+	compressionResponse, negotiated := "", compressionSettings{}
+	if opts.Compression != nil {
+		if err := opts.Compression.validate(); err != nil {
+			return nil, "", err
+		}
+		compressionResponse, negotiated, _ = negotiateCompression(joinedHeader(r.Header, "Sec-WebSocket-Extensions"), *opts.Compression)
+	}
+	if protocol != "" {
+		w.Header().Set("Sec-WebSocket-Protocol", protocol)
+	}
+	if compressionResponse != "" {
+		w.Header().Set("Sec-WebSocket-Extensions", compressionResponse)
+	}
+	w.WriteHeader(http.StatusOK)
+	controller := http.NewResponseController(w)
+	if err := controller.Flush(); err != nil {
+		return nil, "", err
+	}
+	_, cancel := context.WithCancel(r.Context())
+	stream := newStreamConn(r.Body, &responseStreamWriter{w: w, flusher: controller}, cancel)
+	stream.setReadDeadline = controller.SetReadDeadline
+	stream.setWriteDeadline = controller.SetWriteDeadline
+	conn := NewConn(stream, ServerSide, nil, opts.Config)
+	conn.handshake = RFC8441Handshake
 	if compressionResponse != "" {
 		conn.enableCompression(negotiated)
 	}

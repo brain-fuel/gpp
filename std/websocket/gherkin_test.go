@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -36,6 +38,7 @@ type featureWorld struct {
 	settings    compressionSettings
 	request     *http.Request
 	key         string
+	useHTTP2    bool
 }
 
 func (w *featureWorld) reset() { *w = featureWorld{} }
@@ -247,6 +250,53 @@ func TestFeatures(t *testing.T) {
 			sc.Step(`^opening validation fails$`, func() error {
 				if !errors.Is(w.err, ErrHandshake) {
 					return fmt.Errorf("error=%v", w.err)
+				}
+				return nil
+			})
+			sc.Step(`^a canonical RFC 8441 opening request$`, func() {
+				w.request = httptest.NewRequest(http.MethodConnect, "https://example.test/socket", nil)
+				w.request.Proto = "HTTP/2.0"
+				w.request.ProtoMajor = 2
+				w.request.ProtoMinor = 0
+				w.request.Header.Set(":protocol", "websocket")
+				w.request.Header.Set("Sec-WebSocket-Version", "13")
+			})
+			sc.Step(`^I validate the extended CONNECT request$`, func() { w.err = validateRFC8441Request(w.request) })
+			sc.Step(`^extended CONNECT validation succeeds$`, func() error {
+				if w.err != nil {
+					return w.err
+				}
+				return nil
+			})
+			sc.Step(`^the request has no RFC 6455 connection fields$`, func() error {
+				for _, name := range []string{"Connection", "Upgrade", "Sec-WebSocket-Key", "Sec-WebSocket-Accept"} {
+					if w.request.Header.Get(name) != "" {
+						return fmt.Errorf("unexpected %s", name)
+					}
+				}
+				return nil
+			})
+			sc.Step(`^the extended CONNECT request has forbidden header (.+)$`, func(name string) {
+				w.request.Header.Set(name, "forbidden")
+			})
+			sc.Step(`^the extended CONNECT protocol is not websocket$`, func() {
+				w.request.Header.Set(":protocol", "other")
+			})
+			sc.Step(`^a secure WebSocket URL with automatic transport selection$`, func() {
+				w.useHTTP2 = shouldTryHTTP2(&url.URL{Scheme: "wss"}, DialOptions{})
+			})
+			sc.Step(`^RFC 8441 is attempted before RFC 6455 fallback$`, func() error {
+				if !w.useHTTP2 {
+					return errors.New("RFC 8441 was not preferred")
+				}
+				return nil
+			})
+			sc.Step(`^a cleartext WebSocket URL with automatic transport selection$`, func() {
+				w.useHTTP2 = shouldTryHTTP2(&url.URL{Scheme: "ws"}, DialOptions{})
+			})
+			sc.Step(`^RFC 6455 is used unless HTTP 2 is explicitly requested$`, func() error {
+				if w.useHTTP2 || !shouldTryHTTP2(&url.URL{Scheme: "ws"}, DialOptions{HTTP2: HTTP2Only}) {
+					return errors.New("cleartext transport policy mismatch")
 				}
 				return nil
 			})

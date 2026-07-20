@@ -1,11 +1,12 @@
 module goforge.dev/goplus/std
 
-go 1.24
+go 1.24.0
 
 require (
 	github.com/cucumber/godog v0.15.1
 	github.com/gobwas/ws v1.4.0
 	github.com/klauspost/compress v1.18.6
+	golang.org/x/net v0.48.0
 )
 
 require (
@@ -18,4 +19,5 @@ require (
 	github.com/hashicorp/go-memdb v1.3.4 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/spf13/pflag v1.0.7 // indirect
+	golang.org/x/text v0.32.0 // indirect
 )
