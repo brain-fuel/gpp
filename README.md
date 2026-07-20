@@ -7,6 +7,22 @@ Generated packages compile with the standard Go toolchain and may be
 distributed and consumed **without** Go+ — the same interoperability story
 Kotlin, Scala, and Clojure have with Java.
 
+## v0.23.0 — QUIC v2, CBOR, and Proven DAG-CBOR
+
+The zero-configuration HTTP client now discovers HTTP/3 through Alt-Svc and
+safely falls back through HTTP/2 and HTTP/1.1. Package-level `Get`, `Head`,
+`Post`, and `PostForm` need no client setup. The default server supports RFC
+9368 compatible QUIC version negotiation and RFC 9369 QUIC v2.
+
+The standard library adds a generic `serde.Codec[T]` surface, deterministic
+RFC 8949 CBOR, explicit RFC 7049 canonical compatibility, streaming sequences,
+tags, raw messages, custom marshal hooks, and diagnostic notation.
+
+Strict DAG-CBOR enforces the IPLD data model, deterministic encoding, string
+map keys, finite 64-bit floats, and CID tag 42. `Proof[T]` witnesses that input
+is the unique canonical DAG-CBOR representation of the requested Go or Go+
+type, retaining immutable bytes and their SHA-256 digest.
+
 ## v0.22.0 — Refinement Types and Structural GADT Elimination
 
 Refinement declarations add checked semantic subsets of existing Go types:

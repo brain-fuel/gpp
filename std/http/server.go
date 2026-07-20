@@ -28,9 +28,11 @@ type Server struct {
 	XQUICConfig *nativehttp3.RFC9000Config
 
 	HTTP *nethttp.Server
-	// NativeHTTP3 customizes the native server used by default.
+	// NativeHTTP3 opts into and customizes the experimental native server.
+	// When both HTTP3 and NativeHTTP3 are nil, the RFC 9368/9369-capable
+	// quic-go server is used so QUIC v1 and v2 work out of the box.
 	NativeHTTP3 *nativehttp3.NativeServer
-	// HTTP3 opts into the quic-go reference server instead of NativeHTTP3.
+	// HTTP3 customizes the default quic-go server.
 	HTTP3 *refhttp3.Server
 
 	mu     sync.Mutex
@@ -70,8 +72,12 @@ func (s *Server) Serve(tcp net.Listener, udp net.PacketConn) error {
 		return err
 	}
 	var serveHTTP3 func(net.PacketConn) error
-	if s.HTTP3 != nil {
+	if s.NativeHTTP3 == nil {
 		h3server := s.HTTP3
+		if h3server == nil {
+			h3server = new(refhttp3.Server)
+			s.HTTP3 = h3server
+		}
 		if h3server.TLSConfig == nil {
 			h3server.TLSConfig = s.TLSConfig.Clone()
 		}
@@ -83,10 +89,6 @@ func (s *Server) Serve(tcp net.Listener, udp net.PacketConn) error {
 		serveHTTP3 = h3server.Serve
 	} else {
 		h3server := s.NativeHTTP3
-		if h3server == nil {
-			h3server = new(nativehttp3.NativeServer)
-			s.NativeHTTP3 = h3server
-		}
 		if h3server.TLSConfig == nil {
 			h3server.TLSConfig = s.TLSConfig.Clone()
 		}
