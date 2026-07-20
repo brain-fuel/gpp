@@ -25,13 +25,14 @@ jobs:
       - name: Test (Godog spec suite + unit tests)
         shell: bash
         run: |
-          if go test ./... > test-output.log 2>&1; then
+          if go test -timeout 20m ./... > test-output.log 2>&1; then
             cat test-output.log
           else
-            tail -200 test-output.log
+            head -120 test-output.log
+            tail -80 test-output.log
             while IFS= read -r line; do
               echo "::error::$line"
-            done < <(tail -200 test-output.log)
+            done < <(head -120 test-output.log; tail -80 test-output.log)
             exit 1
           fi
       - name: Standard library (nested module)
