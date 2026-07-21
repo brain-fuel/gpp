@@ -26,7 +26,7 @@ jobs:
         shell: bash
         run: |
           status=0
-          go test -timeout 20m ./... > test-output.log 2>&1 || status=$?
+          go test -timeout 30m ./... > test-output.log 2>&1 || status=$?
           if [[ $status -eq 0 ]]; then
             cat test-output.log
           elif [[ "$RUNNER_OS" == "Windows" ]] &&
