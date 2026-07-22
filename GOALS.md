@@ -255,8 +255,8 @@ semantic forcing cases above some larger repositories.
   cancellable-wait, and overflow-safe delay primitives. Anvil consumes the
   released module for ICS URL feeds. Generation, compile rejection,
   cancellation, body cleanup, allocation, race, vet, and compatibility gates
-  pass. The conservative five-run end-to-end gate is at least 3.56x faster with
-  12 versus 29 allocations, a 58.6% reduction.
+  pass. The conservative five-run end-to-end gate is at least 3.45x faster with
+  13 versus 29 allocations, a 55.2% reduction.
 
 ### `/goals/10-participle` - `alecthomas/participle` -> typed parser construction
 
