@@ -75,7 +75,7 @@ func runtimeCheckResult(context int, e *engine) CheckResult {
 		status, booleans, integers, reals, bitVectors, reason := e.check()
 		switch status {
 		case checkSat:
-			e.publicResult = Satisfiable{Value: modelValue{contextID: context, booleans: booleans, integers: integers, reals: reals, bitVectors: bitVectors, arrays: e.result.arrays, bitVectorArrays: e.result.bitVectorArrays}}
+			e.publicResult = Satisfiable{Value: modelValue{contextID: context, booleans: booleans, integers: integers, reals: reals, bitVectors: bitVectors, arrays: e.result.arrays, bitVectorArrays: e.result.bitVectorArrays, datatypes: e.result.datatypes}}
 		case checkUnsat:
 			e.publicResult = Unsatisfiable{Value: proofValue{contextID: context, assertions: len(e.assertions)}}
 		default:
@@ -96,6 +96,7 @@ type checkOutcome struct {
 	bitVectors      bitVectorModel
 	arrays          *integerArrayModel
 	bitVectorArrays *bitVectorArrayModel
+	datatypes       datatypeModel
 	reason          UnknownReason
 }
 
@@ -258,7 +259,9 @@ func (e *engine) solveAdditional(assumptions []Term[BoolSort]) checkOutcome {
 	sharedRealEUF := false
 	bitVectorTheory := false
 	arrayTheory := false
+	datatypeTheory := false
 	for _, assertion := range allAssertions {
+		datatypeTheory = datatypeTheory || containsDatatypeTheory(assertion)
 		arrayTheory = arrayTheory || containsArrayTheory(assertion)
 		bitVectorTheory = bitVectorTheory || containsBitVectorTheory(assertion)
 		shared := containsSharedRealEUF(assertion)
@@ -266,6 +269,15 @@ func (e *engine) solveAdditional(assumptions []Term[BoolSort]) checkOutcome {
 		eufTheory = eufTheory || containsEUF(assertion) || shared
 		realTheory = realTheory || containsRealTheory(assertion)
 		sharedRealEUF = sharedRealEUF || shared
+	}
+	if datatypeTheory {
+		if arrayTheory || bitVectorTheory || integerTheory || eufTheory || realTheory {
+			return checkOutcome{status: checkUnknown, reason: UnsupportedTheory{Name: "datatype combination with another theory"}}
+		}
+		if outcome, recognized := solveDatatypeAssertions(allAssertions); recognized {
+			return outcome
+		}
+		return checkOutcome{status: checkUnknown, reason: UnsupportedTheory{Name: "datatype expression outside finite enumeration QF_DT"}}
 	}
 	activeTheories := 0
 	for _, active := range []bool{arrayTheory, bitVectorTheory, integerTheory, eufTheory, realTheory} {

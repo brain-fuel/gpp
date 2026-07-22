@@ -94,4 +94,18 @@ func TestSortedTermsAcrossPackageBoundary(t *testing.T) {
 		t.Fatalf("well-indexed bit-vector array failed: %v\n%s", err, out)
 	}
 
+	datatypePositive := "package main\nimport \"goforge.dev/goplus/std/smt\"\nfunc main() { x := smt.DatatypeConst(1, 3, 1, \"x\"); red := smt.DatatypeConstructor(1, 3, 0, \"red\"); _ = smt.Equal(x, red); _ = smt.IsDatatypeConstructor(1, 3, 0, x) }\n"
+	if out, err := compile(t, datatypePositive); err != nil {
+		t.Fatalf("well-indexed finite datatype failed: %v\n%s", err, out)
+	}
+
+	datatypeNegative := "package main\nimport \"goforge.dev/goplus/std/smt\"\nfunc main() { left := smt.DatatypeConst(1, 3, 1, \"left\"); right := smt.DatatypeConst(2, 3, 2, \"right\"); _ = smt.Equal(left, right) }\n"
+	out, err = compile(t, datatypeNegative)
+	if err == nil {
+		t.Fatalf("cross-datatype equality unexpectedly compiled:\n%s", out)
+	}
+	if !strings.Contains(out, "dependent index mismatch") && !strings.Contains(out, "same instantiation") {
+		t.Fatalf("unexpected datatype diagnostic: %s", out)
+	}
+
 }

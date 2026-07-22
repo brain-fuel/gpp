@@ -733,6 +733,52 @@ func TestCompactGroundEUFCongruence(t *testing.T) {
 	}
 }
 
+func TestFiniteEnumerationDatatypeModelsAndRecognizers(t *testing.T) {
+	red := DatatypeConstructor(7, 3, 0, "red")
+	green := DatatypeConstructor(7, 3, 1, "green")
+	x := DatatypeConst(7, 3, 1, "x")
+	formula := And{Values: []Term[BoolSort]{
+		Not{Value: Equal{Left: x, Right: red}},
+		IsDatatypeConstructor(7, 3, 1, x),
+	}}
+	result, ok := Check(Assert(1, New(), formula)).(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", Check(Assert(1, New(), formula)))
+	}
+	value, found := DatatypeModelValue(7, 3, result.Value, x)
+	if !found || value.DatatypeID != 7 || value.ConstructorCount != 3 || value.ConstructorID != 1 {
+		t.Fatalf("x=(%#v,%v)", value, found)
+	}
+	if direct, found := DatatypeModelValue(7, 3, result.Value, green); !found || direct.ConstructorID != 1 {
+		t.Fatalf("green=(%#v,%v)", direct, found)
+	}
+	if recognized, found := BoolValue(result.Value, IsDatatypeConstructor(7, 3, 1, x)); !found || !recognized {
+		t.Fatalf("is-green(x)=(%v,%v)", recognized, found)
+	}
+}
+
+func TestFiniteEnumerationConstructorsAreDisjoint(t *testing.T) {
+	red := DatatypeConstructor(8, 2, 0, "red")
+	green := DatatypeConstructor(8, 2, 1, "green")
+	if _, ok := Check(Assert(1, New(), Equal{Left: red, Right: green})).(Unsatisfiable); !ok {
+		t.Fatal("distinct datatype constructors must not be equal")
+	}
+}
+
+func TestFiniteEnumerationDatatypeColoringDetectsExhaustion(t *testing.T) {
+	a := DatatypeConst(9, 2, 1, "a")
+	b := DatatypeConst(9, 2, 2, "b")
+	c := DatatypeConst(9, 2, 3, "c")
+	formula := And{Values: []Term[BoolSort]{
+		Not{Value: Equal{Left: a, Right: b}},
+		Not{Value: Equal{Left: a, Right: c}},
+		Not{Value: Equal{Left: b, Right: c}},
+	}}
+	if _, ok := Check(Assert(1, New(), formula)).(Unsatisfiable); !ok {
+		t.Fatal("three pairwise-distinct values cannot inhabit a two-constructor datatype")
+	}
+}
+
 func TestGroundEUFAllowsNonInjectiveFunctions(t *testing.T) {
 	a := UninterpretedConstant(1, 1, "a")
 	c := UninterpretedConstant(1, 2, "b")

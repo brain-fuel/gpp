@@ -10,6 +10,19 @@ type BoolSort struct{}
 type IntSort struct{}
 type RealSort struct{}
 
+// DatatypeSort retains both the declaration identity and finite constructor
+// cardinality. Go+ therefore rejects terms from distinct datatype
+// declarations even when they happen to have the same number of constructors.
+//
+//goplus:enum DatatypeSort[d nat, n nat]
+//goplus:derive off
+type DatatypeSort interface{ isDatatypeSort() }
+
+//goplus:variant (DatatypeSort) datatypeSort() DatatypeSort[d, n]
+type datatypeSort struct{}
+
+func (datatypeSort) isDatatypeSort() {}
+
 //goplus:enum ArraySort[I any, E any]
 //goplus:derive off
 type ArraySort[I any, E any] interface{ isArraySort(I, E) }
@@ -726,6 +739,36 @@ type arrayStoreReadInteger[S any] struct {
 
 func (arrayStoreReadInteger[S]) isTerm(S) {}
 
+//goplus:variant (Term[S]) datatypeSymbol(DatatypeID int, ConstructorCount int, ID int, Name string) Term[S]
+type datatypeSymbol[S any] struct {
+	datatypeID       int
+	constructorCount int
+	iD               int
+	name             string
+}
+
+func (datatypeSymbol[S]) isTerm(S) {}
+
+//goplus:variant (Term[S]) datatypeConstructor(DatatypeID int, ConstructorCount int, ConstructorID int, Name string) Term[S]
+type datatypeConstructor[S any] struct {
+	datatypeID       int
+	constructorCount int
+	constructorID    int
+	name             string
+}
+
+func (datatypeConstructor[S]) isTerm(S) {}
+
+//goplus:variant (Term[S]) datatypeRecognizer(DatatypeID int, ConstructorCount int, ConstructorID int, Value any) Term[BoolSort]
+type datatypeRecognizer struct {
+	datatypeID       int
+	constructorCount int
+	constructorID    int
+	value            any
+}
+
+func (datatypeRecognizer) isTerm(BoolSort) {}
+
 // TermCases selects one handler per Term variant for TermFold.
 type TermCases[S any, R any] struct {
 	Bool                          func(Value bool) R
@@ -805,6 +848,9 @@ type TermCases[S any, R any] struct {
 	arrayStore                    func(Array any, Index any, Value any) R
 	arrayReadInteger              func(ArrayID int, Index IntegerValue) R
 	arrayStoreReadInteger         func(ArrayID int, StoreIndexID int, ReadIndexID int, Value IntegerValue) R
+	datatypeSymbol                func(DatatypeID int, ConstructorCount int, ID int, Name string) R
+	datatypeConstructor           func(DatatypeID int, ConstructorCount int, ConstructorID int, Name string) R
+	datatypeRecognizer            func(DatatypeID int, ConstructorCount int, ConstructorID int, Value any) R
 }
 
 // TermFold reduces Term[S] by one-level case analysis.
@@ -964,6 +1010,12 @@ func TermFold[S any, R any](t Term[S], cs TermCases[S, R]) R {
 		return cs.arrayReadInteger(m.arrayID, m.index)
 	case arrayStoreReadInteger[S]:
 		return cs.arrayStoreReadInteger(m.arrayID, m.storeIndexID, m.readIndexID, m.value)
+	case datatypeSymbol[S]:
+		return cs.datatypeSymbol(m.datatypeID, m.constructorCount, m.iD, m.name)
+	case datatypeConstructor[S]:
+		return cs.datatypeConstructor(m.datatypeID, m.constructorCount, m.constructorID, m.name)
+	case datatypeRecognizer:
+		return cs.datatypeRecognizer(m.datatypeID, m.constructorCount, m.constructorID, m.value)
 	default:
 		panic("goplus: impossible enum value in TermFold")
 	}
@@ -1210,7 +1262,7 @@ func (solverValue) isSolver() {}
 //goplus:repr transparent
 type Model = modelValue
 
-//goplus:variant (Model) modelValue(ContextID int, Booleans booleanModel, Integers integerModel, Reals rationalModel, BitVectors bitVectorModel, Arrays *integerArrayModel, BitVectorArrays *bitVectorArrayModel) Model[c]
+//goplus:variant (Model) modelValue(ContextID int, Booleans booleanModel, Integers integerModel, Reals rationalModel, BitVectors bitVectorModel, Arrays *integerArrayModel, BitVectorArrays *bitVectorArrayModel, Datatypes datatypeModel) Model[c]
 type modelValue struct {
 	contextID       int
 	booleans        booleanModel
@@ -1219,6 +1271,7 @@ type modelValue struct {
 	bitVectors      bitVectorModel
 	arrays          *integerArrayModel
 	bitVectorArrays *bitVectorArrayModel
+	datatypes       datatypeModel
 }
 
 func (modelValue) isModel() {}
@@ -1377,6 +1430,36 @@ func DivInteger(dividend Term[IntSort], divisor IntegerValue) Term[IntSort] {
 }
 func ModInteger(dividend Term[IntSort], divisor IntegerValue) Term[IntSort] {
 	return IntegerMod{Dividend: dividend, Divisor: divisor}
+}
+
+// DatatypeConst creates a symbolic value of a finite enumeration datatype.
+// datatype is its declaration identity; constructors is retained in the sort.
+//
+//goplus:dep DatatypeConst(datatype nat, constructors nat, id int, name string) Term[DatatypeSort[datatype, constructors]]
+func DatatypeConst(datatype int, constructors int, id int, name string) Term[DatatypeSort] {
+	if constructors == 0 {
+		panic("smt: enumeration datatype requires at least one constructor")
+	}
+	return datatypeSymbol[DatatypeSort]{datatypeID: int(datatype), constructorCount: int(constructors), iD: id, name: name}
+}
+
+// DatatypeConstructor creates one nullary constructor value. The constructor
+// ordinal is checked at runtime and the datatype/cardinality remain indexed.
+//
+//goplus:dep DatatypeConstructor(datatype nat, constructors nat, constructor nat, name string) Term[DatatypeSort[datatype, constructors]]
+func DatatypeConstructor(datatype int, constructors int, constructor int, name string) Term[DatatypeSort] {
+	if constructors == 0 || constructor >= constructors {
+		panic("smt: enumeration constructor outside datatype cardinality")
+	}
+	return datatypeConstructor[DatatypeSort]{datatypeID: int(datatype), constructorCount: int(constructors), constructorID: int(constructor), name: name}
+}
+
+//goplus:dep IsDatatypeConstructor(datatype nat, constructors nat, constructor nat, value Term[DatatypeSort[datatype, constructors]]) Term[BoolSort]
+func IsDatatypeConstructor(datatype int, constructors int, constructor int, value Term[DatatypeSort]) Term[BoolSort] {
+	if constructors == 0 || constructor >= constructors {
+		panic("smt: enumeration recognizer outside datatype cardinality")
+	}
+	return datatypeRecognizer{datatypeID: int(datatype), constructorCount: int(constructors), constructorID: int(constructor), value: value}
 }
 
 func IntegerVariableID(term Term[IntSort]) (int, bool) {
@@ -1833,7 +1916,7 @@ func CheckAssuming(solver Solver, assumptions ...Term[BoolSort]) AssumptionCheck
 		status, booleans, integers, reals, bitVectors, core, reason := state.checkAssuming(assumptions)
 		switch status {
 		case checkSat:
-			return AssumptionsSatisfiable{Value: modelValue{contextID: context, booleans: booleans, integers: integers, reals: reals, bitVectors: bitVectors, arrays: nil, bitVectorArrays: nil}}
+			return AssumptionsSatisfiable{Value: modelValue{contextID: context, booleans: booleans, integers: integers, reals: reals, bitVectors: bitVectors, arrays: nil, bitVectorArrays: nil, datatypes: datatypeModel{}}}
 		case checkUnsat:
 			return AssumptionsUnsatisfiable{Value: proofValue{contextID: context, assertions: len(state.assertions)}, Indices: core}
 		default:
@@ -1851,7 +1934,8 @@ func BoolValue(model Model, term Term[BoolSort]) (bool, bool) {
 		booleans := __gp_m10.booleans
 		integers := __gp_m10.integers
 		reals := __gp_m10.reals
-		return evaluateBool(term, booleans, integers, reals)
+		datatypes := __gp_m10.datatypes
+		return evaluateBoolWithDatatypes(term, booleans, integers, reals, datatypes)
 	default:
 		panic("goplus: impossible enum value in match")
 	}
@@ -1943,6 +2027,17 @@ func BitVectorArrayValue(model Model, array Term[ArraySort[BitVecSort, BitVecSor
 	case modelValue:
 		arrays := __gp_m17.bitVectorArrays
 		return evaluateBitVectorArray(array, index, arrays)
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
+//goplus:dep DatatypeModelValue(datatype nat, constructors nat, 0 c nat, model Model[c], term Term[DatatypeSort[datatype, constructors]]) (DatatypeValue, bool)
+func DatatypeModelValue(datatype int, constructors int, model Model, term Term[DatatypeSort]) (DatatypeValue, bool) {
+	switch __gp_m18 := any(model).(type) {
+	case modelValue:
+		datatypes := __gp_m18.datatypes
+		return evaluateDatatype(term, datatypes)
 	default:
 		panic("goplus: impossible enum value in match")
 	}

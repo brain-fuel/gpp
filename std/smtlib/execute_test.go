@@ -176,6 +176,50 @@ func TestExecuteIntegerDivisionWithNegativeConstantDivisor(t *testing.T) {
 	}
 }
 
+func TestExecuteFiniteEnumerationDatatype(t *testing.T) {
+	script := `(set-logic QF_DT)
+(declare-datatype Color ((red) (green) (blue)))
+(declare-const x Color)
+(assert (not (= x red)))
+(assert (is-green x))
+(check-sat)
+(get-value (x green (is-green x)))`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("result=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[5].(Satisfiable); !ok {
+		t.Fatalf("check=%T", result.Responses[5])
+	}
+	values, ok := result.Responses[6].(ValuesAvailable)
+	if !ok || len(values.Values) != 3 {
+		t.Fatalf("values=%#v", result.Responses[6])
+	}
+	x, xOK := values.Values[0].(DatatypeValue)
+	green, greenOK := values.Values[1].(DatatypeValue)
+	recognized, recognizedOK := values.Values[2].(BooleanValue)
+	if !xOK || !greenOK || !recognizedOK || !recognized.Value || x.Value.ConstructorID != 1 || green.Value.ConstructorID != 1 || green.Value.ConstructorName != "green" {
+		t.Fatalf("datatype values=%#v", values.Values)
+	}
+}
+
+func TestExecuteFiniteEnumerationDatatypeExhaustion(t *testing.T) {
+	script := `(set-logic QF_DT)
+(declare-datatype Bit ((zero) (one)))
+(declare-const a Bit)
+(declare-const b Bit)
+(declare-const c Bit)
+(assert (distinct a b c))
+(check-sat)`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("result=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[6].(Unsatisfiable); !ok {
+		t.Fatalf("check=%T", result.Responses[6])
+	}
+}
+
 func TestExecuteAssumptionCore(t *testing.T) {
 	script := `(declare-const a Bool)
 (declare-const b Bool)

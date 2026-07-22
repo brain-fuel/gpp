@@ -9,13 +9,14 @@ import (
 )
 
 const (
-	sortNumber      = -2
-	sortBitVector   = -3
-	sortArrayIntInt = -4
-	sortArrayBitVec = -5
-	sortReal        = -1
-	sortBool        = 0
-	sortInt         = 1
+	sortNumber       = -2
+	sortBitVector    = -3
+	sortArrayIntInt  = -4
+	sortArrayBitVec  = -5
+	sortReal         = -1
+	sortBool         = 0
+	sortInt          = 1
+	sortDatatypeBase = -1000000
 )
 
 type dynamicTerm struct {
@@ -30,6 +31,22 @@ type dynamicTerm struct {
 	arrayBitVec       smt.Term[smt.ArraySort[smt.BitVecSort, smt.BitVecSort]]
 	arrayIndexWidth   int
 	arrayElementWidth int
+	datatype          smt.Term[smt.DatatypeSort]
+	datatypeID        int
+	constructorCount  int
+}
+
+type dynamicDatatype struct {
+	id               int
+	constructorCount int
+	sortCode         int
+}
+
+type dynamicDatatypeRecognizer struct {
+	datatypeID       int
+	constructorCount int
+	constructorID    int
+	sortCode         int
 }
 
 type dynamicUnaryFunction struct {
@@ -59,37 +76,43 @@ type dynamicBinaryFunction struct {
 }
 
 type executor struct {
-	solver          smt.Solver
-	checkpoints     []smt.Checkpoint
-	booleans        map[string]smt.Term[smt.BoolSort]
-	integers        map[string]smt.Term[smt.IntSort]
-	reals           map[string]smt.Term[smt.RealSort]
-	bitVectors      map[string]dynamicTerm
-	arrays          map[string]dynamicTerm
-	uninterpreted   map[string]dynamicTerm
-	sorts           map[string]int
-	functions       map[string]dynamicUnaryFunction
-	binaryFunctions map[string]dynamicBinaryFunction
-	nextSymbol      int
-	nextAssertion   int
-	lastModel       *smt.Model
-	responses       []Response
-	errors          []ExecutionError
+	solver              smt.Solver
+	checkpoints         []smt.Checkpoint
+	booleans            map[string]smt.Term[smt.BoolSort]
+	integers            map[string]smt.Term[smt.IntSort]
+	reals               map[string]smt.Term[smt.RealSort]
+	bitVectors          map[string]dynamicTerm
+	arrays              map[string]dynamicTerm
+	uninterpreted       map[string]dynamicTerm
+	sorts               map[string]int
+	functions           map[string]dynamicUnaryFunction
+	binaryFunctions     map[string]dynamicBinaryFunction
+	datatypes           map[string]dynamicDatatype
+	datatypeTerms       map[string]dynamicTerm
+	datatypeRecognizers map[string]dynamicDatatypeRecognizer
+	nextSymbol          int
+	nextAssertion       int
+	lastModel           *smt.Model
+	responses           []Response
+	errors              []ExecutionError
 }
 
 func executeCommands(commands []Command) ([]Response, []ExecutionError) {
 	executor := executor{
-		solver:          smt.New(),
-		booleans:        make(map[string]smt.Term[smt.BoolSort]),
-		integers:        make(map[string]smt.Term[smt.IntSort]),
-		reals:           make(map[string]smt.Term[smt.RealSort]),
-		bitVectors:      make(map[string]dynamicTerm),
-		arrays:          make(map[string]dynamicTerm),
-		uninterpreted:   make(map[string]dynamicTerm),
-		sorts:           make(map[string]int),
-		functions:       make(map[string]dynamicUnaryFunction),
-		binaryFunctions: make(map[string]dynamicBinaryFunction),
-		nextAssertion:   1,
+		solver:              smt.New(),
+		booleans:            make(map[string]smt.Term[smt.BoolSort]),
+		integers:            make(map[string]smt.Term[smt.IntSort]),
+		reals:               make(map[string]smt.Term[smt.RealSort]),
+		bitVectors:          make(map[string]dynamicTerm),
+		arrays:              make(map[string]dynamicTerm),
+		uninterpreted:       make(map[string]dynamicTerm),
+		sorts:               make(map[string]int),
+		functions:           make(map[string]dynamicUnaryFunction),
+		binaryFunctions:     make(map[string]dynamicBinaryFunction),
+		datatypes:           make(map[string]dynamicDatatype),
+		datatypeTerms:       make(map[string]dynamicTerm),
+		datatypeRecognizers: make(map[string]dynamicDatatypeRecognizer),
+		nextAssertion:       1,
 	}
 	for index, command := range commands {
 		if _, stop := command.(Exit); stop {
@@ -198,7 +221,14 @@ func (executor *executor) command(index int, command Command) {
 				values[valueIndex] = UnavailableValue{Expression: expression, Reason: err.Error()}
 				continue
 			}
-			if term.sort == sortBool {
+			if term.datatype != nil {
+				result, found := smt.DatatypeModelValue(term.datatypeID, term.constructorCount, *executor.lastModel, term.datatype)
+				if found {
+					values[valueIndex] = DatatypeValue{Expression: expression, Value: result}
+				} else {
+					values[valueIndex] = UnavailableValue{Expression: expression, Reason: "model has no datatype value"}
+				}
+			} else if term.sort == sortBool {
 				result, found := smt.BoolValue(*executor.lastModel, term.boolean)
 				if found {
 					values[valueIndex] = BooleanValue{Expression: expression, Value: result}
@@ -234,6 +264,10 @@ func (executor *executor) command(index int, command Command) {
 		}
 		executor.responses = append(executor.responses, ValuesAvailable{Values: values})
 	case RawCommand:
+		if value.Name == "declare-datatype" {
+			executor.declareDatatype(index, value)
+			return
+		}
 		executor.fail(index, value.At, "unsupported command "+value.Name)
 	default:
 		executor.fail(index, commandSpan(command), "unsupported command")
@@ -262,6 +296,10 @@ func (executor *executor) declare(index int, name string, sortExpression SExpr, 
 		return
 	}
 	if _, exists := executor.arrays[name]; exists {
+		executor.fail(index, at, "duplicate declaration "+name)
+		return
+	}
+	if _, exists := executor.datatypeTerms[name]; exists {
 		executor.fail(index, at, "duplicate declaration "+name)
 		return
 	}
@@ -300,12 +338,79 @@ func (executor *executor) declare(index int, name string, sortExpression SExpr, 
 	case "Real":
 		executor.reals[name] = smt.RealSymbol{ID: executor.nextSymbol, Name: name}
 	default:
+		if datatype, exists := executor.datatypes[sortName]; exists {
+			executor.datatypeTerms[name] = dynamicTerm{
+				sort: datatype.sortCode, datatypeID: datatype.id, constructorCount: datatype.constructorCount,
+				datatype: smt.DatatypeConst(datatype.id, datatype.constructorCount, executor.nextSymbol, name),
+			}
+			executor.acknowledge(index)
+			return
+		}
 		sortID, exists := executor.sorts[sortName]
 		if !exists {
 			executor.fail(index, at, "unsupported sort "+sortName)
 			return
 		}
 		executor.uninterpreted[name] = dynamicTerm{sort: sortID + 2, uninterpreted: smt.UninterpretedConstant(sortID, executor.nextSymbol, name)}
+	}
+	executor.acknowledge(index)
+}
+
+func (executor *executor) declareDatatype(index int, declaration RawCommand) {
+	if len(declaration.Arguments) != 2 {
+		executor.fail(index, declaration.At, "declare-datatype requires a sort name and constructor list")
+		return
+	}
+	name, nameOK := atomText(declaration.Arguments[0])
+	constructors, constructorsOK := declaration.Arguments[1].(List)
+	if !nameOK || !constructorsOK || len(constructors.Values) == 0 {
+		executor.fail(index, declaration.At, "finite declare-datatype requires at least one nullary constructor")
+		return
+	}
+	if _, exists := executor.sorts[name]; exists {
+		executor.fail(index, declaration.At, "duplicate sort declaration "+name)
+		return
+	}
+	if _, exists := executor.datatypes[name]; exists || name == "Bool" || name == "Int" || name == "Real" {
+		executor.fail(index, declaration.At, "duplicate sort declaration "+name)
+		return
+	}
+	constructorNames := make([]string, len(constructors.Values))
+	seenConstructors := make(map[string]struct{}, len(constructors.Values))
+	for constructorIndex, expression := range constructors.Values {
+		entry, ok := expression.(List)
+		if !ok || len(entry.Values) != 1 {
+			executor.fail(index, declaration.At, "this QF_DT foundation requires nullary constructors")
+			return
+		}
+		constructorName, ok := atomText(entry.Values[0])
+		if !ok {
+			executor.fail(index, declaration.At, "datatype constructor name must be a symbol")
+			return
+		}
+		if _, exists := executor.datatypeTerms[constructorName]; exists {
+			executor.fail(index, declaration.At, "duplicate datatype constructor "+constructorName)
+			return
+		}
+		if _, exists := seenConstructors[constructorName]; exists {
+			executor.fail(index, declaration.At, "duplicate datatype constructor "+constructorName)
+			return
+		}
+		seenConstructors[constructorName] = struct{}{}
+		constructorNames[constructorIndex] = constructorName
+	}
+	executor.nextSymbol++
+	datatypeID := executor.nextSymbol
+	datatype := dynamicDatatype{id: datatypeID, constructorCount: len(constructorNames), sortCode: sortDatatypeBase - datatypeID}
+	executor.datatypes[name] = datatype
+	for constructorID, constructorName := range constructorNames {
+		executor.datatypeTerms[constructorName] = dynamicTerm{
+			sort: datatype.sortCode, datatypeID: datatype.id, constructorCount: datatype.constructorCount,
+			datatype: smt.DatatypeConstructor(datatype.id, datatype.constructorCount, constructorID, constructorName),
+		}
+		executor.datatypeRecognizers["is-"+constructorName] = dynamicDatatypeRecognizer{
+			datatypeID: datatype.id, constructorCount: datatype.constructorCount, constructorID: constructorID, sortCode: datatype.sortCode,
+		}
 	}
 	executor.acknowledge(index)
 }
@@ -418,6 +523,9 @@ func (executor *executor) term(expression SExpr) (dynamicTerm, error) {
 		if value, found := executor.arrays[atom.Text]; found {
 			return value, nil
 		}
+		if value, found := executor.datatypeTerms[atom.Text]; found {
+			return value, nil
+		}
 		if strings.HasPrefix(atom.Text, "#x") || strings.HasPrefix(atom.Text, "#b") {
 			baseWidth := 4
 			prefix := "0x"
@@ -495,6 +603,12 @@ func (executor *executor) term(expression SExpr) (dynamicTerm, error) {
 			return dynamicTerm{sort: sortArrayIntInt, arrayIntInt: smt.ConstArray[smt.IntSort, smt.IntSort](terms[0].integer)}, nil
 		}
 		return dynamicTerm{}, fmt.Errorf("ill-sorted constant integer array")
+	}
+	if recognizer, found := executor.datatypeRecognizers[operator]; found {
+		if len(terms) != 1 || terms[0].sort != recognizer.sortCode || terms[0].datatypeID != recognizer.datatypeID || terms[0].constructorCount != recognizer.constructorCount {
+			return dynamicTerm{}, fmt.Errorf("ill-sorted datatype recognizer %s", operator)
+		}
+		return dynamicTerm{sort: sortBool, boolean: smt.IsDatatypeConstructor(recognizer.datatypeID, recognizer.constructorCount, recognizer.constructorID, terms[0].datatype)}, nil
 	}
 	if constantBitVecArray {
 		if len(terms) == 1 && terms[0].sort == sortBitVector && terms[0].bitWidth == constantArrayElementWidth {
@@ -637,6 +751,21 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 			return dynamicTerm{sort: sortBool, boolean: smt.Implies{Left: values[0], Right: values[1]}}, nil
 		}
 	case "distinct":
+		if len(terms) >= 2 && terms[0].datatype != nil {
+			disequalities := make([]smt.Term[smt.BoolSort], 0, len(terms)*(len(terms)-1)/2)
+			for left := 0; left < len(terms); left++ {
+				for right := left + 1; right < len(terms); right++ {
+					if terms[right].sort != terms[left].sort || terms[right].datatypeID != terms[left].datatypeID || terms[right].constructorCount != terms[left].constructorCount {
+						return dynamicTerm{}, fmt.Errorf("ill-sorted application %s", operator)
+					}
+					disequalities = append(disequalities, smt.Not{Value: smt.Equal{Left: terms[left].datatype, Right: terms[right].datatype}})
+				}
+			}
+			if len(disequalities) == 1 {
+				return dynamicTerm{sort: sortBool, boolean: disequalities[0]}, nil
+			}
+			return dynamicTerm{sort: sortBool, boolean: smt.And{Values: disequalities}}, nil
+		}
 		if values, ok := integers(); ok {
 			if len(values) < 2 {
 				return dynamicTerm{sort: sortBool, boolean: smt.Bool{Value: true}}, nil
@@ -653,6 +782,19 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 			return dynamicTerm{sort: sortBool, boolean: smt.And{Values: disequalities}}, nil
 		}
 	case "=":
+		if len(terms) >= 2 && terms[0].datatype != nil {
+			equalities := make([]smt.Term[smt.BoolSort], len(terms)-1)
+			for index := 1; index < len(terms); index++ {
+				if terms[index].sort != terms[0].sort || terms[index].datatypeID != terms[0].datatypeID || terms[index].constructorCount != terms[0].constructorCount {
+					return dynamicTerm{}, fmt.Errorf("ill-sorted application %s", operator)
+				}
+				equalities[index-1] = smt.Equal{Left: terms[index-1].datatype, Right: terms[index].datatype}
+			}
+			if len(equalities) == 1 {
+				return dynamicTerm{sort: sortBool, boolean: equalities[0]}, nil
+			}
+			return dynamicTerm{sort: sortBool, boolean: smt.And{Values: equalities}}, nil
+		}
 		if len(terms) >= 2 && terms[0].sort == sortArrayBitVec {
 			equalities := make([]smt.Term[smt.BoolSort], len(terms)-1)
 			for index := 1; index < len(terms); index++ {
