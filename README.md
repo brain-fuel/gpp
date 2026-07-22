@@ -741,6 +741,7 @@ The spec is executable: the Godog/Cucumber feature suite under
 | v0.24.0 | Process, SemVer, durable workflows, validated config, atomic files, and CAS — implemented |
 | v0.24.1 | Cross-host analyzer compatibility and stable workflow-journal JSON — implemented |
 | v0.25.0 | Goals 01–08 dependent rewrite foundations: indexed decimal, collections, config, HTTP routes, expressions, JSON paths, validation, and schedules — shipped |
+| v0.27.0 | Goal 10 foundations: consistent inferred indices across all imported runtime arguments — shipped |
 | v0.26.0 | Goal 09 foundations: inferred preserved indices across linear calls and shared overflow-safe retry primitives — shipped |
 
 ## License

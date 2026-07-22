@@ -258,7 +258,7 @@ semantic forcing cases above some larger repositories.
   pass. The conservative five-run end-to-end gate is at least 3.45x faster with
   13 versus 29 allocations, a 55.2% reduction.
 
-### `/goals/10-participle` - `alecthomas/participle` -> typed parser construction
+### `/goals/10-participle` - `alecthomas/participle` -> typed parser construction (complete)
 
 - **Why tenth:** A smaller audience (roughly 3.9k stars), but an excellent final
   forcing function: grammars, token streams, captures, and AST construction tie
@@ -274,6 +274,21 @@ semantic forcing cases above some larger repositories.
 - **Gate:** Participle grammar compatibility corpus, ambiguity diagnostics,
   parser laws, differential/fuzz tests, generated-Go inspection, and realistic
   language benchmarks.
+- **Status:** released as `goforge.dev/participle` v0.1.1, pinned to Participle
+  v2.1.4 at `bcbb39153e17f8018257f17aba8eac628d396b64`. The Go+-authored core has a
+  minimum-token-indexed grammar GADT, grammar/FIRST/parser identity indices,
+  three-token immutable assignment spans, explicit lookahead and commit,
+  exhaustive parse/build failures, and checked dynamic grammar binding. Go+
+  v0.27.0 closes the cross-package consistency hole discovered by this forcing
+  case: omitted natural witnesses are now validated against every indexed
+  runtime argument. Positive and negative cross-module fixtures, differential
+  fuzzing, race, vet, generated-source, ambiguity, erased-boundary, and
+  allocation gates pass. Agile Frontier v0.2.1 is an independent Go+/WASM
+  consumer. No `std/parsec` API was promoted because its rune positions and
+  consumption model do not yet demonstrate the same token-count-indexed span
+  abstraction with a second consumer. Across the recorded five-run semantic
+  benchmark, the conservative gate is at least 38.6x faster with 263 versus
+  8,237 allocations, a 96.8% reduction.
 
 ## Package workflow
 
