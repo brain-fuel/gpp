@@ -33,6 +33,29 @@ func TestBooleanUnsatProof(t *testing.T) {
 	}
 }
 
+func TestBooleanInlineCNFModelAndContradiction(t *testing.T) {
+	satisfiable := BooleanInlineCNF{LiteralCount: 3, ClauseCount: 2}
+	satisfiable.Literals[0], satisfiable.Literals[1], satisfiable.Literals[2] = 1, 2, -1
+	satisfiable.ClauseEnds[0], satisfiable.ClauseEnds[1] = 2, 3
+	result, ok := Check(Assert(1, New(), satisfiable)).(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", Check(Assert(1, New(), satisfiable)))
+	}
+	if value, found := BoolValue(result.Value, BoolSymbol{ID: 0}); !found || value {
+		t.Fatalf("a=(%v,%v)", value, found)
+	}
+	if value, found := BoolValue(result.Value, BoolSymbol{ID: 1}); !found || !value {
+		t.Fatalf("b=(%v,%v)", value, found)
+	}
+
+	unsatisfiable := BooleanInlineCNF{LiteralCount: 2, ClauseCount: 2}
+	unsatisfiable.Literals[0], unsatisfiable.Literals[1] = 1, -1
+	unsatisfiable.ClauseEnds[0], unsatisfiable.ClauseEnds[1] = 1, 2
+	if _, ok := Check(Assert(2, New(), unsatisfiable)).(Unsatisfiable); !ok {
+		t.Fatal("expected inline contradiction to be unsatisfiable")
+	}
+}
+
 func TestLinearIntegerArithmeticSatModel(t *testing.T) {
 	x := IntSymbol{ID: 1, Name: "x"}
 	y := IntSymbol{ID: 2, Name: "y"}
@@ -669,6 +692,19 @@ func TestGroundEUFCongruence(t *testing.T) {
 	}}
 	if result := Check(Assert(1, New(), formula)); func() bool { _, ok := result.(Unsatisfiable); return ok }() == false {
 		t.Fatalf("result=%T", result)
+	}
+}
+
+func TestCompactGroundEUFCongruence(t *testing.T) {
+	a := UninterpretedEUFTerm{Kind: 1, SortID: 1, SymbolID: 1}
+	b := UninterpretedEUFTerm{Kind: 1, SortID: 1, SymbolID: 2}
+	fa := UninterpretedEUFTerm{Kind: 2, SortID: 1, FunctionID: 1, FirstSortID: 1, FirstID: 1}
+	fb := UninterpretedEUFTerm{Kind: 2, SortID: 1, FunctionID: 1, FirstSortID: 1, FirstID: 2}
+	formula := UninterpretedEUFConjunction{Count: 2}
+	formula.Inline[0] = UninterpretedEUFRelation{Left: a, Right: b}
+	formula.Inline[1] = UninterpretedEUFRelation{Left: fa, Right: fb, Negated: true}
+	if _, ok := Check(Assert(1, New(), formula)).(Unsatisfiable); !ok {
+		t.Fatal("compact congruence contradiction must be unsatisfiable")
 	}
 }
 

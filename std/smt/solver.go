@@ -15,6 +15,19 @@ type BooleanConjunction struct {
 
 func (BooleanConjunction) isTerm(BoolSort) {}
 
+// BooleanInlineCNF is the allocation-free representation for small authored
+// CNF systems. Literals use the public BooleanVariable convention encoded as
+// +(ID+1) and -(ID+1); ClauseEnds contains cumulative literal counts. Larger
+// systems continue to use BooleanCNF and the watched-literal solver.
+type BooleanInlineCNF struct {
+	LiteralCount int
+	ClauseCount  int
+	Literals     [16]int
+	ClauseEnds   [8]int
+}
+
+func (BooleanInlineCNF) isTerm(BoolSort) {}
+
 func (conjunction BooleanConjunction) values() ([]Term[BoolSort], []bool) {
 	if conjunction.OverflowTerms != nil {
 		return conjunction.OverflowTerms[:conjunction.Count], conjunction.OverflowNegated[:conjunction.Count]
@@ -227,6 +240,11 @@ func (e *engine) solveAdditional(assumptions []Term[BoolSort]) checkOutcome {
 	}
 	if allConstants {
 		return checkOutcome{status: checkSat}
+	}
+	if len(allAssertions) == 1 && len(assumptions) == 0 {
+		if compact, ok := allAssertions[0].(BooleanInlineCNF); ok {
+			return solveBooleanInlineCNF(compact)
+		}
 	}
 	if outcome, recognized := solveCompactBitVectorArrayExchange(allAssertions); recognized {
 		return outcome

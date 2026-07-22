@@ -43,6 +43,8 @@ func (encoder *booleanEncoder) initialize(termCount int) {
 func booleanTermSize(term Term[BoolSort]) int {
 	size := 1
 	switch value := term.(type) {
+	case BooleanInlineCNF:
+		return size + value.LiteralCount
 	case BooleanClause:
 		return size + len(value.Literals)
 	case BooleanCNF:
@@ -83,6 +85,134 @@ func booleanTermSize(term Term[BoolSort]) int {
 		}
 	}
 	return size
+}
+
+func solveBooleanInlineCNF(cnf BooleanInlineCNF) checkOutcome {
+	if cnf.LiteralCount < 0 || cnf.LiteralCount > len(cnf.Literals) || cnf.ClauseCount < 0 || cnf.ClauseCount > len(cnf.ClauseEnds) {
+		return checkOutcome{status: checkUnknown, reason: UnsupportedTheory{Name: "invalid inline Boolean CNF bounds"}}
+	}
+	var assignment [65]int8
+	var trail [64]int
+	var used [65]bool
+	maximum := 0
+	start := 0
+	for clause := 0; clause < cnf.ClauseCount; clause++ {
+		end := cnf.ClauseEnds[clause]
+		if end <= start || end > cnf.LiteralCount {
+			return checkOutcome{status: checkUnknown, reason: UnsupportedTheory{Name: "invalid inline Boolean CNF clause"}}
+		}
+		for _, literal := range cnf.Literals[start:end] {
+			variable := absCNF(literal)
+			if variable == 0 || variable >= len(assignment) {
+				return checkOutcome{status: checkUnknown, reason: UnsupportedTheory{Name: "inline Boolean CNF symbol ID outside 0..63"}}
+			}
+			if variable > maximum {
+				maximum = variable
+			}
+			used[variable] = true
+		}
+		start = end
+	}
+	if start != cnf.LiteralCount {
+		return checkOutcome{status: checkUnknown, reason: UnsupportedTheory{Name: "unclaimed inline Boolean CNF literals"}}
+	}
+	trailCount := 0
+	if !searchBooleanInlineCNF(cnf, maximum, &used, &assignment, &trail, &trailCount) {
+		return checkOutcome{status: checkUnsat}
+	}
+	var model booleanModel
+	for variable := 1; variable <= maximum; variable++ {
+		if used[variable] && assignment[variable] != 0 {
+			model.set(variable-1, assignment[variable] > 0)
+		}
+	}
+	return checkOutcome{status: checkSat, booleans: model}
+}
+
+func searchBooleanInlineCNF(cnf BooleanInlineCNF, maximum int, used *[65]bool, assignment *[65]int8, trail *[64]int, trailCount *int) bool {
+	startTrail := *trailCount
+	if !propagateBooleanInlineCNF(cnf, assignment, trail, trailCount) {
+		rollbackBooleanInlineCNF(assignment, trail, trailCount, startTrail)
+		return false
+	}
+	variable := 0
+	for candidate := 1; candidate <= maximum; candidate++ {
+		if used[candidate] && assignment[candidate] == 0 {
+			variable = candidate
+			break
+		}
+	}
+	if variable == 0 {
+		return true
+	}
+	branchTrail := *trailCount
+	for _, literal := range [2]int{variable, -variable} {
+		if assignBooleanInline(literal, assignment, trail, trailCount) && searchBooleanInlineCNF(cnf, maximum, used, assignment, trail, trailCount) {
+			return true
+		}
+		rollbackBooleanInlineCNF(assignment, trail, trailCount, branchTrail)
+	}
+	rollbackBooleanInlineCNF(assignment, trail, trailCount, startTrail)
+	return false
+}
+
+func propagateBooleanInlineCNF(cnf BooleanInlineCNF, assignment *[65]int8, trail *[64]int, trailCount *int) bool {
+	for {
+		changed := false
+		start := 0
+		for clause := 0; clause < cnf.ClauseCount; clause++ {
+			end := cnf.ClauseEnds[clause]
+			unassigned, unit, satisfied := 0, 0, false
+			for _, literal := range cnf.Literals[start:end] {
+				value := assignment[absCNF(literal)]
+				if value == 0 {
+					unassigned++
+					unit = literal
+				} else if (value > 0) == (literal > 0) {
+					satisfied = true
+					break
+				}
+			}
+			start = end
+			if satisfied {
+				continue
+			}
+			if unassigned == 0 {
+				return false
+			}
+			if unassigned == 1 {
+				if !assignBooleanInline(unit, assignment, trail, trailCount) {
+					return false
+				}
+				changed = true
+			}
+		}
+		if !changed {
+			return true
+		}
+	}
+}
+
+func assignBooleanInline(literal int, assignment *[65]int8, trail *[64]int, trailCount *int) bool {
+	variable := absCNF(literal)
+	value := int8(1)
+	if literal < 0 {
+		value = -1
+	}
+	if assignment[variable] != 0 {
+		return assignment[variable] == value
+	}
+	assignment[variable] = value
+	trail[*trailCount] = variable
+	*trailCount++
+	return true
+}
+
+func rollbackBooleanInlineCNF(assignment *[65]int8, trail *[64]int, trailCount *int, start int) {
+	for *trailCount > start {
+		*trailCount--
+		assignment[trail[*trailCount]] = 0
+	}
 }
 
 func (e *booleanEncoder) variable() int {

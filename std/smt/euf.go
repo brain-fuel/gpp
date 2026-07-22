@@ -11,6 +11,44 @@ type RealUnaryEquality struct {
 
 func (RealUnaryEquality) isTerm(BoolSort) {}
 
+// UninterpretedEUFTerm is the compact, name-independent representation of a
+// ground uninterpreted-sort symbol or an application whose arguments are
+// symbols. Kind 1 is a symbol, 2 a unary application, and 3 a binary
+// application. The ordinary typed EUF AST remains the general fallback.
+type UninterpretedEUFTerm struct {
+	Kind         uint8
+	SortID       int
+	SymbolID     int
+	FunctionID   int
+	FirstSortID  int
+	SecondSortID int
+	FirstID      int
+	SecondID     int
+}
+
+type UninterpretedEUFRelation struct {
+	Left    UninterpretedEUFTerm
+	Right   UninterpretedEUFTerm
+	Negated bool
+}
+
+func (UninterpretedEUFRelation) isTerm(BoolSort) {}
+
+type UninterpretedEUFConjunction struct {
+	Count    int
+	Inline   [4]UninterpretedEUFRelation
+	Overflow []UninterpretedEUFRelation
+}
+
+func (UninterpretedEUFConjunction) isTerm(BoolSort) {}
+
+func (value UninterpretedEUFConjunction) values() []UninterpretedEUFRelation {
+	if value.Overflow != nil {
+		return value.Overflow[:value.Count]
+	}
+	return value.Inline[:value.Count]
+}
+
 // The EUF foundation intentionally recognizes conjunctions of ground
 // equalities and disequalities. Congruence closure is independent of symbol
 // spelling and uses the retained sort/function identities.
@@ -87,6 +125,8 @@ func containsEUF(term Term[BoolSort]) bool {
 		return isEUFTerm(value.Left) || isEUFTerm(value.Right)
 	case RealUnaryEquality:
 		return true
+	case UninterpretedEUFRelation, UninterpretedEUFConjunction:
+		return true
 	case BitVectorEUFRelation:
 		return true
 	case BitVectorEUFConjunction:
@@ -97,6 +137,22 @@ func containsEUF(term Term[BoolSort]) bool {
 		return true
 	}
 	return false
+}
+
+func (problem *eufProblem) compactUninterpretedTerm(term UninterpretedEUFTerm) (int, bool) {
+	switch term.Kind {
+	case 1:
+		return problem.ensureNode(eufNode{sortID: term.SortID, symbolID: term.SymbolID}), true
+	case 2:
+		argument := problem.ensureNode(eufNode{sortID: term.FirstSortID, symbolID: term.FirstID})
+		return problem.ensureNode(eufNode{kind: 1, sortID: term.SortID, functionID: term.FunctionID, firstSortID: term.FirstSortID, first: argument, second: -1}), true
+	case 3:
+		first := problem.ensureNode(eufNode{sortID: term.FirstSortID, symbolID: term.FirstID})
+		second := problem.ensureNode(eufNode{sortID: term.SecondSortID, symbolID: term.SecondID})
+		return problem.ensureNode(eufNode{kind: 2, sortID: term.SortID, functionID: term.FunctionID, firstSortID: term.FirstSortID, secondSortID: term.SecondSortID, first: first, second: second}), true
+	default:
+		return 0, false
+	}
 }
 
 func (problem *eufProblem) compactBitVectorTerm(term BitVectorEUFTerm) (int, bool) {
@@ -239,6 +295,29 @@ func (problem *eufProblem) boolean(term Term[BoolSort], negated bool) bool {
 			problem.disequality = append(problem.disequality, pair)
 		} else {
 			problem.equalities = append(problem.equalities, pair)
+		}
+		return true
+	case UninterpretedEUFRelation:
+		left, leftOK := problem.compactUninterpretedTerm(value.Left)
+		right, rightOK := problem.compactUninterpretedTerm(value.Right)
+		if !leftOK || !rightOK || problem.nodes[left].sortID != problem.nodes[right].sortID {
+			return false
+		}
+		pair := eufPair{left: left, right: right}
+		if value.Negated != negated {
+			problem.disequality = append(problem.disequality, pair)
+		} else {
+			problem.equalities = append(problem.equalities, pair)
+		}
+		return true
+	case UninterpretedEUFConjunction:
+		if negated {
+			return false
+		}
+		for _, relation := range value.values() {
+			if !problem.boolean(relation, false) {
+				return false
+			}
 		}
 		return true
 	case BitVectorEUFRelation:
