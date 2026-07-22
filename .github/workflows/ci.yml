@@ -25,14 +25,31 @@ jobs:
       - name: Test (Godog spec suite + unit tests)
         shell: bash
         run: |
-          if go test -timeout 20m ./... > test-output.log 2>&1; then
+          status=0
+          {
+            go test -timeout 20m . &&
+              go test -timeout 10m ./cmd/... ./internal/...
+          } > test-output.log 2>&1 || status=$?
+          if [[ $status -eq 0 ]]; then
             cat test-output.log
+          elif [[ "$RUNNER_OS" == "Windows" ]] &&
+               [[ $(grep -Ec '^(ok|\?)  ' test-output.log) -eq $(go list ./... | wc -l) ]] &&
+               ! grep -Eq '^(FAIL|# )|panic:' test-output.log; then
+            # Go on the Windows runner can return a non-zero command status
+            # after every package has completed successfully. Accept only a
+            # complete, failure-free package accounting; do not mask a real
+            # test, panic, or compilation failure.
+            cat test-output.log
+            echo "::warning::go test exited $status after every package passed"
           else
             head -120 test-output.log
             tail -80 test-output.log
             while IFS= read -r line; do
               echo "::error::$line"
-            done < <(head -120 test-output.log; tail -80 test-output.log)
+            # GitHub retains only the first few command annotations. Emit the
+            # tail first because Go reports package failures and its final
+            # status there; the ordinary excerpt above remains head then tail.
+            done < <(tail -80 test-output.log; head -120 test-output.log)
             exit 1
           fi
       - name: Standard library (nested module)
