@@ -7,6 +7,75 @@ Generated packages compile with the standard Go toolchain and may be
 distributed and consumed **without** Go+ — the same interoperability story
 Kotlin, Scala, and Clojure have with Java.
 
+The package-rewrite program and opt-in dependent-typing sequence are tracked in
+[GOALS.md](GOALS.md); its stable names are `/goals/01-decimal` through
+`/goals/10-participle`.
+
+## v0.25.0 — Dependent Rewrite Foundations
+
+`std/decimal` provides immutable arbitrary-precision base-10 arithmetic,
+precision-safe JSON and database boundaries, six exhaustive rounding modes,
+and division results that distinguish exact, rounded, and zero-divisor cases.
+Its `Precision` and `Scale` refinements guard generated Go entry points.
+
+The dependent surface retains scale in `Fixed[p]`: addition and subtraction
+require equal indices, multiplication computes `Fixed[p+q]`, and rescaling is
+an explicit lossy transition. Cross-package checking now reconstructs indices
+through nested calls, single-assignment locals, and dependent parameters;
+reassigned indexed locals require an explicit rebind or rescale. Generated Go
+retains a sealed runtime scale witness, so erased callers receive corresponding
+boundary protection.
+
+## Collection Algebra and Dependent Shapes
+
+`std/nonempty` provides owned sequences with total head, last, and reduction;
+it is shared by `std/algebra` and the `goforge.dev/lo` compatibility module.
+`std/vec` now adds equal-length `Zip`, `Fin[n]` bounds evidence, and total
+`At`. Constructor-produced indices survive long enough for cross-package
+checking: different vector lengths and out-of-range evidence are rejected
+before erasure, while generated Go retains runtime shape guards.
+
+## Typed Configuration Snapshots
+
+`std/config` resolves defaults, remote values, files, environment, flags, and
+overrides into immutable `Snapshot[s]` values that retain provenance.
+`Key[T,s]` prevents keys from one schema being read from another; `Require`
+produces presence evidence, and `Subset[s,sub]` is the checked route to a
+reindexed projection. The `goforge.dev/viper` migration facade consumes this
+representation while preserving a bounded Viper v1.21.0 API tier.
+
+## Pattern-Indexed HTTP Routes
+
+`std/http/route` ties parsed `Pattern[p]` values to `Request[p]`, typed
+parameter keys, sealed handlers, route-set fingerprints, and explicit
+middleware capabilities. Cross-package checking rejects a key or handler from
+another pattern before erasure. The `goforge.dev/chi` facade compiles familiar
+Chi registration into immutable route snapshots with structured ambiguity
+diagnostics and OpenAPI-ready flat metadata.
+
+## Typed Expressions and Verified Bytecode
+
+The sibling `goforge.dev/expr` module is the `/goals/06-expr` forcing case for
+GADTs, finite existential parse results, equality transport, and indexed
+bytecode. Its Go+-authored `Expr[T]` core has explicit effects and evaluation
+failures; `Instruction[input,output]` and `Stack[n]` make underflowing programs
+unrepresentable. Cross-package fixtures prove valid `0 -> 1 -> 2 -> 1`
+composition and reject underflow or a false `Eq[n,m]` witness before erasure.
+The ordinary-Go facade pins Expr v1.17.8 and publishes an explicit language and
+617-declaration API matrix rather than implying compatibility with deferred
+dynamic features.
+
+## Schema-Aware JSON Paths
+
+The sibling `goforge.dev/gjson` module is the `/goals/07-gjson` forcing case for
+`Path[S,T]`, presence-indexed `Lookup[T,p]`, finite existential paths, and
+schema-preserving composition. Validated immutable documents return borrowed
+zero-copy views with a documented lifetime; byte input is owned, numbers retain
+lossless decimal spelling, JSON-lines traversal streams, and modifiers live in
+explicit immutable registries. Cross-package fixtures reject schema mismatch
+and use of missing evidence as present. One typed integer path is consumed by
+both JSON and `std/cbor`, without prematurely promoting a shared std package.
+
 ## v0.24.1 — Durable Workflows and Effect Boundaries
 
 Six Go+-authored standard-library packages make command-line and delivery
@@ -647,6 +716,7 @@ The spec is executable: the Godog/Cucumber feature suite under
 | v0.23.0 | QUIC v2, CBOR, serde, and proven DAG-CBOR — shipped |
 | v0.24.0 | Process, SemVer, durable workflows, validated config, atomic files, and CAS — implemented |
 | v0.24.1 | Cross-host analyzer compatibility and stable workflow-journal JSON — implemented |
+| v0.25.0 | Goals 01–08 dependent rewrite foundations: indexed decimal, collections, config, HTTP routes, expressions, JSON paths, validation, and schedules — shipped |
 
 ## License
 

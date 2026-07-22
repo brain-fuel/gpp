@@ -9,6 +9,8 @@ require (
 	github.com/klauspost/compress v1.18.6
 	github.com/quic-go/qpack v0.6.0
 	github.com/quic-go/quic-go v0.59.1
+	github.com/robfig/cron/v3 v3.0.1
+	github.com/shopspring/decimal v1.4.0
 	golang.org/x/crypto v0.48.0
 	golang.org/x/net v0.50.0
 	golang.org/x/sys v0.41.0

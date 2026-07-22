@@ -10,6 +10,7 @@ import (
 	"go/types"
 	"reflect"
 	"strings"
+	"unicode"
 
 	"goforge.dev/goplus/internal/registry"
 	"goforge.dev/goplus/internal/syntax"
@@ -271,12 +272,32 @@ func (r *fileResolver) enumColFromTypeText(declPkg, text string) patCol {
 // substTypeTextLite substitutes identifiers in a type expression's text —
 // the resolve-side twin of gen's substituteTypeText.
 func substTypeTextLite(text string, subst map[string]string) (string, error) {
+	if len(subst) != 0 {
+		clean := make(map[string]string, len(subst))
+		for from, to := range subst {
+			if strings.TrimSpace(to) != from {
+				clean[from] = to
+			}
+		}
+		subst = clean
+	}
 	if len(subst) == 0 {
 		return text, nil
 	}
+	for from, to := range subst {
+		if containsTypeIdentifier(to, from) {
+			// Substitution is simultaneous, not recursive. Walking a newly
+			// inserted `n+1` while replacing n would otherwise grow forever.
+			return substTypeIdentifiers(text, subst), nil
+		}
+	}
 	expr, err := parser.ParseExpr(text)
 	if err != nil {
-		return "", err
+		// Dependent index terms are intentionally richer than Go type
+		// arguments: Rule[T, PredicateAtomID(id)] is valid Go+ marker text but
+		// not a Go expression because a call cannot appear as a Go type
+		// argument. Fall back to token-wise identifier substitution.
+		return substTypeIdentifiers(text, subst), nil
 	}
 	repl := map[string]ast.Expr{}
 	for from, to := range subst {
@@ -296,6 +317,14 @@ func substTypeTextLite(text string, subst map[string]string) (string, error) {
 		switch node := n.(type) {
 		case *ast.SelectorExpr:
 			skip[node.Sel] = true
+		case *ast.CallExpr:
+			// A bare total-function name can coincide with a dependent
+			// parameter (for example Atom's `id` and PredicateAtomID).
+			// Only call arguments are substitutable terms; the callee name is
+			// part of the signature's vocabulary.
+			if id, ok := node.Fun.(*ast.Ident); ok {
+				skip[id] = true
+			}
 		case *ast.Field:
 			for _, nm := range node.Names {
 				skip[nm] = true
@@ -344,6 +373,55 @@ func substTypeTextLite(text string, subst map[string]string) (string, error) {
 		return "", err
 	}
 	return buf.String(), nil
+}
+
+func containsTypeIdentifier(text, target string) bool {
+	runes := []rune(text)
+	for i := 0; i < len(runes); {
+		if runes[i] != '_' && !unicode.IsLetter(runes[i]) {
+			i++
+			continue
+		}
+		start := i
+		for i++; i < len(runes) && (runes[i] == '_' || unicode.IsLetter(runes[i]) || unicode.IsDigit(runes[i])); i++ {
+		}
+		if string(runes[start:i]) == target {
+			return true
+		}
+	}
+	return false
+}
+
+func substTypeIdentifiers(text string, subst map[string]string) string {
+	runes := []rune(text)
+	var out strings.Builder
+	for i := 0; i < len(runes); {
+		if runes[i] != '_' && !unicode.IsLetter(runes[i]) {
+			out.WriteRune(runes[i])
+			i++
+			continue
+		}
+		start := i
+		for i++; i < len(runes) && (runes[i] == '_' || unicode.IsLetter(runes[i]) || unicode.IsDigit(runes[i])); i++ {
+		}
+		name := string(runes[start:i])
+		next := i
+		for next < len(runes) && unicode.IsSpace(runes[next]) {
+			next++
+		}
+		prev := start - 1
+		for prev >= 0 && unicode.IsSpace(runes[prev]) {
+			prev--
+		}
+		to, replace := subst[name]
+		// Selector fields and bare callees are vocabulary, not variables.
+		if replace && !((prev >= 0 && runes[prev] == '.') || (next < len(runes) && runes[next] == '(')) {
+			out.WriteString(to)
+		} else {
+			out.WriteString(name)
+		}
+	}
+	return out.String()
 }
 
 func typesIdentical(a, b types.Type) bool { return types.Identical(a, b) }

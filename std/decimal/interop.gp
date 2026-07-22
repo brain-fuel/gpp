@@ -1,0 +1,149 @@
+package decimal
+
+import (
+	"database/sql/driver"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"math/big"
+	"strconv"
+)
+
+func (d Decimal) MarshalText() ([]byte, error) { return []byte(d.String()), nil }
+
+func (d *Decimal) UnmarshalText(text []byte) error {
+	if d == nil { return fmt.Errorf("decimal: UnmarshalText on nil receiver") }
+	parsed, err := NewFromString(string(text))
+	if err != nil { return err }
+	*d = parsed
+	return nil
+}
+
+// MarshalJSON quotes decimals so float64-based consumers cannot silently
+// destroy precision.
+func (d Decimal) MarshalJSON() ([]byte, error) { return json.Marshal(d.String()) }
+
+func (d *Decimal) UnmarshalJSON(data []byte) error {
+	if d == nil { return fmt.Errorf("decimal: UnmarshalJSON on nil receiver") }
+	if string(data) == "null" { return nil }
+	text := string(data)
+	if len(data) > 0 && data[0] == '"' {
+		if err := json.Unmarshal(data, &text); err != nil { return err }
+	}
+	return d.UnmarshalText([]byte(text))
+}
+
+// MarshalBinary uses a stable four-byte big-endian exponent followed by the
+// big.Int Gob encoding of the coefficient.
+func (d Decimal) MarshalBinary() ([]byte, error) {
+	// big.Int.GobEncode cannot fail; the error result remains for
+	// encoding.BinaryMarshaler compatibility.
+	coefficient, _ := d.coeff().GobEncode()
+	out := make([]byte, 4+len(coefficient))
+	binary.BigEndian.PutUint32(out[:4], uint32(d.exponent))
+	copy(out[4:], coefficient)
+	return out, nil
+}
+
+func (d *Decimal) UnmarshalBinary(data []byte) error {
+	if d == nil { return fmt.Errorf("decimal: UnmarshalBinary on nil receiver") }
+	if len(data) < 4 { return fmt.Errorf("decimal: binary value is too short") }
+	coefficient := new(big.Int)
+	if err := coefficient.GobDecode(data[4:]); err != nil { return fmt.Errorf("decimal: invalid coefficient: %w", err) }
+	*d = fromBigInt(coefficient, int32(binary.BigEndian.Uint32(data[:4])))
+	return nil
+}
+
+func (d Decimal) GobEncode() ([]byte, error) { return d.MarshalBinary() }
+func (d *Decimal) GobDecode(data []byte) error { return d.UnmarshalBinary(data) }
+
+func (d Decimal) Value() (driver.Value, error) { return d.String(), nil }
+
+func (d *Decimal) Scan(value any) error {
+	if d == nil { return fmt.Errorf("decimal: Scan on nil receiver") }
+	var text string
+	switch v := value.(type) {
+	case nil:
+		return fmt.Errorf("decimal: cannot scan NULL")
+	case string:
+		text = v
+	case []byte:
+		text = string(v)
+	case int64:
+		*d = NewFromInt(v)
+		return nil
+	case uint64:
+		*d = NewFromUint64(v)
+		return nil
+	case float64:
+		text = strconv.FormatFloat(v, 'g', -1, 64)
+	default:
+		return fmt.Errorf("decimal: cannot scan %T", value)
+	}
+	return d.UnmarshalText([]byte(text))
+}
+
+// NullDecimal is the database/JSON nullable counterpart of Decimal.
+type NullDecimal struct {
+	Decimal Decimal
+	Valid bool
+}
+
+func NewNullDecimal(value Decimal) NullDecimal { return NullDecimal{Decimal: value, Valid: true} }
+
+func (n *NullDecimal) Scan(value any) error {
+	if n == nil { return fmt.Errorf("decimal: Scan on nil NullDecimal receiver") }
+	if value == nil {
+		n.Decimal, n.Valid = Zero, false
+		return nil
+	}
+	if err := n.Decimal.Scan(value); err != nil {
+		n.Valid = false
+		return err
+	}
+	n.Valid = true
+	return nil
+}
+
+func (n NullDecimal) Value() (driver.Value, error) {
+	if !n.Valid { return nil, nil }
+	return n.Decimal.Value()
+}
+
+func (n NullDecimal) MarshalJSON() ([]byte, error) {
+	if !n.Valid { return []byte("null"), nil }
+	return n.Decimal.MarshalJSON()
+}
+
+func (n *NullDecimal) UnmarshalJSON(data []byte) error {
+	if n == nil { return fmt.Errorf("decimal: UnmarshalJSON on nil NullDecimal receiver") }
+	if string(data) == "null" {
+		n.Decimal, n.Valid = Zero, false
+		return nil
+	}
+	if err := n.Decimal.UnmarshalJSON(data); err != nil {
+		n.Valid = false
+		return err
+	}
+	n.Valid = true
+	return nil
+}
+
+func (n NullDecimal) MarshalText() ([]byte, error) {
+	if !n.Valid { return []byte{}, nil }
+	return n.Decimal.MarshalText()
+}
+
+func (n *NullDecimal) UnmarshalText(text []byte) error {
+	if n == nil { return fmt.Errorf("decimal: UnmarshalText on nil NullDecimal receiver") }
+	if len(text) == 0 {
+		n.Decimal, n.Valid = Zero, false
+		return nil
+	}
+	if err := n.Decimal.UnmarshalText(text); err != nil {
+		n.Valid = false
+		return err
+	}
+	n.Valid = true
+	return nil
+}

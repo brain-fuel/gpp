@@ -1,0 +1,79 @@
+// Package nonempty provides an owned sequence which statically contains at
+// least one value. It is the total semantic replacement for collection
+// helpers whose empty-input behavior otherwise needs a panic or zero value.
+package nonempty
+
+import "goforge.dev/goplus/std/option"
+
+// NonEmpty is sealed by unexported fields. Values constructed with Of or
+// FromSlice own their backing storage and cannot become empty through aliasing.
+type NonEmpty[T any] struct {
+	head T
+	tail []T
+}
+
+// Of constructs a non-empty sequence and copies tail.
+func Of[T any](head T, tail ...T) NonEmpty[T] {
+	owned := append([]T(nil), tail...)
+	return NonEmpty[T]{head: head, tail: owned}
+}
+
+// FromSlice copies values and makes emptiness explicit.
+func FromSlice[T any](values []T) option.Option[NonEmpty[T]] {
+	if len(values) == 0 {
+		return option.None[NonEmpty[T]]
+	}
+	return option.Some(Of(values[0], values[1:]...))
+}
+
+// Head is total because NonEmpty construction proves presence.
+func Head[T any](values NonEmpty[T]) T { return values.head }
+
+// Last is total because NonEmpty construction proves presence.
+func Last[T any](values NonEmpty[T]) T {
+	if len(values.tail) == 0 {
+		return values.head
+	}
+	return values.tail[len(values.tail)-1]
+}
+
+// Len is always at least one.
+func Len[T any](values NonEmpty[T]) int { return len(values.tail) + 1 }
+
+// Tail returns a copy, preserving ownership.
+func Tail[T any](values NonEmpty[T]) []T { return append([]T(nil), values.tail...) }
+
+// Slice returns an owned ordinary slice in declaration order.
+func Slice[T any](values NonEmpty[T]) []T {
+	out := make([]T, len(values.tail)+1)
+	out[0] = values.head
+	copy(out[1:], values.tail)
+	return out
+}
+
+// Map preserves non-emptiness and order.
+func Map[T any, U any](values NonEmpty[T], f func(T) U) NonEmpty[U] {
+	tail := make([]U, len(values.tail))
+	for i, value := range values.tail {
+		tail[i] = f(value)
+	}
+	return NonEmpty[U]{head: f(values.head), tail: tail}
+}
+
+// Reduce1 folds without a synthetic identity or empty-input panic.
+func Reduce1[T any](values NonEmpty[T], combine func(T, T) T) T {
+	acc := values.head
+	for _, value := range values.tail {
+		acc = combine(acc, value)
+	}
+	return acc
+}
+
+// Append returns a fresh non-empty sequence and never aliases either input.
+func Append[T any](left NonEmpty[T], right NonEmpty[T]) NonEmpty[T] {
+	tail := make([]T, 0, len(left.tail)+1+len(right.tail))
+	tail = append(tail, left.tail...)
+	tail = append(tail, right.head)
+	tail = append(tail, right.tail...)
+	return NonEmpty[T]{head: left.head, tail: tail}
+}

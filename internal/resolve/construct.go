@@ -67,6 +67,9 @@ func (r *fileResolver) ctorCandidate(name ast.Expr) {
 	}
 	var oks []resolvedUse
 	for _, u := range cands {
+		if u.call != nil && r.dependentBlocked[u.call] {
+			continue
+		}
 		if targs, ok := r.inferTargs(u); ok {
 			oks = append(oks, resolvedUse{u, targs})
 		}

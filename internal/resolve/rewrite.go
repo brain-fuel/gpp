@@ -24,11 +24,14 @@ type fileResolver struct {
 	reg         *registry.Registry
 	tokFile     *token.File
 
-	parents         map[ast.Node]ast.Node
-	refinedVars     map[*types.Var]*registry.Refinement
-	refinedFactVars map[*types.Var]*registry.Refinement
-	diags           []diag.Diagnostic
-	edits           []lower.Edit
+	parents           map[ast.Node]ast.Node
+	refinedVars       map[*types.Var]*registry.Refinement
+	refinedFactVars   map[*types.Var]*registry.Refinement
+	dependentVars     map[*types.Var]dependentValueType
+	dependentUnstable map[*types.Var]bool
+	dependentBlocked  map[*ast.CallExpr]bool
+	diags             []diag.Diagnostic
+	edits             []lower.Edit
 
 	// report enables give-up diagnostics. It is set only on the audit
 	// pass after the fixpoint converges, so transient can't-resolve-yet
@@ -70,6 +73,8 @@ func (r *fileResolver) resolve() ([]lower.Edit, []diag.Diagnostic) {
 
 	r.refineCandidates()
 	r.indexRefinedVariables()
+	r.indexDependentVariables()
+	r.dependentBlocked = map[*ast.CallExpr]bool{}
 	ast.Inspect(r.file, func(n ast.Node) bool {
 		if e, ok := n.(ast.Expr); ok {
 			r.refinementExpectedCandidate(e)

@@ -10,6 +10,15 @@ type Vec[T any, n nat] enum {
 	Cons(Head T, Tail Vec[T, n]) Vec[T, n+1]
 }
 
+// Pair is the shape-preserving product used by Zip.
+type Pair[A any, B any] struct { First A; Second B }
+
+// Fin[n] is evidence that an index is strictly smaller than n.
+type Fin[n nat] enum {
+	Zero() Fin[n+1]
+	Succ(Prev Fin[n]) Fin[n+1]
+}
+
 // First returns the head of a non-empty vector.
 func First[T any](0 n nat, v Vec[T, n+1]) T {
 	match v {
@@ -65,5 +74,33 @@ func Map[T any, U any](0 n nat, f func(T) U, v Vec[T, n]) Vec[U, n] {
 		return Nil[U]()
 	case Cons(h, t):
 		return Cons(f(h), Map(f, t))
+	}
+}
+
+// Zip requires equal shapes and preserves that shape in its result.
+func Zip[A any, B any](0 n nat, left Vec[A, n], right Vec[B, n]) Vec[Pair[A, B], n] {
+	if Length(left) != Length(right) {
+		panic("vec.Zip: vectors have different lengths")
+	}
+	return zipSame(left, right)
+}
+
+func zipSame[A any, B any](0 n nat, left Vec[A, n], right Vec[B, n]) Vec[Pair[A, B], n] {
+	match left {
+	case Nil():
+		_ = right
+		return Nil[Pair[A, B]]()
+	case Cons(a, as):
+		return Cons(Pair[A, B]{First: a, Second: First(right)}, zipSame(as, Rest(right)))
+	}
+}
+
+// At is total: Fin[n] makes an out-of-bounds index unrepresentable in Go+.
+func At[T any](0 n nat, index Fin[n], values Vec[T, n]) T {
+	match index {
+	case Zero():
+		return First(values)
+	case Succ(previous):
+		return At(previous, Rest(values))
 	}
 }

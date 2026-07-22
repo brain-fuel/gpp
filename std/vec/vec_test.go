@@ -67,6 +67,31 @@ func TestMapPreservesLength(t *testing.T) {
 	}
 }
 
+func TestZipAndBoundsEvidence(t *testing.T) {
+	left := fromSlice([]int{1, 2, 3})
+	right := fromSlice([]int{4, 5, 6})
+	zipped := toPairSlice(Zip(left, right))
+	if len(zipped) != 3 || zipped[1] != (Pair[int, int]{First: 2, Second: 5}) {
+		t.Fatalf("Zip = %#v", zipped)
+	}
+	index := Fin(Succ{Prev: Zero{}})
+	if got := At(index, left); got != 2 {
+		t.Fatalf("At(1) = %d", got)
+	}
+}
+
+func toPairSlice(v Vec[Pair[int, int]]) []Pair[int, int] {
+	var out []Pair[int, int]
+	for {
+		c, ok := any(v).(Cons[Pair[int, int]])
+		if !ok {
+			return out
+		}
+		out = append(out, c.Head)
+		v = c.Tail
+	}
+}
+
 func TestGuardFiresFromPlainGo(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
@@ -74,4 +99,20 @@ func TestGuardFiresFromPlainGo(t *testing.T) {
 		}
 	}()
 	First[int](Nil[int]{})
+}
+
+func TestZipGuardFiresFromPlainGo(t *testing.T) {
+	for _, pair := range [][2]Vec[int]{
+		{fromSlice([]int{1}), fromSlice([]int{2, 3})},
+		{fromSlice([]int{1, 2}), fromSlice([]int{3})},
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Error("Zip accepted different runtime lengths")
+				}
+			}()
+			_ = Zip(pair[0], pair[1])
+		}()
+	}
 }

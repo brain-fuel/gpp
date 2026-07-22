@@ -5,6 +5,9 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"goforge.dev/goplus/std/schedule"
 )
 
 type memoryJournal struct{ records map[string]Record }
@@ -50,5 +53,17 @@ func TestRunResumesAtFirstIncompleteStep(t *testing.T) {
 	}
 	if n != 2 || !j.records[s.ID].Done {
 		t.Fatalf("n=%d record=%+v", n, j.records[s.ID])
+	}
+}
+
+func TestScheduledWorkflowUsesValidatedSchedule(t *testing.T) {
+	parsed, ok := schedule.ParseStandardInLocation("*/15 * * * *", time.UTC).(schedule.Parsed)
+	if !ok {
+		t.Fatal("schedule did not parse")
+	}
+	after := time.Date(2026, 7, 21, 12, 1, 0, 0, time.UTC)
+	next, ok := NextStandardStart(Saga{ID: "report", Kind: "report"}, parsed.Value, after).(schedule.NextAt)
+	if !ok || !next.Time.Equal(time.Date(2026, 7, 21, 12, 15, 0, 0, time.UTC)) {
+		t.Fatalf("next = %#v", next)
 	}
 }

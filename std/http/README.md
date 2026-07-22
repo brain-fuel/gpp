@@ -3,6 +3,14 @@
 `goforge.dev/goplus/std/http` complements `net/http` with one client and server
 surface for HTTP/3, HTTP/2, and HTTP/1.1.
 
+The `route` subpackage provides the Go+-authored typed routing layer:
+`Pattern[p]`, `Request[p]`, `ParamKey[T,p]`, `Handler[p]`, immutable indexed
+route sets, and capability-indexed middleware. It lowers to ordinary
+`net/http.Handler` values and is consumed by `goforge.dev/chi` without adding a
+router dependency to the standard module. The parent package's `RouteHandler`
+also feeds a checked handler directly into the existing HTTP/1.1, HTTP/2, and
+HTTP/3 server surface, providing the second independent production consumer.
+
 ```go
 // The first request uses HTTP/2 or HTTP/1.1 and learns an h3 Alt-Svc.
 // Later requests use HTTP/3 while the advertisement remains valid.

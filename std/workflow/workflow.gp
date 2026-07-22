@@ -5,6 +5,8 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"time"
+	"goforge.dev/goplus/std/schedule"
 )
 
 type Record struct {
@@ -16,6 +18,17 @@ type Record struct {
 type Journal interface { Load(context.Context, string) (Record, bool, error); Save(context.Context, Record) error; Delete(context.Context, string) error }
 type Step struct { Name string; Run func(context.Context) error; Compensate func(context.Context) error }
 type Saga struct { ID string; Kind string; Steps []Step }
+
+// NextStandardStart computes a durable workflow's next standard-grammar start.
+// Keeping the Saga argument makes this a plan operation rather than a parser
+// alias; the validated schedule remains immutable and reusable.
+func NextStandardStart(_ Saga, value schedule.Schedule[5], after time.Time) schedule.NextResult {
+	return schedule.NextStandard(value, after)
+}
+
+func NextSecondsStart(_ Saga, value schedule.Schedule[6], after time.Time) schedule.NextResult {
+	return schedule.NextSeconds(value, after)
+}
 
 func Run(ctx context.Context, journal Journal, saga Saga) error {
 	if saga.ID == "" || saga.Kind == "" { return fmt.Errorf("workflow: ID and Kind are required") }

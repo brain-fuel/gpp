@@ -97,6 +97,17 @@ func unifyExprs(pat, arg ast.Expr, tparams map[string]bool, bind map[string]stri
 	case *ast.StructType:
 		a, ok := arg.(*ast.StructType)
 		return ok && exprText(pat) == exprText(a)
+	case *ast.CallExpr:
+		a, ok := arg.(*ast.CallExpr)
+		if !ok || callBaseName(p.Fun) != callBaseName(a.Fun) || len(p.Args) != len(a.Args) {
+			return false
+		}
+		for i := range p.Args {
+			if !unifyExprs(p.Args[i], a.Args[i], tparams, bind) {
+				return false
+			}
+		}
+		return true
 	case *ast.ParenExpr:
 		return unifyExprs(p.X, arg, tparams, bind)
 	}
@@ -104,6 +115,16 @@ func unifyExprs(pat, arg ast.Expr, tparams map[string]bool, bind map[string]stri
 		return unifyExprs(pat, a.X, tparams, bind)
 	}
 	return exprText(pat) == exprText(arg)
+}
+
+func callBaseName(expression ast.Expr) string {
+	switch value := expression.(type) {
+	case *ast.Ident:
+		return value.Name
+	case *ast.SelectorExpr:
+		return value.Sel.Name
+	}
+	return ""
 }
 
 func unifyFieldLists(p, a *ast.FieldList, tparams map[string]bool, bind map[string]string) bool {
