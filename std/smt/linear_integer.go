@@ -79,7 +79,7 @@ func containsGeneralLinearInteger(term any) bool {
 		}
 	case Subtract:
 		return containsGeneralLinearInteger(value.Left) || containsGeneralLinearInteger(value.Right)
-	case IntegerScale, IntegerLinearEquality:
+	case IntegerScale, IntegerDiv, IntegerMod, IntegerLinearEquality:
 		return true
 	}
 	return false
@@ -220,6 +220,12 @@ func (problem *integerLinearProblem) addSymbol(id int) {
 // arbitrary-precision coefficients. It uses the existing exact rational
 // simplex as a relaxation and branches only on fractional integer values.
 func solveLinearIntegerAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
+	if rewritten, changed, ok := eliminateIntegerDivision(assertions); changed {
+		if !ok {
+			return checkOutcome{}, false
+		}
+		return solveLinearIntegerAssertions(rewritten)
+	}
 	if outcome, recognized := solveSingleVariableLinearIntegerEquality(assertions); recognized {
 		return outcome, true
 	}

@@ -108,7 +108,7 @@ func containsIntegerTheory(term Term[BoolSort]) bool {
 		return true
 	case IntegerDifferenceConstraint, IntegerDifferenceSystem:
 		return true
-	case IntegerLinearEquality, IntegerLinearDisequality, IntegerLinearChoice, integerLinearStrictBound:
+	case IntegerLinearEquality, IntegerLinearDisequality, IntegerLinearChoice, integerLinearStrictBound, IntegerDivModRelation, IntegerDivModSystem:
 		return true
 	}
 	return false
@@ -278,7 +278,7 @@ func (p *differenceProblem) boolean(term Term[BoolSort]) bool {
 			}
 		}
 		return true
-	case IntegerLinearEquality, IntegerLinearDisequality, IntegerLinearChoice, integerLinearStrictBound:
+	case IntegerLinearEquality, IntegerLinearDisequality, IntegerLinearChoice, integerLinearStrictBound, IntegerDivModRelation, IntegerDivModSystem:
 		return false
 	default:
 		return false

@@ -241,6 +241,10 @@ func containsBitVectorIntegerTerm(term any) bool {
 		return containsBitVectorIntegerTerm(value.Left) || containsBitVectorIntegerTerm(value.Right)
 	case IntegerScale:
 		return containsBitVectorIntegerTerm(value.Value)
+	case IntegerDiv:
+		return containsBitVectorIntegerTerm(value.Dividend)
+	case IntegerMod:
+		return containsBitVectorIntegerTerm(value.Dividend)
 	case If[IntSort]:
 		return containsBitVectorIntegerTerm(value.Then) || containsBitVectorIntegerTerm(value.Else)
 	}
@@ -1390,6 +1394,20 @@ func exactIntegerConstant(term any) (IntegerValue, bool) {
 			return IntegerValue{}, false
 		}
 		return MultiplyIntegerValue(value.Coefficient, operand), true
+	case IntegerDiv:
+		dividend, ok := exactIntegerConstant(value.Dividend)
+		if !ok {
+			return IntegerValue{}, false
+		}
+		quotient, _, ok := DivModIntegerValue(dividend, value.Divisor)
+		return quotient, ok
+	case IntegerMod:
+		dividend, ok := exactIntegerConstant(value.Dividend)
+		if !ok {
+			return IntegerValue{}, false
+		}
+		_, remainder, ok := DivModIntegerValue(dividend, value.Divisor)
+		return remainder, ok
 	}
 	return IntegerValue{}, false
 }

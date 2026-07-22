@@ -80,6 +80,29 @@ func MultiplyIntegerValue(left, right IntegerValue) IntegerValue {
 	return integerValueFromBig(new(big.Int).Mul(left.big(), right.big()))
 }
 
+// DivModIntegerValue implements SMT-LIB Euclidean division for a positive
+// divisor: dividend = divisor*quotient + remainder and 0 <= remainder < divisor.
+func DivModIntegerValue(dividend, divisor IntegerValue) (IntegerValue, IntegerValue, bool) {
+	if CompareIntegerValue(divisor, IntegerValue{}) <= 0 {
+		return IntegerValue{}, IntegerValue{}, false
+	}
+	if dividend.large == nil && divisor.large == nil {
+		quotient, remainder := dividend.small/divisor.small, dividend.small%divisor.small
+		if remainder < 0 {
+			quotient--
+			remainder += divisor.small
+		}
+		return NewIntegerValue(quotient), NewIntegerValue(remainder), true
+	}
+	quotient, remainder := new(big.Int), new(big.Int)
+	quotient.QuoRem(dividend.big(), divisor.big(), remainder)
+	if remainder.Sign() < 0 {
+		quotient.Sub(quotient, big.NewInt(1))
+		remainder.Add(remainder, divisor.big())
+	}
+	return integerValueFromBig(quotient), integerValueFromBig(remainder), true
+}
+
 func (value IntegerValue) big() *big.Int {
 	if value.large != nil {
 		return new(big.Int).Set(value.large)

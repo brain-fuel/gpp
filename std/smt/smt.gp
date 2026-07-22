@@ -69,6 +69,8 @@ type Term[S any] enum {
 	Add(Values []Term[IntSort]) Term[IntSort]
 	Subtract(Left Term[IntSort], Right Term[IntSort]) Term[IntSort]
 	IntegerScale(Coefficient IntegerValue, Value Term[IntSort]) Term[IntSort]
+	IntegerDiv(Dividend Term[IntSort], Divisor IntegerValue) Term[IntSort]
+	IntegerMod(Dividend Term[IntSort], Divisor IntegerValue) Term[IntSort]
 	LessEqual(Left Term[IntSort], Right Term[IntSort]) Term[BoolSort]
 	Less(Left Term[IntSort], Right Term[IntSort]) Term[BoolSort]
 	Real(Value Rational) Term[RealSort]
@@ -196,6 +198,12 @@ func IntegerTerm(value IntegerValue) Term[IntSort] { return Term[IntSort].intege
 func IntegerVariable(id int) Term[IntSort] { return Term[IntSort].integerVariable(id) }
 func ScaleInteger(coefficient IntegerValue, value Term[IntSort]) Term[IntSort] {
 	return IntegerScale(coefficient, value)
+}
+func DivInteger(dividend Term[IntSort], divisor IntegerValue) Term[IntSort] {
+	return IntegerDiv(dividend, divisor)
+}
+func ModInteger(dividend Term[IntSort], divisor IntegerValue) Term[IntSort] {
+	return IntegerMod(dividend, divisor)
 }
 
 func IntegerVariableID(term Term[IntSort]) (int, bool) {

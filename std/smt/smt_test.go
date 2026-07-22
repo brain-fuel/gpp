@@ -40,9 +40,10 @@ func TestLinearIntegerArithmeticSatModel(t *testing.T) {
 		LessEqual{Left: Add{Values: []Term[IntSort]{x, y}}, Right: Integer{Value: 10}},
 		LessEqual{Left: Integer{Value: 11}, Right: Add{Values: []Term[IntSort]{ScaleInteger(NewIntegerValue(2), x), y}}},
 	}}
-	result, ok := Check(Assert(1, New(), formula)).(Satisfiable)
+	checked := Check(Assert(1, New(), formula))
+	result, ok := checked.(Satisfiable)
 	if !ok {
-		t.Fatalf("result=%T", result)
+		t.Fatalf("result=%T (%#v)", checked, checked)
 	}
 	xValue, xOK := IntegerModelValue(result.Value, x)
 	yValue, yOK := IntegerModelValue(result.Value, y)
@@ -122,6 +123,60 @@ func TestBooleanLinearIntegerBranchLimitIsExplicit(t *testing.T) {
 	}
 	if limit, ok := result.Reason.(ResourceLimit); !ok || limit.Limit != linearIntegerBooleanBranchLimit {
 		t.Fatalf("reason=%#v", result.Reason)
+	}
+}
+
+func TestIntegerEuclideanDivisionAndModulo(t *testing.T) {
+	for _, test := range []struct {
+		dividend, divisor   int64
+		quotient, remainder int64
+	}{
+		{7, 3, 2, 1},
+		{-1, 3, -1, 2},
+		{-7, 3, -3, 2},
+	} {
+		quotient, remainder, ok := DivModIntegerValue(NewIntegerValue(test.dividend), NewIntegerValue(test.divisor))
+		if !ok || CompareIntegerValue(quotient, NewIntegerValue(test.quotient)) != 0 || CompareIntegerValue(remainder, NewIntegerValue(test.remainder)) != 0 {
+			t.Fatalf("%d divmod %d = (%v,%v,%v)", test.dividend, test.divisor, quotient, remainder, ok)
+		}
+	}
+
+	x := IntSymbol{ID: 1, Name: "x"}
+	div := DivInteger(x, NewIntegerValue(3))
+	mod := ModInteger(x, NewIntegerValue(3))
+	formula := And{Values: []Term[BoolSort]{
+		Equal{Left: x, Right: Integer{Value: -1}},
+		Equal{Left: div, Right: Integer{Value: -1}},
+		Equal{Left: mod, Right: Integer{Value: 2}},
+	}}
+	checked := Check(Assert(1, New(), formula))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T (%#v)", checked, checked)
+	}
+	if value, found := IntegerModelValue(result.Value, div); !found || CompareIntegerValue(value, NewIntegerValue(-1)) != 0 {
+		t.Fatalf("div=(%v,%v)", value, found)
+	}
+	if value, found := IntegerModelValue(result.Value, mod); !found || CompareIntegerValue(value, NewIntegerValue(2)) != 0 {
+		t.Fatalf("mod=(%v,%v)", value, found)
+	}
+
+	unassigned := And{Values: []Term[BoolSort]{
+		LessEqual{Left: Integer{Value: -2}, Right: x},
+		LessEqual{Left: x, Right: Integer{Value: 2}},
+		Equal{Left: ModInteger(x, NewIntegerValue(3)), Right: Integer{Value: 2}},
+	}}
+	unassignedResult, ok := Check(Assert(2, New(), unassigned)).(Satisfiable)
+	if !ok {
+		t.Fatalf("unassigned result=%T", unassignedResult)
+	}
+	xValue, found := IntegerModelValue(unassignedResult.Value, x)
+	if !found {
+		t.Fatal("unassigned model omitted x")
+	}
+	_, remainder, valid := DivModIntegerValue(xValue, NewIntegerValue(3))
+	if !valid || CompareIntegerValue(remainder, NewIntegerValue(2)) != 0 {
+		t.Fatalf("unassigned x=%v remainder=%v", xValue, remainder)
 	}
 }
 

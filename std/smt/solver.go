@@ -298,6 +298,9 @@ func (e *engine) solveAdditional(assumptions []Term[BoolSort]) checkOutcome {
 		}
 	}
 	if integerTheory {
+		if outcome, recognized := solveCompactIntegerDivModAssertions(allAssertions); recognized {
+			return outcome
+		}
 		if containsBooleanLinearIntegerAssertions(allAssertions) {
 			if outcome, recognized := solveBooleanLinearIntegerAssertions(allAssertions); recognized {
 				return outcome
@@ -655,6 +658,20 @@ func evaluateIntegerWithBitVectors(term Term[IntSort], booleans booleanModel, in
 			return IntegerValue{}, false
 		}
 		return MultiplyIntegerValue(value.Coefficient, operand), true
+	case IntegerDiv:
+		dividend, ok := evaluateIntegerWithBitVectors(value.Dividend, booleans, integers, reals, bitVectors)
+		if !ok {
+			return IntegerValue{}, false
+		}
+		quotient, _, ok := DivModIntegerValue(dividend, value.Divisor)
+		return quotient, ok
+	case IntegerMod:
+		dividend, ok := evaluateIntegerWithBitVectors(value.Dividend, booleans, integers, reals, bitVectors)
+		if !ok {
+			return IntegerValue{}, false
+		}
+		_, remainder, ok := DivModIntegerValue(dividend, value.Divisor)
+		return remainder, ok
 	case If[IntSort]:
 		condition, ok := evaluateBool(value.Condition, booleans, integers, reals)
 		if !ok {

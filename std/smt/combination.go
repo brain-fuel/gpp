@@ -1153,6 +1153,25 @@ func (partition *theoryPartition) hasSharedArrayInteger() bool {
 
 func collectTheoryIntegerIDs(term any, add func(int)) {
 	switch value := term.(type) {
+	case And:
+		for _, item := range value.Values {
+			collectTheoryIntegerIDs(item, add)
+		}
+	case Or:
+		for _, item := range value.Values {
+			collectTheoryIntegerIDs(item, add)
+		}
+	case BooleanConjunction:
+		terms, _ := value.values()
+		for _, item := range terms {
+			collectTheoryIntegerIDs(item, add)
+		}
+	case Implies:
+		collectTheoryIntegerIDs(value.Left, add)
+		collectTheoryIntegerIDs(value.Right, add)
+	case Iff:
+		collectTheoryIntegerIDs(value.Left, add)
+		collectTheoryIntegerIDs(value.Right, add)
 	case IntSymbol:
 		add(value.ID)
 	case integerVariable[IntSort]:
@@ -1175,6 +1194,10 @@ func collectTheoryIntegerIDs(term any, add func(int)) {
 		collectTheoryIntegerIDs(value.Right, add)
 	case IntegerScale:
 		collectTheoryIntegerIDs(value.Value, add)
+	case IntegerDiv:
+		collectTheoryIntegerIDs(value.Dividend, add)
+	case IntegerMod:
+		collectTheoryIntegerIDs(value.Dividend, add)
 	case Not:
 		collectTheoryIntegerIDs(value.Value, add)
 	case arraySelectionTerm:
@@ -1204,8 +1227,15 @@ func collectTheoryIntegerIDs(term any, add func(int)) {
 			add(value.NegativeID)
 		}
 	case IntegerDifferenceSystem:
-		for _, item := range value.values() {
-			collectTheoryIntegerIDs(item, add)
+		for _, constraint := range value.values() {
+			collectTheoryIntegerIDs(constraint, add)
 		}
+	case IntegerLinearEquality:
+		add(value.ID)
+	case IntegerLinearDisequality:
+		add(value.Equality.ID)
+	case IntegerLinearChoice:
+		add(value.First.ID)
+		add(value.Second.ID)
 	}
 }

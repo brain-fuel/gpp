@@ -262,6 +262,22 @@ type IntegerScale struct {
 
 func (IntegerScale) isTerm(IntSort) {}
 
+//goplus:variant (Term[S]) IntegerDiv(Dividend Term[IntSort], Divisor IntegerValue) Term[IntSort]
+type IntegerDiv struct {
+	Dividend Term[IntSort]
+	Divisor  IntegerValue
+}
+
+func (IntegerDiv) isTerm(IntSort) {}
+
+//goplus:variant (Term[S]) IntegerMod(Dividend Term[IntSort], Divisor IntegerValue) Term[IntSort]
+type IntegerMod struct {
+	Dividend Term[IntSort]
+	Divisor  IntegerValue
+}
+
+func (IntegerMod) isTerm(IntSort) {}
+
 //goplus:variant (Term[S]) LessEqual(Left Term[IntSort], Right Term[IntSort]) Term[BoolSort]
 type LessEqual struct {
 	Left  Term[IntSort]
@@ -732,6 +748,8 @@ type TermCases[S any, R any] struct {
 	Add                           func(Values []Term[IntSort]) R
 	Subtract                      func(Left Term[IntSort], Right Term[IntSort]) R
 	IntegerScale                  func(Coefficient IntegerValue, Value Term[IntSort]) R
+	IntegerDiv                    func(Dividend Term[IntSort], Divisor IntegerValue) R
+	IntegerMod                    func(Dividend Term[IntSort], Divisor IntegerValue) R
 	LessEqual                     func(Left Term[IntSort], Right Term[IntSort]) R
 	Less                          func(Left Term[IntSort], Right Term[IntSort]) R
 	Real                          func(Value Rational) R
@@ -832,6 +850,10 @@ func TermFold[S any, R any](t Term[S], cs TermCases[S, R]) R {
 		return cs.Subtract(m.Left, m.Right)
 	case IntegerScale:
 		return cs.IntegerScale(m.Coefficient, m.Value)
+	case IntegerDiv:
+		return cs.IntegerDiv(m.Dividend, m.Divisor)
+	case IntegerMod:
+		return cs.IntegerMod(m.Dividend, m.Divisor)
 	case LessEqual:
 		return cs.LessEqual(m.Left, m.Right)
 	case Less:
@@ -1349,6 +1371,12 @@ func IntegerTerm(value IntegerValue) Term[IntSort] { return integerExact[IntSort
 func IntegerVariable(id int) Term[IntSort]         { return integerVariable[IntSort]{iD: id} }
 func ScaleInteger(coefficient IntegerValue, value Term[IntSort]) Term[IntSort] {
 	return IntegerScale{Coefficient: coefficient, Value: value}
+}
+func DivInteger(dividend Term[IntSort], divisor IntegerValue) Term[IntSort] {
+	return IntegerDiv{Dividend: dividend, Divisor: divisor}
+}
+func ModInteger(dividend Term[IntSort], divisor IntegerValue) Term[IntSort] {
+	return IntegerMod{Dividend: dividend, Divisor: divisor}
 }
 
 func IntegerVariableID(term Term[IntSort]) (int, bool) {

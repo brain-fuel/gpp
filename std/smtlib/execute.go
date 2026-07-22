@@ -767,6 +767,18 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 		if values, ok := integers(); ok && len(values) == 2 {
 			return dynamicTerm{sort: sortBool, boolean: smt.Less{Left: values[0], Right: values[1]}}, nil
 		}
+	case "div":
+		if values, ok := integers(); ok && len(values) == 2 {
+			if divisor, exact := smt.ExactIntegerConstant(values[1]); exact && smt.CompareIntegerValue(divisor, smt.IntegerValue{}) > 0 {
+				return dynamicTerm{sort: sortInt, integer: smt.DivInteger(values[0], divisor)}, nil
+			}
+		}
+	case "mod":
+		if values, ok := integers(); ok && len(values) == 2 {
+			if divisor, exact := smt.ExactIntegerConstant(values[1]); exact && smt.CompareIntegerValue(divisor, smt.IntegerValue{}) > 0 {
+				return dynamicTerm{sort: sortInt, integer: smt.ModInteger(values[0], divisor)}, nil
+			}
+		}
 	case ">=":
 		if values, ok := reals(); ok && len(values) == 2 && hasReal() {
 			return dynamicTerm{sort: sortBool, boolean: smt.RealLessEqual{Left: values[1], Right: values[0]}}, nil
