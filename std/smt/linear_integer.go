@@ -32,22 +32,170 @@ func CompactIntegerLinearEquality(left, right Term[IntSort]) (IntegerLinearEqual
 	return result, count == 1
 }
 
+func containsGeneralLinearInteger(term any) bool {
+	switch value := term.(type) {
+	case And:
+		for _, item := range value.Values {
+			if containsGeneralLinearInteger(item) {
+				return true
+			}
+		}
+	case BooleanConjunction:
+		terms, _ := value.values()
+		for _, item := range terms {
+			if containsGeneralLinearInteger(item) {
+				return true
+			}
+		}
+	case Equal:
+		return containsGeneralLinearInteger(value.Left) || containsGeneralLinearInteger(value.Right)
+	case LessEqual:
+		return containsGeneralLinearInteger(value.Left) || containsGeneralLinearInteger(value.Right)
+	case Less:
+		return containsGeneralLinearInteger(value.Left) || containsGeneralLinearInteger(value.Right)
+	case Add:
+		for _, item := range value.Values {
+			if containsGeneralLinearInteger(item) {
+				return true
+			}
+		}
+	case Subtract:
+		return containsGeneralLinearInteger(value.Left) || containsGeneralLinearInteger(value.Right)
+	case IntegerScale, IntegerLinearEquality:
+		return true
+	}
+	return false
+}
+
+func containsGeneralLinearIntegerAssertions(assertions []Term[BoolSort]) bool {
+	for _, assertion := range assertions {
+		if containsGeneralLinearInteger(assertion) {
+			return true
+		}
+	}
+	return false
+}
+
 type integerLinearConstraint struct {
-	coefficients map[int]IntegerValue
+	coefficients integerCoefficients
 	bound        IntegerValue
 }
 
 type integerLinearProblem struct {
-	constraints []integerLinearConstraint
-	symbols     []int
-	seen        map[int]struct{}
-	unsat       bool
+	constraintCount   int
+	inlineConstraints [8]integerLinearConstraint
+	constraints       []integerLinearConstraint
+	symbolCount       int
+	inlineSymbols     [8]int
+	symbols           []int
+	unsat             bool
 }
 
 type integerAffine struct {
 	constant     IntegerValue
-	coefficients map[int]IntegerValue
+	coefficients integerCoefficients
 	valid        bool
+}
+
+type integerCoefficient struct {
+	id    int
+	value IntegerValue
+}
+
+type integerCoefficients struct {
+	count    int
+	inline   [4]integerCoefficient
+	overflow []integerCoefficient
+}
+
+func (coefficients *integerCoefficients) values() []integerCoefficient {
+	if coefficients.overflow != nil {
+		return coefficients.overflow[:coefficients.count]
+	}
+	return coefficients.inline[:coefficients.count]
+}
+
+func (coefficients *integerCoefficients) add(id int, value IntegerValue) {
+	values := coefficients.values()
+	for index := range values {
+		if values[index].id == id {
+			values[index].value = AddIntegerValue(values[index].value, value)
+			return
+		}
+	}
+	if coefficients.count < len(coefficients.inline) && coefficients.overflow == nil {
+		coefficients.inline[coefficients.count] = integerCoefficient{id: id, value: value}
+		coefficients.count++
+		return
+	}
+	if coefficients.overflow == nil {
+		coefficients.overflow = make([]integerCoefficient, coefficients.count, coefficients.count*2)
+		copy(coefficients.overflow, coefficients.inline[:coefficients.count])
+	}
+	coefficients.overflow = append(coefficients.overflow, integerCoefficient{id: id, value: value})
+	coefficients.count++
+}
+
+func (coefficients *integerCoefficients) compact() {
+	values := coefficients.values()
+	kept := 0
+	for _, coefficient := range values {
+		if CompareIntegerValue(coefficient.value, IntegerValue{}) != 0 {
+			values[kept] = coefficient
+			kept++
+		}
+	}
+	coefficients.count = kept
+	if coefficients.overflow != nil {
+		coefficients.overflow = coefficients.overflow[:kept]
+	}
+}
+
+func (problem *integerLinearProblem) constraintValues() []integerLinearConstraint {
+	if problem.constraints != nil {
+		return problem.constraints[:problem.constraintCount]
+	}
+	return problem.inlineConstraints[:problem.constraintCount]
+}
+
+func (problem *integerLinearProblem) appendConstraint(constraint integerLinearConstraint) {
+	if problem.constraintCount < len(problem.inlineConstraints) && problem.constraints == nil {
+		problem.inlineConstraints[problem.constraintCount] = constraint
+		problem.constraintCount++
+		return
+	}
+	if problem.constraints == nil {
+		problem.constraints = make([]integerLinearConstraint, problem.constraintCount, problem.constraintCount*2)
+		copy(problem.constraints, problem.inlineConstraints[:problem.constraintCount])
+	}
+	problem.constraints = append(problem.constraints, constraint)
+	problem.constraintCount++
+}
+
+func (problem *integerLinearProblem) symbolValues() []int {
+	if problem.symbols != nil {
+		return problem.symbols[:problem.symbolCount]
+	}
+	return problem.inlineSymbols[:problem.symbolCount]
+}
+
+func (problem *integerLinearProblem) addSymbol(id int) {
+	for _, existing := range problem.symbolValues() {
+		if existing == id {
+			return
+		}
+	}
+	if problem.symbolCount < len(problem.inlineSymbols) && problem.symbols == nil {
+		problem.inlineSymbols[problem.symbolCount] = id
+		problem.symbolCount++
+		return
+	}
+	if problem.symbols == nil {
+		problem.symbols = make([]int, problem.symbolCount, problem.symbolCount*2)
+		copy(problem.symbols, problem.inlineSymbols[:problem.symbolCount])
+	}
+	problem.symbols = append(problem.symbols, id)
+	problem.symbolCount++
 }
 
 // solveLinearIntegerAssertions decides conjunctive QF_LIA with exact
@@ -57,7 +205,7 @@ func solveLinearIntegerAssertions(assertions []Term[BoolSort]) (checkOutcome, bo
 	if outcome, recognized := solveSingleVariableLinearIntegerEquality(assertions); recognized {
 		return outcome, true
 	}
-	problem := integerLinearProblem{seen: make(map[int]struct{})}
+	problem := integerLinearProblem{}
 	for _, assertion := range assertions {
 		if !problem.boolean(assertion) {
 			return checkOutcome{}, false
@@ -197,14 +345,12 @@ func (problem *integerLinearProblem) boolean(term Term[BoolSort]) bool {
 		return true
 	case IntegerLinearEquality:
 		coefficient := NewIntegerValue(value.Coefficient)
-		problem.constraints = append(problem.constraints,
-			integerLinearConstraint{coefficients: map[int]IntegerValue{value.ID: coefficient}, bound: value.Value},
-			integerLinearConstraint{coefficients: map[int]IntegerValue{value.ID: NegateIntegerValue(coefficient)}, bound: NegateIntegerValue(value.Value)},
-		)
-		if _, exists := problem.seen[value.ID]; !exists {
-			problem.seen[value.ID] = struct{}{}
-			problem.symbols = append(problem.symbols, value.ID)
-		}
+		first, second := integerCoefficients{}, integerCoefficients{}
+		first.add(value.ID, coefficient)
+		second.add(value.ID, NegateIntegerValue(coefficient))
+		problem.appendConstraint(integerLinearConstraint{coefficients: first, bound: value.Value})
+		problem.appendConstraint(integerLinearConstraint{coefficients: second, bound: NegateIntegerValue(value.Value)})
+		problem.addSymbol(value.ID)
 		return true
 	default:
 		return false
@@ -219,29 +365,26 @@ func (problem *integerLinearProblem) compactDifference(value IntegerDifferenceCo
 	if value.Strict {
 		bound = AddIntegerValue(bound, NewIntegerValue(-1))
 	}
-	coefficients := make(map[int]IntegerValue, 2)
+	coefficients := integerCoefficients{}
 	if value.HasPositive {
-		coefficients[value.PositiveID] = NewIntegerValue(1)
+		coefficients.add(value.PositiveID, NewIntegerValue(1))
 	}
 	if value.HasNegative {
-		coefficients[value.NegativeID] = NewIntegerValue(-1)
+		coefficients.add(value.NegativeID, NewIntegerValue(-1))
 	}
-	if len(coefficients) == 0 {
+	if coefficients.count == 0 {
 		problem.unsat = problem.unsat || CompareIntegerValue(IntegerValue{}, bound) > 0
 		return true
 	}
-	for id := range coefficients {
-		if _, exists := problem.seen[id]; !exists {
-			problem.seen[id] = struct{}{}
-			problem.symbols = append(problem.symbols, id)
-		}
+	for _, coefficient := range coefficients.values() {
+		problem.addSymbol(coefficient.id)
 	}
-	problem.constraints = append(problem.constraints, integerLinearConstraint{coefficients: coefficients, bound: bound})
+	problem.appendConstraint(integerLinearConstraint{coefficients: coefficients, bound: bound})
 	return true
 }
 
 func (problem *integerLinearProblem) relation(left, right Term[IntSort], strict bool) bool {
-	form := integerAffine{coefficients: make(map[int]IntegerValue), valid: true}
+	form := integerAffine{valid: true}
 	accumulateIntegerAffine(left, NewIntegerValue(1), &form)
 	accumulateIntegerAffine(right, NewIntegerValue(-1), &form)
 	if !form.valid {
@@ -251,21 +394,15 @@ func (problem *integerLinearProblem) relation(left, right Term[IntSort], strict 
 	if strict {
 		bound = AddIntegerValue(bound, NewIntegerValue(-1))
 	}
-	for id, coefficient := range form.coefficients {
-		if CompareIntegerValue(coefficient, IntegerValue{}) == 0 {
-			delete(form.coefficients, id)
-			continue
-		}
-		if _, exists := problem.seen[id]; !exists {
-			problem.seen[id] = struct{}{}
-			problem.symbols = append(problem.symbols, id)
-		}
+	form.coefficients.compact()
+	for _, coefficient := range form.coefficients.values() {
+		problem.addSymbol(coefficient.id)
 	}
-	if len(form.coefficients) == 0 {
+	if form.coefficients.count == 0 {
 		problem.unsat = problem.unsat || CompareIntegerValue(IntegerValue{}, bound) > 0
 		return true
 	}
-	problem.constraints = append(problem.constraints, integerLinearConstraint{coefficients: form.coefficients, bound: bound})
+	problem.appendConstraint(integerLinearConstraint{coefficients: form.coefficients, bound: bound})
 	return true
 }
 
@@ -297,7 +434,7 @@ func accumulateIntegerAffine(term Term[IntSort], multiplier IntegerValue, form *
 }
 
 func (form *integerAffine) add(id int, coefficient IntegerValue) {
-	form.coefficients[id] = AddIntegerValue(form.coefficients[id], coefficient)
+	form.coefficients.add(id, coefficient)
 }
 
 func (problem *integerLinearProblem) branch(extra []integerLinearConstraint, nodes *int) (checkOutcome, bool) {
@@ -306,18 +443,18 @@ func (problem *integerLinearProblem) branch(extra []integerLinearConstraint, nod
 		return checkOutcome{}, true
 	}
 	relaxation := rationalProblem{}
-	for _, id := range problem.symbols {
+	for _, id := range problem.symbolValues() {
 		relaxation.appendSymbol(id)
 	}
 	appendConstraint := func(constraint integerLinearConstraint) {
 		coefficients := rationalCoefficients{}
-		for id, coefficient := range constraint.coefficients {
-			coefficients.add(id, rationalFromInteger(coefficient))
+		for _, coefficient := range constraint.coefficients.values() {
+			coefficients.add(coefficient.id, rationalFromInteger(coefficient.value))
 		}
 		coefficients.compact()
 		relaxation.appendConstraint(rationalConstraint{coefficients: coefficients, bound: rationalFromInteger(constraint.bound)})
 	}
-	for _, constraint := range problem.constraints {
+	for _, constraint := range problem.constraintValues() {
 		appendConstraint(constraint)
 	}
 	for _, constraint := range extra {
@@ -327,34 +464,65 @@ func (problem *integerLinearProblem) branch(extra []integerLinearConstraint, nod
 	if result.status == checkUnsat {
 		return result, false
 	}
-	for _, id := range problem.symbols {
+	for _, id := range problem.symbolValues() {
 		value, _ := result.reals.lookup(id)
 		if value.IsInteger() {
 			continue
 		}
 		floor := floorRational(value)
 		ceil := AddIntegerValue(floor, NewIntegerValue(1))
-		left := integerLinearConstraint{coefficients: map[int]IntegerValue{id: NewIntegerValue(1)}, bound: floor}
+		leftCoefficients := integerCoefficients{}
+		leftCoefficients.add(id, NewIntegerValue(1))
+		left := integerLinearConstraint{coefficients: leftCoefficients, bound: floor}
 		if outcome, exhausted := problem.branch(append(extra, left), nodes); exhausted || outcome.status == checkSat {
 			return outcome, exhausted
 		}
-		right := integerLinearConstraint{coefficients: map[int]IntegerValue{id: NewIntegerValue(-1)}, bound: NegateIntegerValue(ceil)}
+		rightCoefficients := integerCoefficients{}
+		rightCoefficients.add(id, NewIntegerValue(-1))
+		right := integerLinearConstraint{coefficients: rightCoefficients, bound: NegateIntegerValue(ceil)}
 		return problem.branch(append(extra, right), nodes)
 	}
 	model := integerModel{}
-	model.reserve(len(problem.symbols))
-	for _, id := range problem.symbols {
+	model.reserve(problem.symbolCount)
+	for _, id := range problem.symbolValues() {
 		value, _ := result.reals.lookup(id)
-		model.set(id, integerValueFromBig(value.big().Num()))
+		integer, ok := integerFromRational(value)
+		if !ok {
+			return checkOutcome{status: checkUnknown, reason: UnsupportedTheory{Name: "non-integral QF_LIA model"}}, false
+		}
+		model.set(id, integer)
 	}
 	return checkOutcome{status: checkSat, integers: model}, false
 }
 
+func integerFromRational(value Rational) (IntegerValue, bool) {
+	if numerator, denominator, ok := value.small(); ok {
+		if denominator != 1 {
+			return IntegerValue{}, false
+		}
+		return NewIntegerValue(numerator), true
+	}
+	if !value.large.IsInt() {
+		return IntegerValue{}, false
+	}
+	return integerValueFromBig(value.large.Num()), true
+}
+
 func rationalFromInteger(value IntegerValue) Rational {
+	if value.large == nil {
+		return NewRational(value.small, 1)
+	}
 	return rationalFromBig(new(big.Rat).SetInt(value.big()))
 }
 
 func floorRational(value Rational) IntegerValue {
+	if numerator, denominator, ok := value.small(); ok {
+		quotient := numerator / denominator
+		if numerator < 0 && numerator%denominator != 0 {
+			quotient--
+		}
+		return NewIntegerValue(quotient)
+	}
 	fraction := value.big()
 	return integerValueFromBig(new(big.Int).Div(fraction.Num(), fraction.Denom()))
 }

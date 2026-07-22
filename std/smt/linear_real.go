@@ -297,7 +297,14 @@ func (problem *rationalProblem) solve() (checkOutcome, bool) {
 		rows++ // delta <= 1; non-negativity is inherent in simplex variables.
 	}
 	denseCount := rows * transformed
-	arena := make([]Rational, denseCount+rows+transformed+transformed)
+	arenaCount := denseCount + rows + transformed + transformed
+	var inlineArena [64]Rational
+	var arena []Rational
+	if arenaCount <= len(inlineArena) {
+		arena = inlineArena[:arenaCount]
+	} else {
+		arena = make([]Rational, arenaCount)
+	}
 	a := arena[:denseCount]
 	b := arena[denseCount : denseCount+rows]
 	objective := arena[denseCount+rows : denseCount+rows+transformed]

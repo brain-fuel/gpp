@@ -64,6 +64,31 @@ func TestLinearIntegerArithmeticIntegralityUnsat(t *testing.T) {
 	}
 }
 
+func TestLinearIntegerArithmeticCoefficientOverflow(t *testing.T) {
+	variables := make([]Term[IntSort], 6)
+	terms := make([]Term[IntSort], 6)
+	for index := range variables {
+		variables[index] = IntSymbol{ID: index + 1}
+		terms[index] = ScaleInteger(NewIntegerValue(int64(index+1)), variables[index])
+	}
+	formula := Equal{Left: Add{Values: terms}, Right: Integer{Value: 21}}
+	result, ok := Check(Assert(1, New(), formula)).(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", result)
+	}
+	total := IntegerValue{}
+	for index, variable := range variables {
+		value, found := IntegerModelValue(result.Value, variable)
+		if !found {
+			t.Fatalf("missing variable %d", index+1)
+		}
+		total = AddIntegerValue(total, MultiplyIntegerValue(NewIntegerValue(int64(index+1)), value))
+	}
+	if CompareIntegerValue(total, NewIntegerValue(21)) != 0 {
+		t.Fatalf("invalid weighted sum %v", total)
+	}
+}
+
 func TestIntegerDifferenceLogicSatModel(t *testing.T) {
 	x := IntSymbol{ID: 1, Name: "x"}
 	y := IntSymbol{ID: 2, Name: "y"}

@@ -865,7 +865,13 @@ func solveConjunctiveTheoryProduct(assertions []Term[BoolSort]) (checkOutcome, b
 	}
 	if partition.integers.count != 0 {
 		terms, _ := partition.integers.values()
-		outcome, recognized := solveDifferenceAssertions(terms)
+		outcome, recognized := checkOutcome{}, false
+		if containsGeneralLinearIntegerAssertions(terms) {
+			outcome, recognized = solveLinearIntegerAssertions(terms)
+		}
+		if !recognized {
+			outcome, recognized = solveDifferenceAssertions(terms)
+		}
 		if !recognized {
 			outcome, recognized = solveLinearIntegerAssertions(terms)
 		}

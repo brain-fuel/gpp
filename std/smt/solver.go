@@ -298,6 +298,11 @@ func (e *engine) solveAdditional(assumptions []Term[BoolSort]) checkOutcome {
 		}
 	}
 	if integerTheory {
+		if containsGeneralLinearIntegerAssertions(allAssertions) {
+			if outcome, recognized := solveLinearIntegerAssertions(allAssertions); recognized {
+				return outcome
+			}
+		}
 		if outcome, recognized := solveDifferenceAssertions(allAssertions); recognized {
 			return outcome
 		}
