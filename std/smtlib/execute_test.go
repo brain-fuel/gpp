@@ -150,6 +150,32 @@ func TestExecuteIntegerEuclideanDivisionAndModulo(t *testing.T) {
 	}
 }
 
+func TestExecuteIntegerDivisionWithNegativeConstantDivisor(t *testing.T) {
+	script := `(set-logic QF_LIA)
+(declare-const x Int)
+(assert (= x (- 7)))
+(assert (= (div x (- 3)) 3))
+(assert (= (mod x (- 3)) 2))
+(check-sat)
+(get-value ((div x (- 3)) (mod x (- 3))))`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("result=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[5].(Satisfiable); !ok {
+		t.Fatalf("check=%T", result.Responses[5])
+	}
+	values, ok := result.Responses[6].(ValuesAvailable)
+	if !ok || len(values.Values) != 2 {
+		t.Fatalf("values=%#v", result.Responses[6])
+	}
+	quotient, quotientOK := values.Values[0].(IntegerValue)
+	remainder, remainderOK := values.Values[1].(IntegerValue)
+	if !quotientOK || quotient.Value != 3 || !remainderOK || remainder.Value != 2 {
+		t.Fatalf("div/mod=%#v", values.Values)
+	}
+}
+
 func TestExecuteAssumptionCore(t *testing.T) {
 	script := `(declare-const a Bool)
 (declare-const b Bool)

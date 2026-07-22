@@ -80,25 +80,37 @@ func MultiplyIntegerValue(left, right IntegerValue) IntegerValue {
 	return integerValueFromBig(new(big.Int).Mul(left.big(), right.big()))
 }
 
-// DivModIntegerValue implements SMT-LIB Euclidean division for a positive
-// divisor: dividend = divisor*quotient + remainder and 0 <= remainder < divisor.
+// DivModIntegerValue implements SMT-LIB Euclidean division for every nonzero
+// divisor: dividend = divisor*quotient + remainder and
+// 0 <= remainder < abs(divisor).
 func DivModIntegerValue(dividend, divisor IntegerValue) (IntegerValue, IntegerValue, bool) {
-	if CompareIntegerValue(divisor, IntegerValue{}) <= 0 {
+	divisorSign := CompareIntegerValue(divisor, IntegerValue{})
+	if divisorSign == 0 {
 		return IntegerValue{}, IntegerValue{}, false
 	}
-	if dividend.large == nil && divisor.large == nil {
+	if dividend.large == nil && divisor.large == nil && !(dividend.small == -1<<63 && divisor.small == -1) {
 		quotient, remainder := dividend.small/divisor.small, dividend.small%divisor.small
 		if remainder < 0 {
-			quotient--
-			remainder += divisor.small
+			if divisorSign > 0 {
+				quotient--
+				remainder += divisor.small
+			} else {
+				quotient++
+				remainder -= divisor.small
+			}
 		}
 		return NewIntegerValue(quotient), NewIntegerValue(remainder), true
 	}
 	quotient, remainder := new(big.Int), new(big.Int)
 	quotient.QuoRem(dividend.big(), divisor.big(), remainder)
 	if remainder.Sign() < 0 {
-		quotient.Sub(quotient, big.NewInt(1))
-		remainder.Add(remainder, divisor.big())
+		if divisorSign > 0 {
+			quotient.Sub(quotient, big.NewInt(1))
+			remainder.Add(remainder, divisor.big())
+		} else {
+			quotient.Add(quotient, big.NewInt(1))
+			remainder.Sub(remainder, divisor.big())
+		}
 	}
 	return integerValueFromBig(quotient), integerValueFromBig(remainder), true
 }

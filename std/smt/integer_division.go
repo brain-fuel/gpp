@@ -28,10 +28,10 @@ func CompactIntegerDivModEquality(left, right Term[IntSort]) (IntegerDivModRelat
 	switch value := left.(type) {
 	case IntegerDiv:
 		id, symbol := IntegerVariableID(value.Dividend)
-		return IntegerDivModRelation{SymbolID: id, Divisor: value.Divisor, Expected: expected}, symbol && CompareIntegerValue(value.Divisor, IntegerValue{}) > 0
+		return IntegerDivModRelation{SymbolID: id, Divisor: value.Divisor, Expected: expected}, symbol && CompareIntegerValue(value.Divisor, IntegerValue{}) != 0
 	case IntegerMod:
 		id, symbol := IntegerVariableID(value.Dividend)
-		return IntegerDivModRelation{SymbolID: id, Divisor: value.Divisor, Expected: expected, Remainder: true}, symbol && CompareIntegerValue(value.Divisor, IntegerValue{}) > 0
+		return IntegerDivModRelation{SymbolID: id, Divisor: value.Divisor, Expected: expected, Remainder: true}, symbol && CompareIntegerValue(value.Divisor, IntegerValue{}) != 0
 	}
 	return IntegerDivModRelation{}, false
 }
@@ -353,7 +353,7 @@ func (eliminator *integerDivisionEliminator) integer(term Term[IntSort]) (Term[I
 }
 
 func (eliminator *integerDivisionEliminator) division(dividend Term[IntSort], divisor IntegerValue, remainderResult bool) (Term[IntSort], bool) {
-	if CompareIntegerValue(divisor, IntegerValue{}) <= 0 || eliminator.nextID > math.MaxInt-1 {
+	if CompareIntegerValue(divisor, IntegerValue{}) == 0 || eliminator.nextID > math.MaxInt-1 {
 		return nil, false
 	}
 	converted, ok := eliminator.integer(dividend)
@@ -363,11 +363,15 @@ func (eliminator *integerDivisionEliminator) division(dividend Term[IntSort], di
 	quotientID, remainderID := eliminator.nextID, eliminator.nextID+1
 	eliminator.nextID += 2
 	quotient, remainder := IntegerVariable(quotientID), IntegerVariable(remainderID)
+	remainderLimit := divisor
+	if CompareIntegerValue(remainderLimit, IntegerValue{}) < 0 {
+		remainderLimit = NegateIntegerValue(remainderLimit)
+	}
 	decomposition := Equal{Left: converted, Right: Add{Values: []Term[IntSort]{ScaleInteger(divisor, quotient), remainder}}}
 	eliminator.definitions = append(eliminator.definitions,
 		decomposition,
 		LessEqual{Left: Integer{Value: 0}, Right: remainder},
-		Less{Left: remainder, Right: IntegerTerm(divisor)},
+		Less{Left: remainder, Right: IntegerTerm(remainderLimit)},
 	)
 	if remainderResult {
 		return remainder, true

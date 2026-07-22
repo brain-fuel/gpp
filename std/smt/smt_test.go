@@ -157,11 +157,23 @@ func TestIntegerEuclideanDivisionAndModulo(t *testing.T) {
 		{7, 3, 2, 1},
 		{-1, 3, -1, 2},
 		{-7, 3, -3, 2},
+		{7, -3, -2, 1},
+		{-1, -3, 1, 2},
+		{-7, -3, 3, 2},
+		{1, -3, 0, 1},
 	} {
 		quotient, remainder, ok := DivModIntegerValue(NewIntegerValue(test.dividend), NewIntegerValue(test.divisor))
 		if !ok || CompareIntegerValue(quotient, NewIntegerValue(test.quotient)) != 0 || CompareIntegerValue(remainder, NewIntegerValue(test.remainder)) != 0 {
 			t.Fatalf("%d divmod %d = (%v,%v,%v)", test.dividend, test.divisor, quotient, remainder, ok)
 		}
+	}
+	if _, _, ok := DivModIntegerValue(NewIntegerValue(7), IntegerValue{}); ok {
+		t.Fatal("zero divisor must not have a defined value")
+	}
+	minimumQuotient, minimumRemainder, ok := DivModIntegerValue(NewIntegerValue(-1<<63), NewIntegerValue(-1))
+	wantMinimumQuotient, err := ParseIntegerValue("9223372036854775808")
+	if err != nil || !ok || CompareIntegerValue(minimumQuotient, wantMinimumQuotient) != 0 || CompareIntegerValue(minimumRemainder, IntegerValue{}) != 0 {
+		t.Fatalf("MinInt64 divmod -1 = (%v,%v,%v), parse=%v", minimumQuotient, minimumRemainder, ok, err)
 	}
 
 	x := IntSymbol{ID: 1, Name: "x"}
@@ -200,6 +212,19 @@ func TestIntegerEuclideanDivisionAndModulo(t *testing.T) {
 	_, remainder, valid := DivModIntegerValue(xValue, NewIntegerValue(3))
 	if !valid || CompareIntegerValue(remainder, NewIntegerValue(2)) != 0 {
 		t.Fatalf("unassigned x=%v remainder=%v", xValue, remainder)
+	}
+
+	negativeDivisor := And{Values: []Term[BoolSort]{
+		Equal{Left: x, Right: Integer{Value: -7}},
+		Equal{Left: DivInteger(x, NewIntegerValue(-3)), Right: Integer{Value: 3}},
+		Equal{Left: ModInteger(x, NewIntegerValue(-3)), Right: Integer{Value: 2}},
+	}}
+	negativeResult, ok := Check(Assert(3, New(), negativeDivisor)).(Satisfiable)
+	if !ok {
+		t.Fatalf("negative-divisor result=%T", negativeResult)
+	}
+	if value, found := IntegerModelValue(negativeResult.Value, DivInteger(x, NewIntegerValue(-3))); !found || CompareIntegerValue(value, NewIntegerValue(3)) != 0 {
+		t.Fatalf("negative div=(%v,%v)", value, found)
 	}
 }
 
