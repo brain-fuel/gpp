@@ -70,6 +70,36 @@ func TestStringConversionsAndReplaceAll(t *testing.T) {
 	}
 }
 
+func TestStringRegexLanguageOperations(t *testing.T) {
+	a := StringToRegex(StringVal("a"))
+	b := StringToRegex(StringVal("b"))
+	ab := ConcatRegex(a, b)
+	letter := StringRangeRegex(StringVal("a"), StringVal("z"))
+	aOrB := UnionRegex(a, b)
+	onlyA := IntersectRegex(aOrB, a)
+	notB := DifferenceRegex(aOrB, b)
+	notA := ComplementRegex(a)
+	formula := And{Values: []Term[BoolSort]{
+		StringInRegex(StringVal("ab"), ab),
+		StringInRegex(StringVal("abba"), StarRegex(aOrB)),
+		StringInRegex(StringVal("ab"), PlusRegex(letter)),
+		StringInRegex(StringVal(""), OptionalRegex(a)),
+		StringInRegex(StringVal("a"), OptionalRegex(a)),
+		StringInRegex(StringVal("aaa"), LoopRegex(2, 4, a)),
+		StringInRegex(StringVal("a"), onlyA),
+		StringInRegex(StringVal("a"), notB),
+		StringInRegex(StringVal("b"), notA),
+		StringInRegex(StringVal("anything"), FullRegex[StringSort]()),
+		StringInRegex(StringVal("x"), AllCharRegex[StringSort]()),
+		Not{Value: StringInRegex(StringVal(""), AllCharRegex[StringSort]())},
+		Not{Value: StringInRegex(StringVal("a"), EmptyRegex[StringSort]())},
+		Not{Value: StringInRegex(StringVal("aaaaa"), LoopRegex(2, 4, a))},
+	}}
+	if _, ok := Check(Assert(8, New(), formula)).(Satisfiable); !ok {
+		t.Fatalf("result=%T", Check(Assert(8, New(), formula)))
+	}
+}
+
 func TestStringSymbolModel(t *testing.T) {
 	x := StringConst(1, "x")
 	formula := And{Values: []Term[BoolSort]{

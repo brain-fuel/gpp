@@ -1025,6 +1025,14 @@ type stringIsDigit struct {
 
 func (stringIsDigit) isTerm(BoolSort) {}
 
+//goplus:variant (Term[S]) stringInRegex(Value Term[StringSort], Expression Regex[StringSort]) Term[BoolSort]
+type stringInRegex struct {
+	value      Term[StringSort]
+	expression Regex[StringSort]
+}
+
+func (stringInRegex) isTerm(BoolSort) {}
+
 //goplus:variant (Term[S]) stringSystem(System CompactStringSystem) Term[BoolSort]
 type stringSystem struct {
 	system CompactStringSystem
@@ -1685,6 +1693,7 @@ type TermCases[S any, R any] struct {
 	stringToCode                       func(Value Term[StringSort]) R
 	codeToString                       func(Value Term[IntSort]) R
 	stringIsDigit                      func(Value Term[StringSort]) R
+	stringInRegex                      func(Value Term[StringSort], Expression Regex[StringSort]) R
 	stringSystem                       func(System CompactStringSystem) R
 	sequenceEmpty                      func() R
 	sequenceUnit                       func(Value any) R
@@ -1853,6 +1862,8 @@ func TermFold[S any, R any](t Term[S], cs TermCases[S, R]) R {
 		return cs.codeToString(m.value)
 	case stringIsDigit:
 		return cs.stringIsDigit(m.value)
+	case stringInRegex:
+		return cs.stringInRegex(m.value, m.expression)
 	case stringSystem:
 		return cs.stringSystem(m.system)
 	case sequenceEmpty[S]:
@@ -3038,7 +3049,10 @@ func StringFromCode(value Term[IntSort]) Term[StringSort] {
 	return codeToString[StringSort]{value: value}
 }
 func StringIsDigit(value Term[StringSort]) Term[BoolSort] { return stringIsDigit{value: value} }
-func SequenceEmpty[E any]() Term[SequenceSort[E]]         { return sequenceEmpty[SequenceSort[E]]{} }
+func StringInRegex(value Term[StringSort], expression Regex[StringSort]) Term[BoolSort] {
+	return makeStringInRegex(value, expression)
+}
+func SequenceEmpty[E any]() Term[SequenceSort[E]] { return sequenceEmpty[SequenceSort[E]]{} }
 func SequenceUnit[E any](value Term[E]) Term[SequenceSort[E]] {
 	return sequenceUnit[SequenceSort[E]]{value: value}
 }

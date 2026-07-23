@@ -14,6 +14,7 @@ const (
 	sortArrayIntInt  = -4
 	sortArrayBitVec  = -5
 	sortString       = -6
+	sortRegexString  = -7
 	sortReal         = -1
 	sortBool         = 0
 	sortInt          = 1
@@ -28,6 +29,7 @@ type dynamicTerm struct {
 	real                 smt.Term[smt.RealSort]
 	bitVector            smt.Term[smt.BitVecSort]
 	stringValue          smt.Term[smt.StringSort]
+	regexString          smt.Regex[smt.StringSort]
 	bitWidth             int
 	uninterpreted        smt.Term[smt.UninterpretedSort]
 	arrayIntInt          smt.Term[smt.ArraySort[smt.IntSort, smt.IntSort]]
@@ -1295,6 +1297,12 @@ func (executor *executor) term(expression SExpr) (dynamicTerm, error) {
 			return dynamicTerm{sort: sortBool, boolean: smt.Bool{Value: true}}, nil
 		case "false":
 			return dynamicTerm{sort: sortBool, boolean: smt.Bool{Value: false}}, nil
+		case "re.none":
+			return dynamicTerm{sort: sortRegexString, regexString: smt.EmptyRegex[smt.StringSort]()}, nil
+		case "re.all":
+			return dynamicTerm{sort: sortRegexString, regexString: smt.FullRegex[smt.StringSort]()}, nil
+		case "re.allchar":
+			return dynamicTerm{sort: sortRegexString, regexString: smt.AllCharRegex[smt.StringSort]()}, nil
 		}
 		if value, found := executor.localTerms[atom.Text]; found {
 			return value, nil
@@ -1371,6 +1379,16 @@ func (executor *executor) term(expression SExpr) (dynamicTerm, error) {
 	if len(list.Values) == 3 {
 		if qualifier, qualifierOK := atomText(list.Values[0]); qualifierOK && qualifier == "as" {
 			constructorName, constructorOK := atomText(list.Values[1])
+			if constructorOK && isStringRegexSort(list.Values[2]) {
+				switch constructorName {
+				case "re.none":
+					return dynamicTerm{sort: sortRegexString, regexString: smt.EmptyRegex[smt.StringSort]()}, nil
+				case "re.all":
+					return dynamicTerm{sort: sortRegexString, regexString: smt.FullRegex[smt.StringSort]()}, nil
+				case "re.allchar":
+					return dynamicTerm{sort: sortRegexString, regexString: smt.AllCharRegex[smt.StringSort]()}, nil
+				}
+			}
 			datatype, datatypeOK, err := executor.instantiateParametricSort(list.Values[2])
 			if err != nil {
 				return dynamicTerm{}, err
@@ -1420,6 +1438,9 @@ func (executor *executor) term(expression SExpr) (dynamicTerm, error) {
 			return dynamicTerm{}, err
 		}
 		terms[index] = term
+	}
+	if indexedParameters != nil && (operator == "re.loop" || operator == "re.^") {
+		return buildIndexedRegexApplication(operator, indexedParameters, terms)
 	}
 	if indexedParameters != nil {
 		return buildIndexedBitVectorApplication(operator, indexedParameters, terms)
@@ -1997,6 +2018,16 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 		}
 		return values, true
 	}
+	regexTerms := func() ([]smt.Regex[smt.StringSort], bool) {
+		values := make([]smt.Regex[smt.StringSort], len(terms))
+		for index, term := range terms {
+			if term.sort != sortRegexString {
+				return nil, false
+			}
+			values[index] = term.regexString
+		}
+		return values, true
+	}
 	reals := func() ([]smt.Term[smt.RealSort], bool) {
 		values := make([]smt.Term[smt.RealSort], len(terms))
 		for index, term := range terms {
@@ -2016,6 +2047,53 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 		return false
 	}
 	switch operator {
+	case "str.to_re":
+		if values, ok := stringTerms(); ok && len(values) == 1 {
+			return dynamicTerm{sort: sortRegexString, regexString: smt.StringToRegex(values[0])}, nil
+		}
+	case "str.in_re":
+		if len(terms) == 2 && terms[0].sort == sortString && terms[1].sort == sortRegexString {
+			return dynamicTerm{sort: sortBool, boolean: smt.StringInRegex(terms[0].stringValue, terms[1].regexString)}, nil
+		}
+	case "re.range":
+		if values, ok := stringTerms(); ok && len(values) == 2 {
+			return dynamicTerm{sort: sortRegexString, regexString: smt.StringRangeRegex(values[0], values[1])}, nil
+		}
+	case "re.++", "re.union", "re.inter":
+		if values, ok := regexTerms(); ok && len(values) > 0 {
+			result := values[0]
+			for _, value := range values[1:] {
+				switch operator {
+				case "re.++":
+					result = smt.ConcatRegex(result, value)
+				case "re.union":
+					result = smt.UnionRegex(result, value)
+				case "re.inter":
+					result = smt.IntersectRegex(result, value)
+				}
+			}
+			return dynamicTerm{sort: sortRegexString, regexString: result}, nil
+		}
+	case "re.diff":
+		if values, ok := regexTerms(); ok && len(values) == 2 {
+			return dynamicTerm{sort: sortRegexString, regexString: smt.DifferenceRegex(values[0], values[1])}, nil
+		}
+	case "re.comp":
+		if values, ok := regexTerms(); ok && len(values) == 1 {
+			return dynamicTerm{sort: sortRegexString, regexString: smt.ComplementRegex(values[0])}, nil
+		}
+	case "re.*":
+		if values, ok := regexTerms(); ok && len(values) == 1 {
+			return dynamicTerm{sort: sortRegexString, regexString: smt.StarRegex(values[0])}, nil
+		}
+	case "re.+":
+		if values, ok := regexTerms(); ok && len(values) == 1 {
+			return dynamicTerm{sort: sortRegexString, regexString: smt.PlusRegex(values[0])}, nil
+		}
+	case "re.opt":
+		if values, ok := regexTerms(); ok && len(values) == 1 {
+			return dynamicTerm{sort: sortRegexString, regexString: smt.OptionalRegex(values[0])}, nil
+		}
 	case "str.++":
 		if values, ok := stringTerms(); ok {
 			return dynamicTerm{sort: sortString, stringValue: smt.StringConcat(values...)}, nil
@@ -2519,6 +2597,41 @@ func buildIndexedBitVectorApplication(operator string, parameters []int, terms [
 		}
 	}
 	return dynamicTerm{}, fmt.Errorf("unsupported indexed bit-vector application %s", operator)
+}
+
+func buildIndexedRegexApplication(operator string, parameters []int, terms []dynamicTerm) (dynamicTerm, error) {
+	if len(terms) != 1 || terms[0].sort != sortRegexString {
+		return dynamicTerm{}, fmt.Errorf("ill-sorted indexed application %s", operator)
+	}
+	minimum, maximum := 0, -1
+	switch operator {
+	case "re.^":
+		if len(parameters) == 1 {
+			minimum, maximum = parameters[0], parameters[0]
+		}
+	case "re.loop":
+		if len(parameters) == 1 {
+			minimum, maximum = parameters[0], parameters[0]
+		} else if len(parameters) == 2 && parameters[0] <= parameters[1] {
+			minimum, maximum = parameters[0], parameters[1]
+		}
+	}
+	if maximum < 0 {
+		return dynamicTerm{}, fmt.Errorf("unsupported indexed regex application %s", operator)
+	}
+	return dynamicTerm{
+		sort: sortRegexString, regexString: smt.LoopRegex(minimum, maximum, terms[0].regexString),
+	}, nil
+}
+
+func isStringRegexSort(expression SExpr) bool {
+	list, ok := expression.(List)
+	if !ok || len(list.Values) != 2 {
+		return false
+	}
+	name, nameOK := atomText(list.Values[0])
+	element, elementOK := atomText(list.Values[1])
+	return nameOK && elementOK && name == "RegEx" && element == "String"
 }
 
 func bitVectorSortWidth(expression SExpr) (int, bool) {

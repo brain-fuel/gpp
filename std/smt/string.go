@@ -326,7 +326,7 @@ func evaluateBoolWithStringsAndDatatypes(term Term[BoolSort], booleans booleanMo
 
 func containsStringTheory(term Term[BoolSort]) bool {
 	switch value := term.(type) {
-	case stringContains, stringPrefix, stringSuffix, stringIsDigit, stringSystem:
+	case stringContains, stringPrefix, stringSuffix, stringIsDigit, stringInRegex, stringSystem:
 		return true
 	case Equal:
 		return isStringTerm(value.Left) || isStringTerm(value.Right) || isStringIntegerTerm(value.Left) || isStringIntegerTerm(value.Right)
@@ -562,6 +562,9 @@ func collectStringSymbolsBoolean(term Term[BoolSort], symbols *stringSymbols) {
 	case stringSuffix:
 		collectStringSymbols(value.suffix, symbols)
 		collectStringSymbols(value.value, symbols)
+	case stringInRegex:
+		collectStringSymbols(value.value, symbols)
+		collectRegexStringSymbols(value.expression.node, symbols)
 	case Not:
 		collectStringSymbolsBoolean(value.Value, symbols)
 	case And:
@@ -833,6 +836,12 @@ func evaluateStringBoolean(term Term[BoolSort], model stringModel, integers inte
 	case stringIsDigit:
 		text, ok := evaluateString(value.value, model, integers)
 		return len(text) == 1 && text[0] >= '0' && text[0] <= '9', ok
+	case stringInRegex:
+		text, ok := evaluateString(value.value, model, integers)
+		if !ok {
+			return false, false
+		}
+		return matchesStringRegex(text, value.expression, model, integers)
 	default:
 		return false, false
 	}

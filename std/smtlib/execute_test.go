@@ -140,6 +140,35 @@ func TestExecuteStringConversionsAndReplaceAll(t *testing.T) {
 	}
 }
 
+func TestExecuteStringRegularExpressions(t *testing.T) {
+	script := `(set-logic ALL)
+(assert (str.in_re "abbb" (re.++ (str.to_re "a") (re.* (str.to_re "b")))))
+(assert (str.in_re "b" (re.union (str.to_re "a") (str.to_re "b"))))
+(assert (str.in_re "m" (re.inter (re.range "a" "z") (re.comp (re.range "x" "z")))))
+(assert (str.in_re "a" (re.diff re.allchar (str.to_re "b"))))
+(assert (str.in_re "" (re.opt (str.to_re "a"))))
+(assert (str.in_re "aaa" ((_ re.loop 2 4) (str.to_re "a"))))
+(assert (str.in_re "aaa" ((_ re.loop 3) (str.to_re "a"))))
+(assert (str.in_re "aaa" ((_ re.^ 3) (str.to_re "a"))))
+(assert (not (str.in_re "a" (re.range "" "z"))))
+(assert (not (str.in_re "" (as re.none (RegEx String)))))
+(assert (str.in_re "anything" (as re.all (RegEx String))))
+(check-sat)
+(get-value ((str.in_re "🙂" re.allchar)))`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("result=%#v", Execute(script))
+	}
+	check := result.Responses[len(result.Responses)-2]
+	if _, ok := check.(Satisfiable); !ok {
+		t.Fatalf("check response=%T", check)
+	}
+	values := result.Responses[len(result.Responses)-1].(ValuesAvailable).Values
+	if value, ok := values[0].(BooleanValue); !ok || !value.Value {
+		t.Fatalf("membership=%#v", values[0])
+	}
+}
+
 func TestExecuteDifferenceLogicPushPop(t *testing.T) {
 	script := `(set-logic QF_IDL)
 (declare-const x Int)

@@ -181,6 +181,7 @@ type Term[S any] enum {
 	stringToCode(Value Term[StringSort]) Term[IntSort]
 	codeToString(Value Term[IntSort]) Term[S]
 	stringIsDigit(Value Term[StringSort]) Term[BoolSort]
+	stringInRegex(Value Term[StringSort], Expression Regex[StringSort]) Term[BoolSort]
 	stringSystem(System CompactStringSystem) Term[BoolSort]
 	sequenceEmpty() Term[S]
 	sequenceUnit(Value any) Term[S]
@@ -558,6 +559,7 @@ func IntToString(value Term[IntSort]) Term[StringSort] { return Term[StringSort]
 func StringToCode(value Term[StringSort]) Term[IntSort] { return stringToCode(value) }
 func StringFromCode(value Term[IntSort]) Term[StringSort] { return Term[StringSort].codeToString(value) }
 func StringIsDigit(value Term[StringSort]) Term[BoolSort] { return stringIsDigit(value) }
+func StringInRegex(value Term[StringSort], expression Regex[StringSort]) Term[BoolSort] { return makeStringInRegex(value, expression) }
 func SequenceEmpty[E any]() Term[SequenceSort[E]] { return Term[SequenceSort[E]].sequenceEmpty() }
 func SequenceUnit[E any](value Term[E]) Term[SequenceSort[E]] { return Term[SequenceSort[E]].sequenceUnit(value) }
 func SequenceConcat[E any](values ...Term[SequenceSort[E]]) Term[SequenceSort[E]] { return Term[SequenceSort[E]].sequenceConcat(values) }
