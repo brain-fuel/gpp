@@ -1408,7 +1408,7 @@ type datatypeMixedApplication[S any] struct {
 
 func (datatypeMixedApplication[S]) isTerm(S) {}
 
-//goplus:variant (Term[S]) datatypeMixedSelector(DatatypeID int, ConstructorCount int, ConstructorID int, Field int, FieldKind int, Width int, TargetDatatypeID int, TargetConstructorCount int, SelectorName string, Value any) Term[S]
+//goplus:variant (Term[S]) datatypeMixedSelector(DatatypeID int, ConstructorCount int, ConstructorID int, Field int, FieldKind int, Width int, TargetDatatypeID int, TargetConstructorCount int, ConstructorName string, SelectorName string, Specs MixedDatatypeFieldSpecs, Value any) Term[S]
 type datatypeMixedSelector[S any] struct {
 	datatypeID             int
 	constructorCount       int
@@ -1418,7 +1418,9 @@ type datatypeMixedSelector[S any] struct {
 	width                  int
 	targetDatatypeID       int
 	targetConstructorCount int
+	constructorName        string
 	selectorName           string
+	specs                  MixedDatatypeFieldSpecs
 	value                  any
 }
 
@@ -1545,7 +1547,7 @@ type TermCases[S any, R any] struct {
 	datatypeNaryRecursiveSelector      func(DatatypeID int, ConstructorCount int, ConstructorID int, Arity int, Field int, SelectorName string, Value any) R
 	datatypeNaryRecursiveRecognizer    func(DatatypeID int, ConstructorCount int, ConstructorID int, Arity int, Name string, Value any) R
 	datatypeMixedApplication           func(DatatypeID int, ConstructorCount int, ConstructorID int, Name string, Specs MixedDatatypeFieldSpecs, Values MixedDatatypeTermValues) R
-	datatypeMixedSelector              func(DatatypeID int, ConstructorCount int, ConstructorID int, Field int, FieldKind int, Width int, TargetDatatypeID int, TargetConstructorCount int, SelectorName string, Value any) R
+	datatypeMixedSelector              func(DatatypeID int, ConstructorCount int, ConstructorID int, Field int, FieldKind int, Width int, TargetDatatypeID int, TargetConstructorCount int, ConstructorName string, SelectorName string, Specs MixedDatatypeFieldSpecs, Value any) R
 	datatypeMixedUpdate                func(DatatypeID int, ConstructorCount int, ConstructorID int, Field int, FieldKind int, Width int, TargetDatatypeID int, TargetConstructorCount int, Specs MixedDatatypeFieldSpecs, Replacement any, Value any) R
 	datatypeMixedRecognizer            func(DatatypeID int, ConstructorCount int, ConstructorID int, Name string, Specs MixedDatatypeFieldSpecs, Value any) R
 }
@@ -1734,7 +1736,7 @@ func TermFold[S any, R any](t Term[S], cs TermCases[S, R]) R {
 	case datatypeMixedApplication[S]:
 		return cs.datatypeMixedApplication(m.datatypeID, m.constructorCount, m.constructorID, m.name, m.specs, m.values)
 	case datatypeMixedSelector[S]:
-		return cs.datatypeMixedSelector(m.datatypeID, m.constructorCount, m.constructorID, m.field, m.fieldKind, m.width, m.targetDatatypeID, m.targetConstructorCount, m.selectorName, m.value)
+		return cs.datatypeMixedSelector(m.datatypeID, m.constructorCount, m.constructorID, m.field, m.fieldKind, m.width, m.targetDatatypeID, m.targetConstructorCount, m.constructorName, m.selectorName, m.specs, m.value)
 	case datatypeMixedUpdate[S]:
 		return cs.datatypeMixedUpdate(m.datatypeID, m.constructorCount, m.constructorID, m.field, m.fieldKind, m.width, m.targetDatatypeID, m.targetConstructorCount, m.specs, m.replacement, m.value)
 	case datatypeMixedRecognizer:
@@ -2679,12 +2681,13 @@ func selectMixedDatatypeField[S any](kind int, width int, targetDatatypeID int, 
 			datatypeID := __gp_m28.datatypeID
 			constructorCount := __gp_m28.constructorCount
 			constructorID := __gp_m28.constructorID
+			name := __gp_m28.name
 			specs := __gp_m28.specs
 			spec := specs.At(offset)
 			if spec.Kind != kind || spec.Width != width || spec.DatatypeID != targetDatatypeID || spec.ConstructorCount != targetConstructorCount {
 				panic("smt: erased mixed datatype cursor sort mismatch")
 			}
-			return datatypeMixedSelector[S]{datatypeID: datatypeID, constructorCount: constructorCount, constructorID: constructorID, field: offset, fieldKind: kind, width: width, targetDatatypeID: targetDatatypeID, targetConstructorCount: targetConstructorCount, selectorName: spec.Name, value: value}
+			return datatypeMixedSelector[S]{datatypeID: datatypeID, constructorCount: constructorCount, constructorID: constructorID, field: offset, fieldKind: kind, width: width, targetDatatypeID: targetDatatypeID, targetConstructorCount: targetConstructorCount, constructorName: name, selectorName: spec.Name, specs: specs, value: value}
 		default:
 			panic("goplus: impossible enum value in match")
 		}

@@ -681,6 +681,28 @@ func TestExecuteParametricDatatypeMatch(t *testing.T) {
 	}
 }
 
+func TestExecuteUnconstrainedParametricDatatypeMatch(t *testing.T) {
+	script := `(declare-datatypes ((PList 1))
+	  ((par (T) ((nil) (cons (head T) (tail (PList T)))))))
+	(declare-const xs (PList Int))
+	(assert (= (match xs (((nil) 0) ((cons h t) h))) 42))
+	(check-sat)
+	(get-value (xs (match xs (((nil) 0) ((cons h t) h)))))`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("result=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[3].(Satisfiable); !ok {
+		t.Fatalf("expected sat, got %#v", result.Responses[3])
+	}
+	values := result.Responses[4].(ValuesAvailable).Values
+	list, listOK := values[0].(DatatypeValue)
+	matched, matchOK := values[1].(IntegerValue)
+	if !listOK || list.Value.ConstructorName != "cons" || !matchOK || matched.Value != 42 {
+		t.Fatalf("unexpected unconstrained match values: %#v", values)
+	}
+}
+
 func TestExecuteRejectsNonExhaustiveParametricDatatypeMatch(t *testing.T) {
 	script := `(declare-datatypes ((PList 1))
 	  ((par (T) ((nil) (cons (head T) (tail (PList T)))))))

@@ -666,6 +666,17 @@ type datatypeTagConstraint struct {
 	mixedSpecs  MixedDatatypeFieldSpecs
 }
 
+func (value datatypeMixedSelector[S]) mixedSelectorSchema() datatypeTagConstraint {
+	return datatypeTagConstraint{
+		constructor: value.constructorID,
+		recursive:   true,
+		nary:        true,
+		arity:       value.specs.Len(),
+		name:        value.constructorName,
+		mixedSpecs:  value.specs,
+	}
+}
+
 type datatypeProblem struct {
 	nodes                 []datatypeNode
 	parents               []int
@@ -681,9 +692,11 @@ type datatypeProblem struct {
 	model                 datatypeModel
 	mixedEqualities       []Term[BoolSort]
 	mixedAssertions       []Term[BoolSort]
+	matchTags             []datatypeTagConstraint
 	inlineMixedEqualities [8]Term[BoolSort]
 	inlineMixedAssertions [8]Term[BoolSort]
 	scalarOutcome         checkOutcome
+	assignment            []int
 }
 
 func containsDatatypeTheory(term Term[BoolSort]) bool {
@@ -918,16 +931,20 @@ func (problem *datatypeProblem) boolean(term Term[BoolSort], negated bool) bool 
 func (problem *datatypeProblem) retainMixedScalarSelectorTarget(term any) bool {
 	switch value := term.(type) {
 	case datatypeMixedSelector[BoolSort]:
-		_, ok := problem.term(value.value)
+		node, ok := problem.term(value.value)
+		problem.retainMixedSelectorSchema(node, ok, value)
 		return ok
 	case datatypeMixedSelector[IntSort]:
-		_, ok := problem.term(value.value)
+		node, ok := problem.term(value.value)
+		problem.retainMixedSelectorSchema(node, ok, value)
 		return ok
 	case datatypeMixedSelector[RealSort]:
-		_, ok := problem.term(value.value)
+		node, ok := problem.term(value.value)
+		problem.retainMixedSelectorSchema(node, ok, value)
 		return ok
 	case datatypeMixedSelector[BitVecSort]:
-		_, ok := problem.term(value.value)
+		node, ok := problem.term(value.value)
+		problem.retainMixedSelectorSchema(node, ok, value)
 		return ok
 	case If[IntSort]:
 		return problem.retainMixedBooleanTargets(value.Condition) && problem.retainMixedScalarSelectorTarget(value.Then) && problem.retainMixedScalarSelectorTarget(value.Else)
@@ -940,22 +957,48 @@ func (problem *datatypeProblem) retainMixedScalarSelectorTarget(term any) bool {
 	}
 }
 
+func (problem *datatypeProblem) retainMixedSelectorSchema(node int, ok bool, value interface {
+	mixedSelectorSchema() datatypeTagConstraint
+}) {
+	if !ok {
+		return
+	}
+	tag := value.mixedSelectorSchema()
+	tag.node = node
+	problem.matchTags = append(problem.matchTags, tag)
+}
+
 func (problem *datatypeProblem) retainMixedBooleanTargets(term Term[BoolSort]) bool {
 	switch value := term.(type) {
 	case datatypeRecognizer:
-		_, ok := problem.term(value.value)
+		node, ok := problem.term(value.value)
+		if ok {
+			problem.matchTags = append(problem.matchTags, datatypeTagConstraint{node: node, constructor: value.constructorID})
+		}
 		return ok
 	case datatypeRecursiveRecognizer:
-		_, ok := problem.term(value.value)
+		node, ok := problem.term(value.value)
+		if ok {
+			problem.matchTags = append(problem.matchTags, datatypeTagConstraint{node: node, constructor: value.constructorID, recursive: true, arity: 1, name: value.name})
+		}
 		return ok
 	case datatypeBinaryRecursiveRecognizer:
-		_, ok := problem.term(value.value)
+		node, ok := problem.term(value.value)
+		if ok {
+			problem.matchTags = append(problem.matchTags, datatypeTagConstraint{node: node, constructor: value.constructorID, recursive: true, arity: 2, name: value.name})
+		}
 		return ok
 	case datatypeNaryRecursiveRecognizer:
-		_, ok := problem.term(value.value)
+		node, ok := problem.term(value.value)
+		if ok {
+			problem.matchTags = append(problem.matchTags, datatypeTagConstraint{node: node, constructor: value.constructorID, recursive: true, nary: true, arity: value.arity, name: value.name})
+		}
 		return ok
 	case datatypeMixedRecognizer:
-		_, ok := problem.term(value.value)
+		node, ok := problem.term(value.value)
+		if ok {
+			problem.matchTags = append(problem.matchTags, datatypeTagConstraint{node: node, constructor: value.constructorID, recursive: true, nary: true, arity: value.specs.Len(), name: value.name, mixedSpecs: value.specs})
+		}
 		return ok
 	case Not:
 		return problem.retainMixedBooleanTargets(value.Value)
@@ -1332,11 +1375,6 @@ func (problem *datatypeProblem) solve() (checkOutcome, bool) {
 			return checkOutcome{status: checkUnsat}, true
 		}
 	}
-	if outcome, ok := problem.solveMixedScalarConstraints(); !ok {
-		return checkOutcome{status: checkUnknown, reason: UnsupportedTheory{Name: "mixed datatype scalar exchange"}}, true
-	} else if outcome.status == checkUnsat || outcome.status == checkUnknown {
-		return outcome, true
-	}
 	var inlineAssignment [8]int
 	var assignment []int
 	if len(problem.nodes) <= len(inlineAssignment) {
@@ -1376,7 +1414,12 @@ func (problem *datatypeProblem) solve() (checkOutcome, bool) {
 			roots = append(roots, root)
 		}
 	}
-	if !problem.color(roots, 0, assignment) {
+	scalarUnknown := checkOutcome{}
+	scalarUnknownSeen := false
+	if !problem.colorSatisfyingScalars(roots, 0, assignment, &scalarUnknown, &scalarUnknownSeen) {
+		if scalarUnknownSeen {
+			return scalarUnknown, true
+		}
 		return checkOutcome{status: checkUnsat}, true
 	}
 	model := &problem.model
@@ -1661,40 +1704,46 @@ func (problem *datatypeProblem) rewriteMixedScalarTerm(term any) (any, bool) {
 		return problem.mixedSelectedScalar(value.datatypeID, value.constructorCount, value.constructorID, value.field, value.fieldKind, value.width, value.value)
 	case If[IntSort]:
 		condition, conditionOK := problem.rewriteDatatypeCondition(value.Condition)
-		then, thenOK := problem.rewriteMixedScalarTerm(value.Then)
-		otherwise, otherwiseOK := problem.rewriteMixedScalarTerm(value.Else)
 		if boolean, known := condition.(Bool); known {
 			if boolean.Value {
+				then, thenOK := problem.rewriteMixedScalarTerm(value.Then)
 				return then, conditionOK && thenOK
 			}
+			otherwise, otherwiseOK := problem.rewriteMixedScalarTerm(value.Else)
 			return otherwise, conditionOK && otherwiseOK
 		}
+		then, thenOK := problem.rewriteMixedScalarTerm(value.Then)
+		otherwise, otherwiseOK := problem.rewriteMixedScalarTerm(value.Else)
 		thenTerm, thenTypeOK := then.(Term[IntSort])
 		otherwiseTerm, otherwiseTypeOK := otherwise.(Term[IntSort])
 		return If[IntSort]{Condition: condition, Then: thenTerm, Else: otherwiseTerm}, conditionOK && thenOK && otherwiseOK && thenTypeOK && otherwiseTypeOK
 	case If[RealSort]:
 		condition, conditionOK := problem.rewriteDatatypeCondition(value.Condition)
-		then, thenOK := problem.rewriteMixedScalarTerm(value.Then)
-		otherwise, otherwiseOK := problem.rewriteMixedScalarTerm(value.Else)
 		if boolean, known := condition.(Bool); known {
 			if boolean.Value {
+				then, thenOK := problem.rewriteMixedScalarTerm(value.Then)
 				return then, conditionOK && thenOK
 			}
+			otherwise, otherwiseOK := problem.rewriteMixedScalarTerm(value.Else)
 			return otherwise, conditionOK && otherwiseOK
 		}
+		then, thenOK := problem.rewriteMixedScalarTerm(value.Then)
+		otherwise, otherwiseOK := problem.rewriteMixedScalarTerm(value.Else)
 		thenTerm, thenTypeOK := then.(Term[RealSort])
 		otherwiseTerm, otherwiseTypeOK := otherwise.(Term[RealSort])
 		return If[RealSort]{Condition: condition, Then: thenTerm, Else: otherwiseTerm}, conditionOK && thenOK && otherwiseOK && thenTypeOK && otherwiseTypeOK
 	case If[BoolSort]:
 		condition, conditionOK := problem.rewriteDatatypeCondition(value.Condition)
-		then, thenOK := problem.rewriteMixedScalarTerm(value.Then)
-		otherwise, otherwiseOK := problem.rewriteMixedScalarTerm(value.Else)
 		if boolean, known := condition.(Bool); known {
 			if boolean.Value {
+				then, thenOK := problem.rewriteMixedScalarTerm(value.Then)
 				return then, conditionOK && thenOK
 			}
+			otherwise, otherwiseOK := problem.rewriteMixedScalarTerm(value.Else)
 			return otherwise, conditionOK && otherwiseOK
 		}
+		then, thenOK := problem.rewriteMixedScalarTerm(value.Then)
+		otherwise, otherwiseOK := problem.rewriteMixedScalarTerm(value.Else)
 		thenTerm, thenTypeOK := then.(Term[BoolSort])
 		otherwiseTerm, otherwiseTypeOK := otherwise.(Term[BoolSort])
 		return If[BoolSort]{Condition: condition, Then: thenTerm, Else: otherwiseTerm}, conditionOK && thenOK && otherwiseOK && thenTypeOK && otherwiseTypeOK
@@ -1734,6 +1783,9 @@ func (problem *datatypeProblem) resolveDatatypeRecognizer(target any, constructo
 			return Bool{Value: candidate.id == constructorID}, true
 		}
 	}
+	if problem.assignment != nil && problem.assignment[root] >= 0 {
+		return Bool{Value: problem.assignment[root] == constructorID}, true
+	}
 	return nil, false
 }
 
@@ -1753,15 +1805,18 @@ func (problem *datatypeProblem) mixedSelectedScalar(datatypeID, constructorCount
 		}
 		return application.mixedValues.At(field).Term, true
 	}
-	for _, tag := range problem.tags {
-		if tag.negated || tag.constructor != constructorID || tag.mixedSpecs.Len() == 0 || problem.find(tag.node) != root || field < 0 || field >= tag.mixedSpecs.Len() {
-			continue
+	tagGroups := [2][]datatypeTagConstraint{problem.tags, problem.matchTags}
+	for _, tags := range tagGroups {
+		for _, tag := range tags {
+			if tag.negated || tag.constructor != constructorID || tag.mixedSpecs.Len() == 0 || problem.find(tag.node) != root || field < 0 || field >= tag.mixedSpecs.Len() {
+				continue
+			}
+			spec := tag.mixedSpecs.At(field)
+			if spec.Kind != kind || spec.Width != width || kind == mixedDatatypeFieldSelf {
+				return nil, false
+			}
+			return mixedSyntheticScalar(root, field, spec), true
 		}
-		spec := tag.mixedSpecs.At(field)
-		if spec.Kind != kind || spec.Width != width || kind == mixedDatatypeFieldSelf {
-			return nil, false
-		}
-		return mixedSyntheticScalar(root, field, spec), true
 	}
 	return nil, false
 }
@@ -1959,6 +2014,11 @@ func (problem *datatypeProblem) mixedRecursiveConstructorSpecs(root, constructor
 			return tag.mixedSpecs, true
 		}
 	}
+	for _, tag := range problem.matchTags {
+		if tag.constructor == constructor && tag.mixedSpecs.Len() > 0 && problem.nodes[tag.node].datatypeID == node.datatypeID && problem.nodes[tag.node].constructorCount == node.constructorCount {
+			return tag.mixedSpecs, true
+		}
+	}
 	return MixedDatatypeFieldSpecs{}, false
 }
 
@@ -2017,25 +2077,37 @@ func (problem *datatypeProblem) recursiveCycleFrom(root int, state []uint8) bool
 	return false
 }
 
-func (problem *datatypeProblem) color(roots []int, position int, assignment []int) bool {
+func (problem *datatypeProblem) colorSatisfyingScalars(roots []int, position int, assignment []int, unknown *checkOutcome, unknownSeen *bool) bool {
 	if position == len(roots) {
-		return true
+		problem.assignment = assignment
+		outcome, ok := problem.solveMixedScalarConstraints()
+		problem.assignment = nil
+		if !ok {
+			*unknown = checkOutcome{status: checkUnknown, reason: UnsupportedTheory{Name: "mixed datatype scalar exchange"}}
+			*unknownSeen = true
+			return false
+		}
+		if outcome.status == checkUnknown {
+			*unknown = outcome
+			*unknownSeen = true
+			return false
+		}
+		return outcome.status == checkSat
 	}
 	root := roots[position]
 	if assignment[root] >= 0 {
-		if problem.assignmentAllowed(root, assignment[root], assignment) {
-			return problem.color(roots, position+1, assignment)
-		}
-		return false
+		return problem.assignmentAllowed(root, assignment[root], assignment) &&
+			problem.colorSatisfyingScalars(roots, position+1, assignment, unknown, unknownSeen)
 	}
 	for constructor := 0; constructor < problem.nodes[root].constructorCount; constructor++ {
-		if problem.assignmentAllowed(root, constructor, assignment) {
-			assignment[root] = constructor
-			if problem.color(roots, position+1, assignment) {
-				return true
-			}
-			assignment[root] = -1
+		if !problem.assignmentAllowed(root, constructor, assignment) {
+			continue
 		}
+		assignment[root] = constructor
+		if problem.colorSatisfyingScalars(roots, position+1, assignment, unknown, unknownSeen) {
+			return true
+		}
+		assignment[root] = -1
 	}
 	return false
 }
@@ -2080,6 +2152,11 @@ func (problem *datatypeProblem) recursiveConstructorArity(root, constructor int)
 			return int(tag.arity)
 		}
 	}
+	for _, tag := range problem.matchTags {
+		if tag.recursive && tag.constructor == constructor && problem.nodes[tag.node].datatypeID == node.datatypeID && problem.nodes[tag.node].constructorCount == node.constructorCount {
+			return int(tag.arity)
+		}
+	}
 	return 0
 }
 
@@ -2091,6 +2168,11 @@ func (problem *datatypeProblem) naryRecursiveConstructor(root, constructor int) 
 		}
 	}
 	for _, tag := range problem.tags {
+		if tag.recursive && tag.nary && tag.constructor == constructor && problem.nodes[tag.node].datatypeID == node.datatypeID && problem.nodes[tag.node].constructorCount == node.constructorCount {
+			return true
+		}
+	}
+	for _, tag := range problem.matchTags {
 		if tag.recursive && tag.nary && tag.constructor == constructor && problem.nodes[tag.node].datatypeID == node.datatypeID && problem.nodes[tag.node].constructorCount == node.constructorCount {
 			return true
 		}
@@ -2121,6 +2203,11 @@ func (problem *datatypeProblem) constructorName(datatypeID, constructorCount, co
 		}
 	}
 	for _, tag := range problem.tags {
+		if tag.constructor == constructorID && tag.name != "" && problem.nodes[tag.node].datatypeID == datatypeID && problem.nodes[tag.node].constructorCount == constructorCount {
+			return tag.name
+		}
+	}
+	for _, tag := range problem.matchTags {
 		if tag.constructor == constructorID && tag.name != "" && problem.nodes[tag.node].datatypeID == datatypeID && problem.nodes[tag.node].constructorCount == constructorCount {
 			return tag.name
 		}

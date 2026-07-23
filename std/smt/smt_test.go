@@ -1075,6 +1075,30 @@ func TestMixedRecursiveDatatypeScalarConditional(t *testing.T) {
 	}
 }
 
+func TestMixedRecursiveDatatypeScalarConditionalChoosesConstructor(t *testing.T) {
+	cons := DeclareMixedRecursiveDatatypeConstructor(920, 2, 1, "cons", mixedIntSelfSignature())
+	x := DatatypeConst(920, 2, 1, "x")
+	fields := MixedDatatypeFields(cons)
+	matched := If[IntSort]{
+		Condition: IsDatatypeConstructor(920, 2, 0, x),
+		Then:      Integer{Value: 0},
+		Else:      SelectMixedIntDatatypeField(fields, x),
+	}
+	result, ok := Check(Assert(1, New(), Equal{Left: matched, Right: Integer{Value: 42}})).(Satisfiable)
+	if !ok {
+		t.Fatalf("unconstrained datatype match result=%#v", result)
+	}
+	value, found := DatatypeModelValue(920, 2, result.Value, x)
+	if !found || value.ConstructorID != 1 || value.Fields.Len() != 2 {
+		t.Fatalf("unconstrained datatype match value=%+v found=%v", value, found)
+	}
+	head, _ := value.Fields.At(0)
+	tail, _ := value.Fields.At(1)
+	if CompareIntegerValue(head.Integer, NewIntegerValue(42)) != 0 || tail.Datatype == nil || tail.Datatype.ConstructorID != 0 {
+		t.Fatalf("unconstrained datatype match head=%+v tail=%+v", head, tail)
+	}
+}
+
 func TestMixedRecursiveDatatypeUpdateField(t *testing.T) {
 	leaf := DatatypeConstructor(93, 2, 0, "nil")
 	cons := DeclareMixedRecursiveDatatypeConstructor(93, 2, 1, "cons", mixedIntSelfSignature())
