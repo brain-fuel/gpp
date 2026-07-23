@@ -541,6 +541,57 @@ func TestWordEquationLengthInequalityInteraction(t *testing.T) {
 	}
 }
 
+func TestMultipleWordEquationInteraction(t *testing.T) {
+	x := StringConst(1, "x")
+	y := StringConst(2, "y")
+	z := StringConst(3, "z")
+	first := Equal{Left: StringConcat(x, y), Right: StringVal("abc")}
+	second := Equal{
+		Left:  StringConcat(x, StringVal("-"), z),
+		Right: StringVal("a-tail"),
+	}
+	formula := And{Values: []Term[BoolSort]{first, second}}
+	checked := Check(Assert(34, New(), formula))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", checked)
+	}
+	if actual, found := StringModelValue(result.Value, x); !found || actual != "a" {
+		t.Fatalf("x=(%q,%v)", actual, found)
+	}
+	if actual, found := StringModelValue(result.Value, y); !found || actual != "bc" {
+		t.Fatalf("y=(%q,%v)", actual, found)
+	}
+	if actual, found := StringModelValue(result.Value, z); !found || actual != "tail" {
+		t.Fatalf("z=(%q,%v)", actual, found)
+	}
+	if valid, found := BoolValue(result.Value, formula); !found || !valid {
+		t.Fatalf("formula=(%v,%v)", valid, found)
+	}
+
+	unicode := And{Values: []Term[BoolSort]{
+		Equal{Left: StringConcat(x, y), Right: StringVal("🙂a")},
+		Equal{Left: StringConcat(x, StringVal("-"), z), Right: StringVal("🙂-tail")},
+	}}
+	checked = Check(Assert(35, New(), unicode))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("unicode result=%T", checked)
+	}
+	if actual, found := StringModelValue(result.Value, x); !found || actual != "🙂" {
+		t.Fatalf("unicode x=(%q,%v)", actual, found)
+	}
+
+	impossible := And{Values: []Term[BoolSort]{
+		first,
+		Equal{Left: StringConcat(x, x), Right: StringVal("zz")},
+	}}
+	checked = Check(Assert(36, New(), impossible))
+	if _, ok := checked.(Unsatisfiable); !ok {
+		t.Fatalf("impossible result=%T", checked)
+	}
+}
+
 func TestStringSymbolModel(t *testing.T) {
 	x := StringConst(1, "x")
 	formula := And{Values: []Term[BoolSort]{

@@ -464,6 +464,45 @@ func TestExecuteWordEquationLengthInequalityInteraction(t *testing.T) {
 	}
 }
 
+func TestExecuteMultipleWordEquationInteraction(t *testing.T) {
+	script := `(set-logic QF_SLIA)
+(declare-const x String)
+(declare-const y String)
+(declare-const z String)
+(assert (= (str.++ x y) "abc"))
+(assert (= (str.++ x "-" z) "a-tail"))
+(check-sat)
+(get-value (x y z))`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("result=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[len(result.Responses)-2].(Satisfiable); !ok {
+		t.Fatalf("check response=%T", result.Responses[len(result.Responses)-2])
+	}
+	values := result.Responses[len(result.Responses)-1].(ValuesAvailable).Values
+	want := []string{"a", "bc", "tail"}
+	for index, expected := range want {
+		if value, ok := values[index].(StringValue); !ok || value.Value != expected {
+			t.Fatalf("value[%d]=%#v", index, values[index])
+		}
+	}
+
+	impossible := `(set-logic QF_SLIA)
+(declare-const x String)
+(declare-const y String)
+(assert (= (str.++ x y) "abc"))
+(assert (= (str.++ x x) "zz"))
+(check-sat)`
+	result, ok = Execute(impossible).(Executed)
+	if !ok {
+		t.Fatalf("result=%#v", Execute(impossible))
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Unsatisfiable); !ok {
+		t.Fatalf("check response=%T", result.Responses[len(result.Responses)-1])
+	}
+}
+
 func TestExecuteDifferenceLogicPushPop(t *testing.T) {
 	script := `(set-logic QF_IDL)
 (declare-const x Int)

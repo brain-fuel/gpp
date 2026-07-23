@@ -43,22 +43,25 @@ func solveBoundedWordEquationConjunction(assertions []Term[BoolSort]) (checkOutc
 			return checkOutcome{}, false
 		}
 	}
-	equationIndex := -1
-	var equation CompactStringWordEquation
+	var equations [4]CompactStringWordEquation
+	var equationConjuncts [8]bool
+	equationCount := 0
 	for index := 0; index < count; index++ {
 		if candidate, ok := compactStringWordEquationFromTerm(conjuncts[index]); ok {
-			if equationIndex >= 0 {
+			if equationCount == len(equations) {
 				return checkOutcome{}, false
 			}
-			equation, equationIndex = candidate, index
+			equations[equationCount] = candidate
+			equationCount++
+			equationConjuncts[index] = true
 		}
 	}
-	if equationIndex < 0 {
+	if equationCount == 0 {
 		return checkOutcome{}, false
 	}
 	var constraints boundedWordEquationConstraints
 	for index := 0; index < count; index++ {
-		if index == equationIndex {
+		if equationConjuncts[index] {
 			continue
 		}
 		recognized, contradiction := bindBoundedWordEquationGroundConjunct(conjuncts[index], &constraints)
@@ -70,13 +73,19 @@ func solveBoundedWordEquationConjunction(assertions []Term[BoolSort]) (checkOutc
 		}
 	}
 	for index := 0; index < constraints.lengthCount; index++ {
-		if !compactStringPatternContainsID(equation.Pattern, constraints.lengths[index].id) {
+		found := false
+		for equationIndex := 0; equationIndex < equationCount; equationIndex++ {
+			found = found || compactStringPatternContainsID(
+				equations[equationIndex].Pattern, constraints.lengths[index].id,
+			)
+		}
+		if !found {
 			return checkOutcome{}, false
 		}
 	}
 	steps := 0
-	model, found, complete := searchCompactStringWordEquation(
-		equation.Pattern, equation.Target, 0, 0, constraints, &steps,
+	model, found, complete := searchCompactStringWordEquationSystem(
+		equations, equationCount, 0, 0, 0, constraints, &steps,
 	)
 	if !complete {
 		return checkOutcome{
@@ -503,9 +512,32 @@ func searchCompactStringWordEquation(
 	constraints boundedWordEquationConstraints,
 	steps *int,
 ) (stringModel, bool, bool) {
+	equations := [4]CompactStringWordEquation{{
+		Pattern: pattern,
+		Target:  target,
+	}}
+	return searchCompactStringWordEquationSystem(
+		equations, 1, 0, index, offset, constraints, steps,
+	)
+}
+
+func searchCompactStringWordEquationSystem(
+	equations [4]CompactStringWordEquation,
+	equationCount, equationIndex, index, offset int,
+	constraints boundedWordEquationConstraints,
+	steps *int,
+) (stringModel, bool, bool) {
+	if equationIndex == equationCount {
+		return constraints.model, true, true
+	}
 	*steps++
 	if *steps > compactStringWordEquationSearchLimit {
 		return stringModel{}, false, false
+	}
+	equation := equations[equationIndex]
+	pattern, target := equation.Pattern, equation.Target
+	if pattern.Count < 1 || pattern.Count > len(pattern.SymbolIDs) {
+		return stringModel{}, false, true
 	}
 	delimiter := pattern.Delimiters[index]
 	if offset > len(target) || !strings.HasPrefix(target[offset:], delimiter) {
@@ -513,14 +545,21 @@ func searchCompactStringWordEquation(
 	}
 	offset += len(delimiter)
 	if index == pattern.Count {
-		return constraints.model, offset == len(target), true
+		if offset != len(target) {
+			return stringModel{}, false, true
+		}
+		return searchCompactStringWordEquationSystem(
+			equations, equationCount, equationIndex+1, 0, 0, constraints, steps,
+		)
 	}
 	id := pattern.SymbolIDs[index]
 	if value, bound := constraints.model.lookup(id); bound {
 		if !strings.HasPrefix(target[offset:], value) {
 			return stringModel{}, false, true
 		}
-		return searchCompactStringWordEquation(pattern, target, index+1, offset+len(value), constraints, steps)
+		return searchCompactStringWordEquationSystem(
+			equations, equationCount, equationIndex, index+1, offset+len(value), constraints, steps,
+		)
 	}
 	for end := offset; end <= len(target); end++ {
 		if !stringWordEquationBoundary(target, end) {
@@ -533,7 +572,9 @@ func searchCompactStringWordEquation(
 		}
 		candidate := constraints
 		candidate.model.set(id, value)
-		result, found, complete := searchCompactStringWordEquation(pattern, target, index+1, end, candidate, steps)
+		result, found, complete := searchCompactStringWordEquationSystem(
+			equations, equationCount, equationIndex, index+1, end, candidate, steps,
+		)
 		if !complete {
 			return stringModel{}, false, false
 		}
