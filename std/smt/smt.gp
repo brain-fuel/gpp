@@ -131,6 +131,13 @@ type SortedBinaryFunction[A any, B any, R any] enum {
 	sortedBinaryFunctionValue(FirstKind int, SecondKind int, RangeKind int, ID int, Name string) SortedBinaryFunction[A, B, R]
 }
 
+// SortedTernaryFunction[A,B,C,R] retains all three argument sorts and the
+// result sort. Go+ rejects a misplaced argument before Go generation.
+//goplus:derive off
+type SortedTernaryFunction[A any, B any, C any, R any] enum {
+	sortedTernaryFunctionValue(FirstKind int, SecondKind int, ThirdKind int, RangeKind int, ID int, Name string) SortedTernaryFunction[A, B, C, R]
+}
+
 // Term[S] makes ill-sorted formulas unrepresentable in Go+.
 type Term[S any] enum {
 	Bool(Value bool) Term[BoolSort]
@@ -202,6 +209,7 @@ type Term[S any] enum {
 	binaryApplication(Function any, First any, Second any) Term[S]
 	sortedUnaryApplication(Function any, Argument any, RangeKind int) Term[S]
 	sortedBinaryApplication(Function any, First any, Second any, RangeKind int) Term[S]
+	sortedTernaryApplication(Function any, First any, Second any, Third any, RangeKind int) Term[S]
 	bitVector(Value BitVectorValue) Term[S]
 	bitVectorSymbol(Width int, ID int, Name string) Term[S]
 	bitVectorNot(Value any) Term[S]
@@ -660,6 +668,14 @@ func DeclareIntBinaryFunction(id int, name string) SortedBinaryFunction[IntSort,
 
 func ApplySortedBinary[A any, B any, R any](function SortedBinaryFunction[A, B, R], first Term[A], second Term[B]) Term[R] {
 	return Term[R].sortedBinaryApplication(function, first, second, -1)
+}
+
+func DeclareIntTernaryFunction(id int, name string) SortedTernaryFunction[IntSort, IntSort, IntSort, IntSort] {
+	return SortedTernaryFunction[IntSort, IntSort, IntSort, IntSort].sortedTernaryFunctionValue(-2, -2, -2, -2, id, name)
+}
+
+func ApplySortedTernary[A any, B any, C any, R any](function SortedTernaryFunction[A, B, C, R], first Term[A], second Term[B], third Term[C]) Term[R] {
+	return Term[R].sortedTernaryApplication(function, first, second, third, -1)
 }
 
 func DeclareBitVecUnaryFunction(domainWidth nat, rangeWidth nat, id int, name string) SortedUnaryFunction[BitVecSort[domainWidth], BitVecSort[rangeWidth]] {

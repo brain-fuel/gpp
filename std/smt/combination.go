@@ -237,6 +237,7 @@ type purifiedApplication struct {
 	functionID       int
 	firstArgumentID  int
 	secondArgumentID int
+	thirdArgumentID  int
 	resultID         int
 }
 

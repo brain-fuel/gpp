@@ -60,8 +60,10 @@ type eufNode struct {
 	functionID   int
 	firstSortID  int
 	secondSortID int
+	thirdSortID  int
 	first        int
 	second       int
+	third        int
 }
 
 type eufPair struct {
@@ -136,7 +138,7 @@ func containsEUF(term Term[BoolSort]) bool {
 		return true
 	case RealBinaryComparison:
 		return true
-	case IntegerUnaryComparison, IntegerBinaryComparison:
+	case IntegerUnaryComparison, IntegerBinaryComparison, IntegerTernaryComparison:
 		return true
 	}
 	return false
@@ -174,7 +176,7 @@ func (problem *eufProblem) compactBitVectorTerm(term BitVectorEUFTerm) (int, boo
 
 func isEUFTerm(term any) bool {
 	switch term.(type) {
-	case uninterpretedValue[UninterpretedSort], unaryApplication[UninterpretedSort], binaryApplication[UninterpretedSort], sortedUnaryApplication[RealSort], sortedBinaryApplication[RealSort], sortedUnaryApplication[IntSort], sortedBinaryApplication[IntSort], sortedUnaryApplication[BitVecSort], sortedBinaryApplication[BitVecSort]:
+	case uninterpretedValue[UninterpretedSort], unaryApplication[UninterpretedSort], binaryApplication[UninterpretedSort], sortedUnaryApplication[RealSort], sortedBinaryApplication[RealSort], sortedUnaryApplication[IntSort], sortedBinaryApplication[IntSort], sortedTernaryApplication[IntSort], sortedUnaryApplication[BitVecSort], sortedBinaryApplication[BitVecSort]:
 		return true
 	default:
 		return false
@@ -219,17 +221,20 @@ func (problem *eufProblem) solve() (checkOutcome, bool) {
 		changed := false
 		for left := 0; left < len(problem.nodes); left++ {
 			leftNode := problem.nodes[left]
-			if leftNode.kind != 1 && leftNode.kind != 2 {
+			if leftNode.kind != 1 && leftNode.kind != 2 && leftNode.kind != 4 {
 				continue
 			}
 			for right := left + 1; right < len(problem.nodes); right++ {
 				rightNode := problem.nodes[right]
-				if rightNode.kind != leftNode.kind || leftNode.functionID != rightNode.functionID || leftNode.firstSortID != rightNode.firstSortID || leftNode.secondSortID != rightNode.secondSortID || leftNode.sortID != rightNode.sortID {
+				if rightNode.kind != leftNode.kind || leftNode.functionID != rightNode.functionID || leftNode.firstSortID != rightNode.firstSortID || leftNode.secondSortID != rightNode.secondSortID || leftNode.thirdSortID != rightNode.thirdSortID || leftNode.sortID != rightNode.sortID {
 					continue
 				}
 				argumentsEqual := problem.find(leftNode.first) == problem.find(rightNode.first)
-				if leftNode.kind == 2 {
+				if leftNode.kind == 2 || leftNode.kind == 4 {
 					argumentsEqual = argumentsEqual && problem.find(leftNode.second) == problem.find(rightNode.second)
+				}
+				if leftNode.kind == 4 {
+					argumentsEqual = argumentsEqual && problem.find(leftNode.third) == problem.find(rightNode.third)
 				}
 				if argumentsEqual && problem.find(left) != problem.find(right) {
 					problem.union(left, right)
@@ -431,6 +436,25 @@ func (problem *eufProblem) term(term any) (int, bool) {
 			return 0, false
 		}
 		node = eufNode{kind: 2, sortID: function.rangeKind, functionID: function.iD, firstSortID: function.firstKind, secondSortID: function.secondKind, first: first, second: second}
+	case sortedTernaryApplication[IntSort]:
+		function, ok := value.function.(sortedTernaryFunctionValue[IntSort, IntSort, IntSort, IntSort])
+		if !ok || value.rangeKind != -1 {
+			return 0, false
+		}
+		first, firstOK := problem.term(value.first)
+		second, secondOK := problem.term(value.second)
+		third, thirdOK := problem.term(value.third)
+		if !firstOK || !secondOK || !thirdOK ||
+			problem.nodes[first].sortID != function.firstKind ||
+			problem.nodes[second].sortID != function.secondKind ||
+			problem.nodes[third].sortID != function.thirdKind {
+			return 0, false
+		}
+		node = eufNode{
+			kind: 4, sortID: function.rangeKind, functionID: function.iD,
+			firstSortID: function.firstKind, secondSortID: function.secondKind,
+			thirdSortID: function.thirdKind, first: first, second: second, third: third,
+		}
 	case sortedUnaryApplication[BitVecSort]:
 		function, ok := value.function.(sortedUnaryFunctionValue[BitVecSort, BitVecSort])
 		if !ok || value.rangeKind != 0 {

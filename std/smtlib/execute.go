@@ -139,6 +139,10 @@ type dynamicBinaryFunction struct {
 	bitVectorValue smt.SortedBinaryFunction[smt.BitVecSort, smt.BitVecSort, smt.BitVecSort]
 }
 
+type dynamicTernaryFunction struct {
+	integerValue smt.SortedTernaryFunction[smt.IntSort, smt.IntSort, smt.IntSort, smt.IntSort]
+}
+
 type executor struct {
 	solver                 smt.Solver
 	checkpoints            []smt.Checkpoint
@@ -152,6 +156,7 @@ type executor struct {
 	sorts                  map[string]int
 	functions              map[string]dynamicUnaryFunction
 	binaryFunctions        map[string]dynamicBinaryFunction
+	ternaryFunctions       map[string]dynamicTernaryFunction
 	datatypes              map[string]dynamicDatatype
 	datatypeTerms          map[string]dynamicTerm
 	datatypeRecognizers    map[string]dynamicDatatypeRecognizer
@@ -182,6 +187,7 @@ func executeCommands(commands []Command) ([]Response, []ExecutionError) {
 		sorts:                  make(map[string]int),
 		functions:              make(map[string]dynamicUnaryFunction),
 		binaryFunctions:        make(map[string]dynamicBinaryFunction),
+		ternaryFunctions:       make(map[string]dynamicTernaryFunction),
 		datatypes:              make(map[string]dynamicDatatype),
 		datatypeTerms:          make(map[string]dynamicTerm),
 		datatypeRecognizers:    make(map[string]dynamicDatatypeRecognizer),
@@ -235,8 +241,12 @@ func (executor *executor) command(index int, command Command) {
 			executor.declareBinary(index, value)
 			return
 		}
+		if len(value.Domain) == 3 {
+			executor.declareTernary(index, value)
+			return
+		}
 		if len(value.Domain) != 0 {
-			executor.fail(index, value.At, "only nullary, unary, and binary declare-fun are supported")
+			executor.fail(index, value.At, "only nullary through ternary declare-fun are supported")
 			return
 		}
 		executor.declare(index, value.Name, value.Range, value.At)
@@ -1218,6 +1228,10 @@ func (executor *executor) declareUnary(index int, declaration DeclareFun) {
 		executor.fail(index, declaration.At, "duplicate function declaration "+declaration.Name)
 		return
 	}
+	if _, exists := executor.ternaryFunctions[declaration.Name]; exists {
+		executor.fail(index, declaration.At, "duplicate function declaration "+declaration.Name)
+		return
+	}
 	domainName, domainOK := atomText(declaration.Domain[0])
 	rangeName, rangeOK := atomText(declaration.Range)
 	if domainOK && rangeOK && domainName == "Real" && rangeName == "Real" {
@@ -1264,6 +1278,10 @@ func (executor *executor) declareBinary(index int, declaration DeclareFun) {
 		executor.fail(index, declaration.At, "duplicate function declaration "+declaration.Name)
 		return
 	}
+	if _, exists := executor.ternaryFunctions[declaration.Name]; exists {
+		executor.fail(index, declaration.At, "duplicate function declaration "+declaration.Name)
+		return
+	}
 	firstName, firstOK := atomText(declaration.Domain[0])
 	secondName, secondOK := atomText(declaration.Domain[1])
 	rangeName, rangeOK := atomText(declaration.Range)
@@ -1303,6 +1321,36 @@ func (executor *executor) declareBinary(index int, declaration DeclareFun) {
 	executor.binaryFunctions[declaration.Name] = dynamicBinaryFunction{
 		first: first, second: second, rangeSort: rangeSort,
 		value: smt.DeclareBinaryFunction(first, second, rangeSort, executor.nextSymbol, declaration.Name),
+	}
+	executor.acknowledge(index)
+}
+
+func (executor *executor) declareTernary(index int, declaration DeclareFun) {
+	if _, exists := executor.functions[declaration.Name]; exists {
+		executor.fail(index, declaration.At, "duplicate function declaration "+declaration.Name)
+		return
+	}
+	if _, exists := executor.binaryFunctions[declaration.Name]; exists {
+		executor.fail(index, declaration.At, "duplicate function declaration "+declaration.Name)
+		return
+	}
+	if _, exists := executor.ternaryFunctions[declaration.Name]; exists {
+		executor.fail(index, declaration.At, "duplicate function declaration "+declaration.Name)
+		return
+	}
+	first, firstOK := atomText(declaration.Domain[0])
+	second, secondOK := atomText(declaration.Domain[1])
+	third, thirdOK := atomText(declaration.Domain[2])
+	rangeName, rangeOK := atomText(declaration.Range)
+	if !firstOK || !secondOK || !thirdOK || !rangeOK ||
+		first != "Int" || second != "Int" || third != "Int" ||
+		rangeName != "Int" {
+		executor.fail(index, declaration.At, "ternary functions currently require Int arguments and Int range")
+		return
+	}
+	executor.nextSymbol++
+	executor.ternaryFunctions[declaration.Name] = dynamicTernaryFunction{
+		integerValue: smt.DeclareIntTernaryFunction(executor.nextSymbol, declaration.Name),
 	}
 	executor.acknowledge(index)
 }
@@ -1666,6 +1714,23 @@ func (executor *executor) term(expression SExpr) (dynamicTerm, error) {
 			return dynamicTerm{}, fmt.Errorf("ill-sorted application %s", operator)
 		}
 		return dynamicTerm{sort: function.rangeSort + 2, uninterpreted: smt.ApplyBinary(function.value, terms[0].uninterpreted, terms[1].uninterpreted)}, nil
+	}
+	if function, found := executor.ternaryFunctions[operator]; found {
+		if len(terms) != 3 {
+			return dynamicTerm{}, fmt.Errorf("ill-sorted application %s", operator)
+		}
+		for _, term := range terms {
+			if term.integer == nil || term.sort != sortInt && term.sort != sortNumber {
+				return dynamicTerm{}, fmt.Errorf("ill-sorted application %s", operator)
+			}
+		}
+		return dynamicTerm{
+			sort: sortInt,
+			integer: smt.ApplySortedTernary(
+				function.integerValue,
+				terms[0].integer, terms[1].integer, terms[2].integer,
+			),
+		}, nil
 	}
 	return buildApplication(operator, terms)
 }

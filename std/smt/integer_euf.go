@@ -26,24 +26,39 @@ type IntegerBinaryComparison struct {
 
 func (IntegerBinaryComparison) isTerm(BoolSort) {}
 
+type IntegerTernaryComparison struct {
+	FunctionID        int
+	FirstArgumentID   int
+	SecondArgumentID  int
+	ThirdArgumentID   int
+	Bound             IntegerValue
+	ApplicationOnLeft bool
+	Strict            bool
+}
+
+func (IntegerTernaryComparison) isTerm(BoolSort) {}
+
 type CompactIntegerEUFSystem struct {
-	EqualityCount             int
-	EqualityLeft              [4]int
-	EqualityRight             [4]int
-	OverflowEqualityLeft      []int
-	OverflowEqualityRight     []int
-	UnaryComparisonCount      int
-	UnaryComparisons          [4]IntegerUnaryComparison
-	OverflowUnaryComparisons  []IntegerUnaryComparison
-	BinaryComparisonCount     int
-	BinaryComparisons         [4]IntegerBinaryComparison
-	OverflowBinaryComparisons []IntegerBinaryComparison
-	DifferenceCount           int
-	Differences               [4]IntegerDifferenceConstraint
-	OverflowDifferences       []IntegerDifferenceConstraint
-	RelationCount             int
-	Relations                 [4]UninterpretedEUFRelation
-	OverflowRelations         []UninterpretedEUFRelation
+	EqualityCount              int
+	EqualityLeft               [4]int
+	EqualityRight              [4]int
+	OverflowEqualityLeft       []int
+	OverflowEqualityRight      []int
+	UnaryComparisonCount       int
+	UnaryComparisons           [4]IntegerUnaryComparison
+	OverflowUnaryComparisons   []IntegerUnaryComparison
+	BinaryComparisonCount      int
+	BinaryComparisons          [4]IntegerBinaryComparison
+	OverflowBinaryComparisons  []IntegerBinaryComparison
+	TernaryComparisonCount     int
+	TernaryComparisons         [4]IntegerTernaryComparison
+	OverflowTernaryComparisons []IntegerTernaryComparison
+	DifferenceCount            int
+	Differences                [4]IntegerDifferenceConstraint
+	OverflowDifferences        []IntegerDifferenceConstraint
+	RelationCount              int
+	Relations                  [4]UninterpretedEUFRelation
+	OverflowRelations          []UninterpretedEUFRelation
 }
 
 func (CompactIntegerEUFSystem) isTerm(BoolSort) {}
@@ -71,6 +86,13 @@ func (system CompactIntegerEUFSystem) binaryValues() []IntegerBinaryComparison {
 	return system.BinaryComparisons[:system.BinaryComparisonCount]
 }
 
+func (system CompactIntegerEUFSystem) ternaryValues() []IntegerTernaryComparison {
+	if system.OverflowTernaryComparisons != nil {
+		return system.OverflowTernaryComparisons[:system.TernaryComparisonCount]
+	}
+	return system.TernaryComparisons[:system.TernaryComparisonCount]
+}
+
 func (system CompactIntegerEUFSystem) differenceValues() []IntegerDifferenceConstraint {
 	if system.OverflowDifferences != nil {
 		return system.OverflowDifferences[:system.DifferenceCount]
@@ -90,6 +112,7 @@ type compactIntegerEUFClass struct {
 	function int
 	first    int
 	second   int
+	third    int
 	lower    IntegerValue
 	upper    IntegerValue
 	hasLower bool
@@ -156,24 +179,44 @@ func solveCompactIntegerEUFSystem(
 			return checkOutcome{}, false
 		}
 	}
+	for _, comparison := range system.ternaryValues() {
+		if _, ok := node(comparison.FirstArgumentID); !ok {
+			return checkOutcome{}, false
+		}
+		if _, ok := node(comparison.SecondArgumentID); !ok {
+			return checkOutcome{}, false
+		}
+		if _, ok := node(comparison.ThirdArgumentID); !ok {
+			return checkOutcome{}, false
+		}
+	}
 	var classes [8]compactIntegerEUFClass
 	classCount := 0
 	appendBound := func(
-		arity uint8, function, firstID, secondID int,
+		arity uint8, function, firstID, secondID, thirdID int,
 		bound IntegerValue, applicationOnLeft, strict bool,
 	) bool {
 		first, _ := node(firstID)
 		first = find(first)
 		second := 0
+		third := 0
 		if arity == 2 {
 			second, _ = node(secondID)
 			second = find(second)
+		}
+		if arity == 3 {
+			second, _ = node(secondID)
+			second = find(second)
+			third, _ = node(thirdID)
+			third = find(third)
 		}
 		class := -1
 		for index := 0; index < classCount; index++ {
 			value := classes[index]
 			if value.arity == arity && value.function == function &&
-				value.first == first && (arity == 1 || value.second == second) {
+				value.first == first &&
+				(arity == 1 || value.second == second) &&
+				(arity != 3 || value.third == third) {
 				class = index
 				break
 			}
@@ -184,7 +227,8 @@ func solveCompactIntegerEUFSystem(
 			}
 			class = classCount
 			classes[class] = compactIntegerEUFClass{
-				arity: arity, function: function, first: first, second: second,
+				arity: arity, function: function, first: first,
+				second: second, third: third,
 			}
 			classCount++
 		}
@@ -210,7 +254,7 @@ func solveCompactIntegerEUFSystem(
 	}
 	for _, comparison := range system.unaryValues() {
 		if !appendBound(
-			1, comparison.FunctionID, comparison.ArgumentID, 0,
+			1, comparison.FunctionID, comparison.ArgumentID, 0, 0,
 			comparison.Bound, comparison.ApplicationOnLeft, comparison.Strict,
 		) {
 			return checkOutcome{}, false
@@ -219,7 +263,17 @@ func solveCompactIntegerEUFSystem(
 	for _, comparison := range system.binaryValues() {
 		if !appendBound(
 			2, comparison.FunctionID,
+			comparison.FirstArgumentID, comparison.SecondArgumentID, 0,
+			comparison.Bound, comparison.ApplicationOnLeft, comparison.Strict,
+		) {
+			return checkOutcome{}, false
+		}
+	}
+	for _, comparison := range system.ternaryValues() {
+		if !appendBound(
+			3, comparison.FunctionID,
 			comparison.FirstArgumentID, comparison.SecondArgumentID,
+			comparison.ThirdArgumentID,
 			comparison.Bound, comparison.ApplicationOnLeft, comparison.Strict,
 		) {
 			return checkOutcome{}, false
@@ -354,7 +408,7 @@ func containsCompactIntegerEUF(term Term[BoolSort]) bool {
 				return true
 			}
 		}
-	case IntegerUnaryComparison, IntegerBinaryComparison:
+	case IntegerUnaryComparison, IntegerBinaryComparison, IntegerTernaryComparison:
 		return true
 	}
 	return false
@@ -401,7 +455,7 @@ func containsSortedIntegerApplicationBool(term Term[BoolSort]) bool {
 
 func containsSortedIntegerApplication(term Term[IntSort]) bool {
 	switch value := term.(type) {
-	case sortedUnaryApplication[IntSort], sortedBinaryApplication[IntSort]:
+	case sortedUnaryApplication[IntSort], sortedBinaryApplication[IntSort], sortedTernaryApplication[IntSort]:
 		return true
 	case Add:
 		for _, item := range value.Values {
@@ -472,6 +526,13 @@ func solveSharedIntegerEUF(assertions []Term[BoolSort]) (checkOutcome, bool) {
 				application.firstArgumentID,
 				application.secondArgumentID,
 			)
+		} else if application.arity == 3 {
+			left = problem.integerTernaryApplication(
+				application.functionID,
+				application.firstArgumentID,
+				application.secondArgumentID,
+				application.thirdArgumentID,
+			)
 		}
 		right := problem.ensureNode(eufNode{sortID: -2, symbolID: application.resultID})
 		problem.equalities = append(problem.equalities, eufPair{left: left, right: right})
@@ -537,7 +598,7 @@ func exchangeIntegerApplicationArguments(
 	changed := false
 	for left := 0; left < len(problem.nodes); left++ {
 		leftNode := problem.nodes[left]
-		if leftNode.kind != 1 && leftNode.kind != 2 {
+		if leftNode.kind != 1 && leftNode.kind != 2 && leftNode.kind != 4 {
 			continue
 		}
 		for right := left + 1; right < len(problem.nodes); right++ {
@@ -546,6 +607,7 @@ func exchangeIntegerApplicationArguments(
 				rightNode.functionID != leftNode.functionID ||
 				rightNode.firstSortID != leftNode.firstSortID ||
 				rightNode.secondSortID != leftNode.secondSortID ||
+				rightNode.thirdSortID != leftNode.thirdSortID ||
 				rightNode.sortID != leftNode.sortID {
 				continue
 			}
@@ -557,12 +619,21 @@ func exchangeIntegerApplicationArguments(
 					changed = true
 				}
 			}
-			if leftNode.kind == 2 &&
+			if (leftNode.kind == 2 || leftNode.kind == 4) &&
 				problem.find(leftNode.second) != problem.find(rightNode.second) {
 				leftID, leftOK := integerEUFSymbolID(problem, leftNode.second)
 				rightID, rightOK := integerEUFSymbolID(problem, rightNode.second)
 				if leftOK && rightOK && oracle.entails(leftID, rightID) {
 					problem.union(leftNode.second, rightNode.second)
+					changed = true
+				}
+			}
+			if leftNode.kind == 4 &&
+				problem.find(leftNode.third) != problem.find(rightNode.third) {
+				leftID, leftOK := integerEUFSymbolID(problem, leftNode.third)
+				rightID, rightOK := integerEUFSymbolID(problem, rightNode.third)
+				if leftOK && rightOK && oracle.entails(leftID, rightID) {
+					problem.union(leftNode.third, rightNode.third)
 					changed = true
 				}
 			}
@@ -643,6 +714,19 @@ func (problem *eufProblem) integerBinaryApplication(
 	return problem.ensureNode(eufNode{
 		kind: 2, sortID: -2, functionID: functionID,
 		firstSortID: -2, secondSortID: -2, first: first, second: second,
+	})
+}
+
+func (problem *eufProblem) integerTernaryApplication(
+	functionID, firstID, secondID, thirdID int,
+) int {
+	first := problem.ensureNode(eufNode{sortID: -2, symbolID: firstID})
+	second := problem.ensureNode(eufNode{sortID: -2, symbolID: secondID})
+	third := problem.ensureNode(eufNode{sortID: -2, symbolID: thirdID})
+	return problem.ensureNode(eufNode{
+		kind: 4, sortID: -2, functionID: functionID,
+		firstSortID: -2, secondSortID: -2, thirdSortID: -2,
+		first: first, second: second, third: third,
 	})
 }
 
@@ -750,6 +834,18 @@ func (purifier *sharedIntegerPurifier) add(term Term[BoolSort], negated bool) bo
 			result, value.Bound, value.ApplicationOnLeft, value.Strict,
 		)
 		return true
+	case IntegerTernaryComparison:
+		if negated {
+			return false
+		}
+		result := purifier.ternaryApplication(
+			value.FunctionID, value.FirstArgumentID,
+			value.SecondArgumentID, value.ThirdArgumentID,
+		)
+		purifier.appendApplicationBound(
+			result, value.Bound, value.ApplicationOnLeft, value.Strict,
+		)
+		return true
 	}
 	return purifier.partitionTerm(term, negated)
 }
@@ -817,6 +913,23 @@ func (purifier *sharedIntegerPurifier) integer(
 		return purifier.binaryApplication(
 			function.iD, firstSymbol.ID, secondSymbol.ID,
 		), true
+	case sortedTernaryApplication[IntSort]:
+		function, ok := value.function.(sortedTernaryFunctionValue[IntSort, IntSort, IntSort, IntSort])
+		first, firstOK := value.first.(Term[IntSort])
+		second, secondOK := value.second.(Term[IntSort])
+		third, thirdOK := value.third.(Term[IntSort])
+		if !ok || !firstOK || !secondOK || !thirdOK || value.rangeKind != -1 {
+			return nil, false
+		}
+		firstSymbol, firstOK := purifier.integerArgument(first)
+		secondSymbol, secondOK := purifier.integerArgument(second)
+		thirdSymbol, thirdOK := purifier.integerArgument(third)
+		if !firstOK || !secondOK || !thirdOK {
+			return nil, false
+		}
+		return purifier.ternaryApplication(
+			function.iD, firstSymbol.ID, secondSymbol.ID, thirdSymbol.ID,
+		), true
 	}
 	return nil, false
 }
@@ -852,14 +965,28 @@ func (purifier *sharedIntegerPurifier) binaryApplication(
 	)
 }
 
+func (purifier *sharedIntegerPurifier) ternaryApplication(
+	functionID, firstArgumentID, secondArgumentID, thirdArgumentID int,
+) IntSymbol {
+	return purifier.application(
+		3, functionID, firstArgumentID, secondArgumentID, thirdArgumentID,
+	)
+}
+
 func (purifier *sharedIntegerPurifier) application(
 	arity uint8, functionID, firstArgumentID, secondArgumentID int,
+	thirdArgumentIDs ...int,
 ) IntSymbol {
+	thirdArgumentID := 0
+	if len(thirdArgumentIDs) != 0 {
+		thirdArgumentID = thirdArgumentIDs[0]
+	}
 	for _, application := range purifier.applicationValues() {
 		if application.arity == arity &&
 			application.functionID == functionID &&
 			application.firstArgumentID == firstArgumentID &&
-			application.secondArgumentID == secondArgumentID {
+			application.secondArgumentID == secondArgumentID &&
+			application.thirdArgumentID == thirdArgumentID {
 			return IntSymbol{ID: application.resultID}
 		}
 	}
@@ -868,6 +995,7 @@ func (purifier *sharedIntegerPurifier) application(
 		arity: arity, functionID: functionID,
 		firstArgumentID:  firstArgumentID,
 		secondArgumentID: secondArgumentID,
+		thirdArgumentID:  thirdArgumentID,
 		resultID:         result.ID,
 	})
 	return result
@@ -942,6 +1070,10 @@ func (purifier *sharedIntegerPurifier) collectBooleanSymbols(
 	case IntegerBinaryComparison:
 		purifier.markUsed(value.FirstArgumentID)
 		purifier.markUsed(value.SecondArgumentID)
+	case IntegerTernaryComparison:
+		purifier.markUsed(value.FirstArgumentID)
+		purifier.markUsed(value.SecondArgumentID)
+		purifier.markUsed(value.ThirdArgumentID)
 	case UninterpretedEUFRelation:
 		purifier.collectCompactIntegerEUFTerm(value.Left)
 		purifier.collectCompactIntegerEUFTerm(value.Right)
@@ -992,6 +1124,16 @@ func (purifier *sharedIntegerPurifier) collectIntegerSymbols(
 		}
 		if second, ok := value.second.(Term[IntSort]); ok {
 			purifier.collectIntegerSymbols(second)
+		}
+	case sortedTernaryApplication[IntSort]:
+		if first, ok := value.first.(Term[IntSort]); ok {
+			purifier.collectIntegerSymbols(first)
+		}
+		if second, ok := value.second.(Term[IntSort]); ok {
+			purifier.collectIntegerSymbols(second)
+		}
+		if third, ok := value.third.(Term[IntSort]); ok {
+			purifier.collectIntegerSymbols(third)
 		}
 	}
 }

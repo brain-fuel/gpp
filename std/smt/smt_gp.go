@@ -652,6 +652,25 @@ type sortedBinaryFunctionValue[A any, B any, R any] struct {
 
 func (sortedBinaryFunctionValue[A, B, R]) isSortedBinaryFunction(A, B, R) {}
 
+// SortedTernaryFunction[A,B,C,R] retains all three argument sorts and the
+// result sort. Go+ rejects a misplaced argument before Go generation.
+//
+//goplus:enum SortedTernaryFunction[A any, B any, C any, R any]
+//goplus:derive off
+type SortedTernaryFunction[A any, B any, C any, R any] interface{ isSortedTernaryFunction(A, B, C, R) }
+
+//goplus:variant (SortedTernaryFunction[A, B, C, R]) sortedTernaryFunctionValue(FirstKind int, SecondKind int, ThirdKind int, RangeKind int, ID int, Name string) SortedTernaryFunction[A, B, C, R]
+type sortedTernaryFunctionValue[A any, B any, C any, R any] struct {
+	firstKind  int
+	secondKind int
+	thirdKind  int
+	rangeKind  int
+	iD         int
+	name       string
+}
+
+func (sortedTernaryFunctionValue[A, B, C, R]) isSortedTernaryFunction(A, B, C, R) {}
+
 // Term[S] makes ill-sorted formulas unrepresentable in Go+.
 //
 //goplus:enum Term[S any]
@@ -1193,6 +1212,17 @@ type sortedBinaryApplication[S any] struct {
 }
 
 func (sortedBinaryApplication[S]) isTerm(S) {}
+
+//goplus:variant (Term[S]) sortedTernaryApplication(Function any, First any, Second any, Third any, RangeKind int) Term[S]
+type sortedTernaryApplication[S any] struct {
+	function  any
+	first     any
+	second    any
+	third     any
+	rangeKind int
+}
+
+func (sortedTernaryApplication[S]) isTerm(S) {}
 
 //goplus:variant (Term[S]) bitVector(Value BitVectorValue) Term[S]
 type bitVector[S any] struct {
@@ -1797,6 +1827,7 @@ type TermCases[S any, R any] struct {
 	binaryApplication                  func(Function any, First any, Second any) R
 	sortedUnaryApplication             func(Function any, Argument any, RangeKind int) R
 	sortedBinaryApplication            func(Function any, First any, Second any, RangeKind int) R
+	sortedTernaryApplication           func(Function any, First any, Second any, Third any, RangeKind int) R
 	bitVector                          func(Value BitVectorValue) R
 	bitVectorSymbol                    func(Width int, ID int, Name string) R
 	bitVectorNot                       func(Value any) R
@@ -1997,6 +2028,8 @@ func TermFold[S any, R any](t Term[S], cs TermCases[S, R]) R {
 		return cs.sortedUnaryApplication(m.function, m.argument, m.rangeKind)
 	case sortedBinaryApplication[S]:
 		return cs.sortedBinaryApplication(m.function, m.first, m.second, m.rangeKind)
+	case sortedTernaryApplication[S]:
+		return cs.sortedTernaryApplication(m.function, m.first, m.second, m.third, m.rangeKind)
 	case bitVector[S]:
 		return cs.bitVector(m.value)
 	case bitVectorSymbol[S]:
@@ -3297,6 +3330,14 @@ func DeclareIntBinaryFunction(id int, name string) SortedBinaryFunction[IntSort,
 
 func ApplySortedBinary[A any, B any, R any](function SortedBinaryFunction[A, B, R], first Term[A], second Term[B]) Term[R] {
 	return sortedBinaryApplication[R]{function: function, first: first, second: second, rangeKind: -1}
+}
+
+func DeclareIntTernaryFunction(id int, name string) SortedTernaryFunction[IntSort, IntSort, IntSort, IntSort] {
+	return sortedTernaryFunctionValue[IntSort, IntSort, IntSort, IntSort]{firstKind: -2, secondKind: -2, thirdKind: -2, rangeKind: -2, iD: id, name: name}
+}
+
+func ApplySortedTernary[A any, B any, C any, R any](function SortedTernaryFunction[A, B, C, R], first Term[A], second Term[B], third Term[C]) Term[R] {
+	return sortedTernaryApplication[R]{function: function, first: first, second: second, third: third, rangeKind: -1}
 }
 
 //goplus:dep DeclareBitVecUnaryFunction(domainWidth nat, rangeWidth nat, id int, name string) SortedUnaryFunction[BitVecSort[domainWidth], BitVecSort[rangeWidth]]

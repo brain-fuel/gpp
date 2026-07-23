@@ -1531,6 +1531,42 @@ func TestSharedIntegerEUFPurifiesBinaryAffineArguments(t *testing.T) {
 	}
 }
 
+func TestSharedIntegerEUFPurifiesTernaryAffineArguments(t *testing.T) {
+	x := IntegerVariable(1)
+	y := IntegerVariable(2)
+	z := IntegerVariable(3)
+	one := Integer{Value: 1}
+	zero := Integer{Value: 0}
+	function := DeclareIntTernaryFunction(4, "combine3")
+	left := ApplySortedTernary(function, Add{Values: []Term[IntSort]{x, one}}, y, z)
+	right := ApplySortedTernary(function, Add{Values: []Term[IntSort]{y, one}}, x, z)
+	formula := And{Values: []Term[BoolSort]{
+		Equal{Left: x, Right: y},
+		LessEqual{Left: left, Right: zero},
+		Less{Left: zero, Right: right},
+	}}
+	if result := Check(Assert(1, New(), formula)); func() bool { _, ok := result.(Unsatisfiable); return ok }() == false {
+		t.Fatalf("result=%T", result)
+	}
+}
+
+func TestIntegerSortedTernaryFunctionCongruence(t *testing.T) {
+	x := IntegerVariable(1)
+	y := IntegerVariable(2)
+	z := IntegerVariable(3)
+	function := DeclareIntTernaryFunction(4, "combine3")
+	formula := And{Values: []Term[BoolSort]{
+		Equal{Left: x, Right: y},
+		Not{Value: Equal{
+			Left:  ApplySortedTernary(function, x, y, z),
+			Right: ApplySortedTernary(function, y, x, z),
+		}},
+	}}
+	if result := Check(Assert(1, New(), formula)); func() bool { _, ok := result.(Unsatisfiable); return ok }() == false {
+		t.Fatalf("result=%T", result)
+	}
+}
+
 func TestSharedIntegerEUFPropagatesApplicationEqualityIntoLIA(t *testing.T) {
 	x := IntegerVariable(1)
 	y := IntegerVariable(2)
@@ -1566,6 +1602,25 @@ func TestCompactIntegerEUFSystem(t *testing.T) {
 	system.BinaryComparisons[1].Strict = false
 	if result := Check(Assert(2, New(), system)); func() bool { _, ok := result.(Satisfiable); return ok }() == false {
 		t.Fatalf("satisfiable result=%T", result)
+	}
+}
+
+func TestCompactIntegerEUFTernarySystem(t *testing.T) {
+	system := CompactIntegerEUFSystem{
+		EqualityCount: 1, TernaryComparisonCount: 2,
+	}
+	system.EqualityLeft[0], system.EqualityRight[0] = 1, 2
+	system.TernaryComparisons[0] = IntegerTernaryComparison{
+		FunctionID: 4, FirstArgumentID: 1, SecondArgumentID: 2,
+		ThirdArgumentID: 3, Bound: NewIntegerValue(0), ApplicationOnLeft: true,
+	}
+	system.TernaryComparisons[1] = IntegerTernaryComparison{
+		FunctionID: 4, FirstArgumentID: 2, SecondArgumentID: 1,
+		ThirdArgumentID: 3, Bound: NewIntegerValue(0),
+		ApplicationOnLeft: false, Strict: true,
+	}
+	if result := Check(Assert(1, New(), system)); func() bool { _, ok := result.(Unsatisfiable); return ok }() == false {
+		t.Fatalf("result=%T", result)
 	}
 }
 

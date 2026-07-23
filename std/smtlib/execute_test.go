@@ -1849,6 +1849,25 @@ func TestExecuteSharedIntegerFunctionArithmetic(t *testing.T) {
 	}
 }
 
+func TestExecuteTernaryIntegerFunctionArithmetic(t *testing.T) {
+	source := `(set-logic QF_UFLIA)
+(declare-const x Int)
+(declare-const y Int)
+(declare-const z Int)
+(declare-fun combine3 (Int Int Int) Int)
+(assert (= x y))
+(assert (<= (combine3 (+ x 1) y z) 0))
+(assert (< 0 (combine3 (+ y 1) x z)))
+(check-sat)`
+	result, ok := Execute(source).(Executed)
+	if !ok {
+		t.Fatalf("result=%#v", Execute(source))
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Unsatisfiable); !ok {
+		t.Fatalf("last response=%T", result.Responses[len(result.Responses)-1])
+	}
+}
+
 func TestExecutePurifiedRealFunctionArithmetic(t *testing.T) {
 	source := `(set-logic QF_UFLRA)
 (declare-const x Real)
