@@ -139,6 +139,41 @@ func TestStringRegexRejectsForcedSymbolContradiction(t *testing.T) {
 	}
 }
 
+func TestStringRegexSynthesizesSharedConstraintWitness(t *testing.T) {
+	x := StringConst(1, "x")
+	a := StringToRegex(StringVal("a"))
+	b := StringToRegex(StringVal("b"))
+	c := StringToRegex(StringVal("c"))
+	formula := And{Values: []Term[BoolSort]{
+		StringInRegex(x, UnionRegex(a, b)),
+		StringInRegex(x, UnionRegex(b, c)),
+		Not{Value: StringInRegex(x, a)},
+	}}
+	checked := Check(Assert(12, New(), formula))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T (%#v)", checked, checked)
+	}
+	if actual, found := StringModelValue(result.Value, x); !found || actual != "b" {
+		t.Fatalf("x=(%q,%v)", actual, found)
+	}
+	if valid, found := BoolValue(result.Value, formula); !found || !valid {
+		t.Fatalf("formula=(%v,%v)", valid, found)
+	}
+}
+
+func TestStringRegexProvesEmptySingletonIntersection(t *testing.T) {
+	x := StringConst(1, "x")
+	formula := And{Values: []Term[BoolSort]{
+		StringInRegex(x, StringToRegex(StringVal("a"))),
+		StringInRegex(x, StringToRegex(StringVal("b"))),
+	}}
+	checked := Check(Assert(13, New(), formula))
+	if _, ok := checked.(Unsatisfiable); !ok {
+		t.Fatalf("result=%T", checked)
+	}
+}
+
 func TestStringSymbolModel(t *testing.T) {
 	x := StringConst(1, "x")
 	formula := And{Values: []Term[BoolSort]{

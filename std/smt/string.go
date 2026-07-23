@@ -396,6 +396,14 @@ func solveStringAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
 			break
 		}
 	}
+	regexConstraints := make([]symbolicRegexConstraint, 0, 8)
+	for _, assertion := range assertions {
+		collectSymbolicRegexConstraints(assertion, false, &regexConstraints)
+	}
+	if combinedStringRegexConstraintsImpossible(regexConstraints, model) {
+		return checkOutcome{status: checkUnsat}, true
+	}
+	synthesizeCombinedStringRegexConstraints(regexConstraints, &model)
 	for _, assertion := range assertions {
 		synthesizeStringAssertion(assertion, false, &model)
 	}

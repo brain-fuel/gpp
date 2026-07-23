@@ -460,6 +460,226 @@ func synthesizeStringRegex(value Term[StringSort], expression Regex[StringSort],
 	}
 }
 
+type symbolicRegexConstraint struct {
+	id         int
+	expression Regex[StringSort]
+	negated    bool
+}
+
+func combinedStringRegexConstraintsImpossible(constraints []symbolicRegexConstraint, model stringModel) bool {
+	for _, constraint := range constraints {
+		var singleton string
+		hasSingleton := false
+		for _, other := range constraints {
+			if other.id != constraint.id {
+				continue
+			}
+			if !other.negated && regexExpressionIsEmpty(other.expression) {
+				return true
+			}
+			if other.negated && regexExpressionIsUniversal(other.expression) {
+				return true
+			}
+			if other.negated {
+				continue
+			}
+			value, exact := regexExpressionSingleton(other.expression)
+			if !exact {
+				continue
+			}
+			if hasSingleton && singleton != value {
+				return true
+			}
+			singleton, hasSingleton = value, true
+		}
+		if !hasSingleton {
+			continue
+		}
+		for _, other := range constraints {
+			if other.id != constraint.id {
+				continue
+			}
+			accepted, known := regexCandidateMembership(singleton, other.expression, model)
+			if known && accepted == other.negated {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func regexExpressionSingleton(expression Regex[StringSort]) (string, bool) {
+	if expression.compact.count != 0 {
+		return compactRegexSingleton(expression.compact)
+	}
+	return regexNodeSingleton(expression.node)
+}
+
+func compactRegexSingleton(compact compactRegex) (string, bool) {
+	var values [8]string
+	var exact [8]bool
+	count := 0
+	for _, operation := range compact.inline[:compact.count] {
+		switch operation.kind {
+		case regexEpsilon:
+			values[count], exact[count] = "", true
+			count++
+		case regexLiteral:
+			values[count], exact[count] = operation.first, true
+			count++
+		case regexConcat:
+			if count < 2 {
+				return "", false
+			}
+			values[count-2] = values[count-2] + values[count-1]
+			exact[count-2] = exact[count-2] && exact[count-1]
+			count--
+		case regexLoop:
+			if count < 1 || operation.minimum != operation.maximum {
+				return "", false
+			}
+			if exact[count-1] {
+				values[count-1] = strings.Repeat(values[count-1], operation.minimum)
+			}
+		default:
+			return "", false
+		}
+	}
+	if count != 1 {
+		return "", false
+	}
+	return values[0], exact[0]
+}
+
+func regexNodeSingleton(node *regexNode) (string, bool) {
+	if node == nil {
+		return "", false
+	}
+	switch node.kind {
+	case regexEpsilon:
+		return "", true
+	case regexLiteral:
+		if node.literalKnown {
+			return node.literalValue, true
+		}
+		return evaluateString(node.literal, stringModel{}, integerModel{})
+	case regexConcat:
+		left, leftOK := regexNodeSingleton(node.left)
+		right, rightOK := regexNodeSingleton(node.right)
+		return left + right, leftOK && rightOK
+	case regexLoop:
+		if node.minimum != node.maximum {
+			return "", false
+		}
+		child, ok := regexNodeSingleton(node.left)
+		return strings.Repeat(child, node.minimum), ok
+	default:
+		return "", false
+	}
+}
+
+func regexExpressionIsEmpty(expression Regex[StringSort]) bool {
+	if expression.compact.count == 1 {
+		return expression.compact.inline[0].kind == regexNone
+	}
+	return expression.node != nil && expression.node.kind == regexNone
+}
+
+func regexExpressionIsUniversal(expression Regex[StringSort]) bool {
+	if expression.compact.count == 1 {
+		return expression.compact.inline[0].kind == regexAll
+	}
+	return expression.node != nil && expression.node.kind == regexAll
+}
+
+func synthesizeCombinedStringRegexConstraints(constraints []symbolicRegexConstraint, model *stringModel) {
+	for _, constraint := range constraints {
+		if _, bound := model.lookup(constraint.id); bound {
+			continue
+		}
+		count := 0
+		for _, other := range constraints {
+			if other.id == constraint.id {
+				count++
+			}
+		}
+		if count < 2 {
+			continue
+		}
+		var candidates [16]string
+		candidateCount := 0
+		for _, other := range constraints {
+			if other.id != constraint.id || other.negated {
+				continue
+			}
+			if witness, ok := regexExpressionWitness(other.expression, *model, integerModel{}); ok {
+				if candidateCount < len(candidates) {
+					candidates[candidateCount] = witness
+					candidateCount++
+				}
+			}
+		}
+		for _, candidate := range regexWitnessCandidates {
+			if candidateCount < len(candidates) {
+				candidates[candidateCount] = candidate
+				candidateCount++
+			}
+		}
+		for _, candidate := range candidates[:candidateCount] {
+			if satisfiesSymbolicRegexConstraints(candidate, constraint.id, constraints, *model) {
+				setExistingString(model, constraint.id, candidate)
+				break
+			}
+		}
+	}
+}
+
+func collectSymbolicRegexConstraints(term Term[BoolSort], negated bool, constraints *[]symbolicRegexConstraint) {
+	switch value := term.(type) {
+	case Not:
+		collectSymbolicRegexConstraints(value.Value, !negated, constraints)
+	case And:
+		if !negated {
+			for _, item := range value.Values {
+				collectSymbolicRegexConstraints(item, false, constraints)
+			}
+		}
+	case BooleanConjunction:
+		if !negated {
+			items, polarities := value.values()
+			for index, item := range items {
+				collectSymbolicRegexConstraints(item, polarities[index], constraints)
+			}
+		}
+	case stringInRegex:
+		if id, ok := stringSymbolID(value.value); ok {
+			*constraints = append(*constraints, symbolicRegexConstraint{
+				id: id, expression: value.expression, negated: negated,
+			})
+		}
+	}
+}
+
+func satisfiesSymbolicRegexConstraints(candidate string, id int, constraints []symbolicRegexConstraint, model stringModel) bool {
+	for _, constraint := range constraints {
+		if constraint.id != id {
+			continue
+		}
+		accepted, known := regexCandidateMembership(candidate, constraint.expression, model)
+		if !known || accepted == constraint.negated {
+			return false
+		}
+	}
+	return true
+}
+
+func regexCandidateMembership(candidate string, expression Regex[StringSort], model stringModel) (bool, bool) {
+	if witness, ok := regexExpressionWitness(expression, model, integerModel{}); ok && candidate == witness {
+		return true, true
+	}
+	return matchesStringRegex(candidate, expression, model, integerModel{})
+}
+
 func regexWitness(node *regexNode, model stringModel, integers integerModel) (string, bool) {
 	if node == nil {
 		return "", false
@@ -581,6 +801,11 @@ type regexMatcher struct {
 }
 
 func matchesStringRegex(value string, expression Regex[StringSort], strings stringModel, integers integerModel) (bool, bool) {
+	if expression.compact.count != 0 {
+		if matched, handled := matchesCompactStringRegex(value, expression.compact); handled {
+			return matched, true
+		}
+	}
 	root := regexExpressionRoot(expression)
 	if root == nil {
 		return false, false
@@ -589,6 +814,190 @@ func matchesStringRegex(value string, expression Regex[StringSort], strings stri
 	matcher := regexMatcher{input: input, strings: strings, integers: integers, memo: make(map[regexMatchKey][]bool)}
 	ends, ok := matcher.ends(root, 0)
 	return ok && ends[len(input)], ok
+}
+
+func matchesCompactStringRegex(value string, compact compactRegex) (bool, bool) {
+	if len(value) > 62 {
+		return false, false
+	}
+	var input [62]byte
+	for index := range value {
+		if value[index] >= utf8.RuneSelf {
+			return false, false
+		}
+		input[index] = value[index]
+	}
+	var left [8]int8
+	var right [8]int8
+	var stack [8]int8
+	depth := 0
+	for index, operation := range compact.inline[:compact.count] {
+		left[index], right[index] = -1, -1
+		switch operation.kind {
+		case regexComplement, regexStar, regexLoop:
+			if depth < 1 {
+				return false, false
+			}
+			left[index] = stack[depth-1]
+			depth--
+		case regexConcat, regexUnion, regexIntersection, regexDifference:
+			if depth < 2 {
+				return false, false
+			}
+			left[index], right[index] = stack[depth-2], stack[depth-1]
+			depth -= 2
+		}
+		stack[depth] = int8(index)
+		depth++
+	}
+	if depth != 1 {
+		return false, false
+	}
+	root := int(stack[0])
+	ends, handled := compactRegexEnds(root, 0, input, len(value), compact, left, right)
+	return handled && ends&(uint64(1)<<len(value)) != 0, handled
+}
+
+func compactRegexEnds(
+	index int,
+	start int,
+	input [62]byte,
+	length int,
+	compact compactRegex,
+	left [8]int8,
+	right [8]int8,
+) (uint64, bool) {
+	operation := compact.inline[index]
+	switch operation.kind {
+	case regexNone:
+		return 0, true
+	case regexEpsilon:
+		return uint64(1) << start, true
+	case regexAll:
+		var result uint64
+		for end := start; end <= length; end++ {
+			result |= uint64(1) << end
+		}
+		return result, true
+	case regexAllChar:
+		if start < length {
+			return uint64(1) << (start + 1), true
+		}
+		return 0, true
+	case regexLiteral:
+		if !asciiString(operation.first) || start+len(operation.first) > length {
+			return 0, asciiString(operation.first)
+		}
+		for offset := range operation.first {
+			if input[start+offset] != operation.first[offset] {
+				return 0, true
+			}
+		}
+		return uint64(1) << (start + len(operation.first)), true
+	case regexRange:
+		if len(operation.first) != 1 || len(operation.second) != 1 ||
+			operation.first[0] >= utf8.RuneSelf || operation.second[0] >= utf8.RuneSelf {
+			return 0, false
+		}
+		if start < length && input[start] >= operation.first[0] && input[start] <= operation.second[0] {
+			return uint64(1) << (start + 1), true
+		}
+		return 0, true
+	case regexConcat:
+		first, firstOK := compactRegexEnds(int(left[index]), start, input, length, compact, left, right)
+		if !firstOK {
+			return 0, false
+		}
+		var result uint64
+		for middle := start; middle <= length; middle++ {
+			if first&(uint64(1)<<middle) == 0 {
+				continue
+			}
+			next, ok := compactRegexEnds(int(right[index]), middle, input, length, compact, left, right)
+			if !ok {
+				return 0, false
+			}
+			result |= next
+		}
+		return result, true
+	case regexUnion, regexIntersection, regexDifference:
+		first, firstOK := compactRegexEnds(int(left[index]), start, input, length, compact, left, right)
+		second, secondOK := compactRegexEnds(int(right[index]), start, input, length, compact, left, right)
+		if !firstOK || !secondOK {
+			return 0, false
+		}
+		switch operation.kind {
+		case regexUnion:
+			return first | second, true
+		case regexIntersection:
+			return first & second, true
+		default:
+			return first &^ second, true
+		}
+	case regexComplement:
+		child, ok := compactRegexEnds(int(left[index]), start, input, length, compact, left, right)
+		if !ok {
+			return 0, false
+		}
+		var universe uint64
+		for end := start; end <= length; end++ {
+			universe |= uint64(1) << end
+		}
+		return universe &^ child, true
+	case regexStar:
+		result := uint64(1) << start
+		for changed := true; changed; {
+			changed = false
+			for middle := start; middle <= length; middle++ {
+				if result&(uint64(1)<<middle) == 0 {
+					continue
+				}
+				next, ok := compactRegexEnds(int(left[index]), middle, input, length, compact, left, right)
+				if !ok {
+					return 0, false
+				}
+				expanded := result | next
+				changed = changed || expanded != result
+				result = expanded
+			}
+		}
+		return result, true
+	case regexLoop:
+		current := uint64(1) << start
+		var result uint64
+		for count := 0; count <= operation.maximum; count++ {
+			if count >= operation.minimum {
+				result |= current
+			}
+			if count == operation.maximum {
+				break
+			}
+			var next uint64
+			for middle := start; middle <= length; middle++ {
+				if current&(uint64(1)<<middle) == 0 {
+					continue
+				}
+				ends, ok := compactRegexEnds(int(left[index]), middle, input, length, compact, left, right)
+				if !ok {
+					return 0, false
+				}
+				next |= ends
+			}
+			current = next
+		}
+		return result, true
+	default:
+		return 0, false
+	}
+}
+
+func asciiString(value string) bool {
+	for index := range value {
+		if value[index] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
 }
 
 func (matcher *regexMatcher) ends(node *regexNode, start int) ([]bool, bool) {
