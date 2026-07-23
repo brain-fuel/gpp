@@ -604,6 +604,125 @@ func TestThreeSymbolAffineLengthIntegerSequenceWitness(t *testing.T) {
 	}
 }
 
+func TestMultiSymbolAffineLengthIntegerSequenceInequalities(t *testing.T) {
+	unit := func(value int64) Term[SequenceSort[IntSort]] {
+		return SequenceUnit[IntSort](Integer{Value: value})
+	}
+	prefix := func(values ...int64) Term[SequenceSort[IntSort]] {
+		terms := make([]Term[SequenceSort[IntSort]], len(values))
+		for index, value := range values {
+			terms[index] = unit(value)
+		}
+		return SequenceConcat(terms...)
+	}
+	x := SequenceConst[IntSort](47, "x")
+	y := SequenceConst[IntSort](48, "y")
+	z := SequenceConst[IntSort](49, "z")
+	twoSymbol := And{Values: []Term[BoolSort]{
+		LessEqual{
+			Left: Add{Values: []Term[IntSort]{
+				IntegerScale{
+					Coefficient: NewIntegerValue(2),
+					Value:       SequenceLength(x),
+				},
+				SequenceLength(y),
+			}},
+			Right: Integer{Value: 7},
+		},
+		SequenceHasPrefix(x, prefix(1, 2, 3)),
+		SequenceHasSuffix(y, unit(4)),
+	}}
+	twoResult, ok := Check(Assert(30, New(), twoSymbol)).(Satisfiable)
+	if !ok {
+		t.Fatal("two-symbol affine inequality must be satisfiable")
+	}
+	xValue, xFound := IntegerSequenceModelValue(twoResult.Value, x)
+	yValue, yFound := IntegerSequenceModelValue(twoResult.Value, y)
+	if !xFound || !yFound || 2*xValue.Len()+yValue.Len() > 7 {
+		t.Fatalf(
+			"two-symbol lengths=(%d,%v)/(%d,%v)",
+			xValue.Len(), xFound, yValue.Len(), yFound,
+		)
+	}
+
+	threeSymbol := And{Values: []Term[BoolSort]{
+		Less{
+			Left: Add{Values: []Term[IntSort]{
+				SequenceLength(x),
+				SequenceLength(y),
+				SequenceLength(z),
+			}},
+			Right: Integer{Value: 7},
+		},
+		SequenceHasPrefix(x, prefix(1, 2)),
+		SequenceHasPrefix(y, prefix(3, 4)),
+		SequenceHasSuffix(z, prefix(5, 6)),
+	}}
+	threeResult, ok := Check(Assert(31, New(), threeSymbol)).(Satisfiable)
+	if !ok {
+		t.Fatal("strict three-symbol affine inequality must be satisfiable")
+	}
+	xValue, xFound = IntegerSequenceModelValue(threeResult.Value, x)
+	yValue, yFound = IntegerSequenceModelValue(threeResult.Value, y)
+	zValue, zFound := IntegerSequenceModelValue(threeResult.Value, z)
+	if !xFound || !yFound || !zFound ||
+		xValue.Len()+yValue.Len()+zValue.Len() >= 7 {
+		t.Fatalf(
+			"three-symbol lengths=(%d,%v)/(%d,%v)/(%d,%v)",
+			xValue.Len(), xFound, yValue.Len(), yFound, zValue.Len(), zFound,
+		)
+	}
+
+	negativeLast := And{Values: []Term[BoolSort]{
+		LessEqual{
+			Left: Add{Values: []Term[IntSort]{
+				SequenceLength(x),
+				SequenceLength(y),
+				IntegerScale{
+					Coefficient: NewIntegerValue(-2),
+					Value:       SequenceLength(z),
+				},
+			}},
+			Right: Integer{Value: -3},
+		},
+		SequenceHasPrefix(x, unit(1)),
+		SequenceHasPrefix(y, unit(2)),
+		SequenceHasSuffix(z, unit(3)),
+	}}
+	negativeResult, ok := Check(Assert(32, New(), negativeLast)).(Satisfiable)
+	if !ok {
+		t.Fatal("negative final coefficient must be satisfiable")
+	}
+	xValue, xFound = IntegerSequenceModelValue(negativeResult.Value, x)
+	yValue, yFound = IntegerSequenceModelValue(negativeResult.Value, y)
+	zValue, zFound = IntegerSequenceModelValue(negativeResult.Value, z)
+	if !xFound || !yFound || !zFound ||
+		xValue.Len()+yValue.Len()-2*zValue.Len() > -3 {
+		t.Fatalf(
+			"negative lengths=(%d,%v)/(%d,%v)/(%d,%v)",
+			xValue.Len(), xFound, yValue.Len(), yFound, zValue.Len(), zFound,
+		)
+	}
+
+	conflicting := And{Values: []Term[BoolSort]{
+		LessEqual{
+			Left: Add{Values: []Term[IntSort]{
+				SequenceLength(x),
+				SequenceLength(y),
+			}},
+			Right: Integer{Value: 3},
+		},
+		Equal{Left: SequenceLength(x), Right: Integer{Value: 2}},
+		Equal{Left: SequenceLength(y), Right: Integer{Value: 2}},
+	}}
+	if checked := Check(Assert(33, New(), conflicting)); func() bool {
+		_, ok := checked.(Unsatisfiable)
+		return ok
+	}() == false {
+		t.Fatalf("conflicting result=%T", checked)
+	}
+}
+
 func TestSymbolicIntegerSequenceEqualityClasses(t *testing.T) {
 	unit := func(value int64) Term[SequenceSort[IntSort]] {
 		return SequenceUnit[IntSort](Integer{Value: value})

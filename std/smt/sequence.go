@@ -158,6 +158,7 @@ type integerSequenceLengthRelation struct {
 	coefficients [3]IntegerValue
 	count        int
 	constant     IntegerValue
+	equality     bool
 }
 
 func (set *integerSequenceRequirementSet) addRelation(
@@ -1401,6 +1402,7 @@ func collectAffineIntegerSequenceLengthEquality(
 					coefficients: multi.coefficients,
 					count:        multi.count,
 					constant:     multi.constant,
+					equality:     true,
 				})
 				return true, true, true
 			}
@@ -1459,7 +1461,40 @@ func collectAffineIntegerSequenceLengthBound(
 	}
 	form := normalizeIntegerSequenceLengthAffine(left, right)
 	if !form.valid {
-		return true, false, true
+		multi := normalizeIntegerSequenceLengthMultiAffine(left, right, aliases)
+		if !multi.valid {
+			return true, false, true
+		}
+		if strict {
+			multi.constant = AddIntegerValue(
+				multi.constant, NewIntegerValue(1),
+			)
+		}
+		switch multi.count {
+		case 0:
+			return CompareIntegerValue(multi.constant, IntegerValue{}) <= 0,
+				true, true
+		case 1:
+			form = integerSequenceLengthAffine{
+				id:          multi.ids[0],
+				coefficient: multi.coefficients[0],
+				constant:    multi.constant,
+				hasSymbol:   true,
+				valid:       true,
+			}
+			strict = false
+		default:
+			for index := 0; index < multi.count; index++ {
+				requirements.forSymbol(multi.ids[index])
+			}
+			requirements.addRelation(integerSequenceLengthRelation{
+				ids:          multi.ids,
+				coefficients: multi.coefficients,
+				count:        multi.count,
+				constant:     multi.constant,
+			})
+			return true, true, true
+		}
 	}
 	if !form.hasSymbol {
 		var term Term[BoolSort] = LessEqual{Left: left, Right: right}
@@ -2057,6 +2092,39 @@ func (search *integerSequenceLengthSearch) buildCandidate() (bool, bool) {
 	return true, true
 }
 
+func (search *integerSequenceLengthSearch) inequalityCanStillHold(
+	index int,
+	sum IntegerValue,
+) bool {
+	for ; index < search.relation.count; index++ {
+		start, end, admissible := integerSequenceLengthRange(
+			search.requirements[index],
+			search.assigned[index],
+			search.hasAssigned[index],
+		)
+		if !admissible {
+			return false
+		}
+		length := start
+		if CompareIntegerValue(
+			search.relation.coefficients[index], IntegerValue{},
+		) < 0 {
+			length = end
+		}
+		sum = AddIntegerValue(
+			sum,
+			MultiplyIntegerValue(
+				search.relation.coefficients[index],
+				NewIntegerValue(int64(length)),
+			),
+		)
+	}
+	return CompareIntegerValue(
+		AddIntegerValue(sum, search.relation.constant),
+		IntegerValue{},
+	) <= 0
+}
+
 func (search *integerSequenceLengthSearch) solve(
 	index int,
 	sum IntegerValue,
@@ -2067,25 +2135,52 @@ func (search *integerSequenceLengthSearch) solve(
 			return false, false
 		}
 		right := NegateIntegerValue(AddIntegerValue(sum, search.relation.constant))
-		lengthValue, remainder, ok := DivModIntegerValue(
-			right, search.relation.coefficients[index],
-		)
-		if !ok || CompareIntegerValue(remainder, IntegerValue{}) != 0 {
-			return false, true
-		}
-		length, fits := lengthValue.Int64()
-		if !fits || length < 0 || length > maximumConstructedIntegerSequenceLength {
-			return false, true
-		}
 		start, end, admissible := integerSequenceLengthRange(
 			search.requirements[index],
 			search.assigned[index],
 			search.hasAssigned[index],
 		)
-		if !admissible || int(length) < start || int(length) > end {
+		if !admissible {
 			return false, true
 		}
-		search.lengths[index] = int(length)
+		lengthValue, remainder, ok := DivModIntegerValue(
+			right, search.relation.coefficients[index],
+		)
+		if !ok {
+			return false, true
+		}
+		if search.relation.equality {
+			if CompareIntegerValue(remainder, IntegerValue{}) != 0 {
+				return false, true
+			}
+			length, fits := lengthValue.Int64()
+			if !fits || length < int64(start) || length > int64(end) {
+				return false, true
+			}
+			search.lengths[index] = int(length)
+			return search.buildCandidate()
+		}
+		length, fits := lengthValue.Int64()
+		coefficientSign := CompareIntegerValue(
+			search.relation.coefficients[index], IntegerValue{},
+		)
+		if coefficientSign > 0 {
+			if fits && int64(end) > length {
+				end = int(length)
+			} else if !fits && CompareIntegerValue(lengthValue, IntegerValue{}) < 0 {
+				return false, true
+			}
+		} else {
+			if fits && int64(start) < length {
+				start = int(length)
+			} else if !fits && CompareIntegerValue(lengthValue, IntegerValue{}) > 0 {
+				return false, true
+			}
+		}
+		if start > end {
+			return false, true
+		}
+		search.lengths[index] = start
 		return search.buildCandidate()
 	}
 	start, end, admissible := integerSequenceLengthRange(
@@ -2102,7 +2197,12 @@ func (search *integerSequenceLengthSearch) solve(
 			search.relation.coefficients[index],
 			NewIntegerValue(int64(length)),
 		)
-		found, complete := search.solve(index+1, AddIntegerValue(sum, term))
+		nextSum := AddIntegerValue(sum, term)
+		if !search.relation.equality &&
+			!search.inequalityCanStillHold(index+1, nextSum) {
+			continue
+		}
+		found, complete := search.solve(index+1, nextSum)
 		if found || !complete {
 			return found, complete
 		}
@@ -2150,12 +2250,28 @@ func bindPositiveIntegerSequenceWitnesses(
 			return consistent, supported
 		}
 	}
-	for index := 0; index < requirements.relationCount; index++ {
-		consistent, supported := solveIntegerSequenceLengthRelation(
-			requirements.relationAt(index), &requirements, model,
-		)
-		if !consistent || !supported {
-			return consistent, supported
+	for equalityPass := true; ; equalityPass = false {
+		inequalities := 0
+		for index := 0; index < requirements.relationCount; index++ {
+			relation := requirements.relationAt(index)
+			if !relation.equality {
+				inequalities++
+			}
+			if relation.equality != equalityPass {
+				continue
+			}
+			if !equalityPass && inequalities > 1 {
+				return true, false
+			}
+			consistent, supported := solveIntegerSequenceLengthRelation(
+				relation, &requirements, model,
+			)
+			if !consistent || !supported {
+				return consistent, supported
+			}
+		}
+		if !equalityPass {
+			break
 		}
 	}
 	for index := 0; index < requirements.count && index < len(requirements.inline); index++ {
