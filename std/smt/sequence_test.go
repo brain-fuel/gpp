@@ -274,3 +274,88 @@ func TestPositiveSymbolicIntegerSequenceWitness(t *testing.T) {
 		t.Fatalf("unsupported result=%T", checked)
 	}
 }
+
+func TestExactLengthSymbolicIntegerSequenceWitness(t *testing.T) {
+	unit := func(value int64) Term[SequenceSort[IntSort]] {
+		return SequenceUnit[IntSort](Integer{Value: value})
+	}
+	x := SequenceConst[IntSort](20, "x")
+	formula := And{Values: []Term[BoolSort]{
+		SequenceHasPrefix(x, SequenceConcat(unit(1), unit(2))),
+		SequenceContains(x, unit(3)),
+		SequenceHasSuffix(x, SequenceConcat(unit(5), unit(6))),
+		Equal{Left: SequenceLength(x), Right: Integer{Value: 6}},
+	}}
+	checked := Check(Assert(11, New(), formula))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", checked)
+	}
+	if valid, found := BoolValue(result.Value, formula); !found || !valid {
+		t.Fatalf("formula=(%v,%v)", valid, found)
+	}
+	value, found := IntegerSequenceModelValue(result.Value, x)
+	if !found || value.Len() != 6 {
+		t.Fatalf("x len=(%d,%v)", value.Len(), found)
+	}
+	padding, ok := value.At(3)
+	if !ok || CompareIntegerValue(padding, IntegerValue{}) != 0 {
+		t.Fatalf("padding=(%v,%v)", padding, ok)
+	}
+
+	empty := SequenceConst[IntSort](21, "empty")
+	emptyResult, ok := Check(Assert(
+		12,
+		New(),
+		Equal{Left: SequenceLength(empty), Right: Integer{Value: 0}},
+	)).(Satisfiable)
+	if !ok {
+		t.Fatal("zero length must construct the empty sequence")
+	}
+	if value, found := IntegerSequenceModelValue(emptyResult.Value, empty); !found || value.Len() != 0 {
+		t.Fatalf("empty len=(%d,%v)", value.Len(), found)
+	}
+
+	conflicting := And{Values: []Term[BoolSort]{
+		Equal{Left: SequenceLength(x), Right: Integer{Value: 2}},
+		Equal{Left: SequenceLength(x), Right: Integer{Value: 3}},
+	}}
+	if checked := Check(Assert(13, New(), conflicting)); func() bool {
+		_, ok := checked.(Unsatisfiable)
+		return ok
+	}() == false {
+		t.Fatalf("conflicting result=%T", checked)
+	}
+
+	tooShort := And{Values: []Term[BoolSort]{
+		SequenceContains(x, SequenceConcat(unit(1), unit(2), unit(3))),
+		Equal{Left: SequenceLength(x), Right: Integer{Value: 2}},
+	}}
+	if checked := Check(Assert(14, New(), tooShort)); func() bool {
+		_, ok := checked.(Unsatisfiable)
+		return ok
+	}() == false {
+		t.Fatalf("too-short result=%T", checked)
+	}
+
+	overlapRequired := And{Values: []Term[BoolSort]{
+		SequenceHasPrefix(x, SequenceConcat(unit(1), unit(2))),
+		SequenceHasSuffix(x, SequenceConcat(unit(2), unit(3))),
+		Equal{Left: SequenceLength(x), Right: Integer{Value: 3}},
+	}}
+	overlapResult, ok := Check(Assert(15, New(), overlapRequired)).(Satisfiable)
+	if !ok {
+		t.Fatal("overlap must be satisfiable")
+	}
+	if value, found := IntegerSequenceModelValue(overlapResult.Value, x); !found || value.Len() != 3 {
+		t.Fatalf("overlap len=(%d,%v)", value.Len(), found)
+	}
+
+	negative := Equal{Left: SequenceLength(x), Right: Integer{Value: -1}}
+	if checked := Check(Assert(16, New(), negative)); func() bool {
+		_, ok := checked.(Unsatisfiable)
+		return ok
+	}() == false {
+		t.Fatalf("negative result=%T", checked)
+	}
+}

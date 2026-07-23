@@ -52,12 +52,16 @@ type integerSequenceModel struct {
 type integerSequenceRequirements struct {
 	prefix      IntegerSequenceValue
 	suffix      IntegerSequenceValue
+	exactLength int
 	hasPrefix   bool
 	hasSuffix   bool
+	hasLength   bool
 	contains    [4]IntegerSequenceValue
 	overflow    []IntegerSequenceValue
 	containment int
 }
+
+const maximumConstructedIntegerSequenceLength = 4096
 
 type integerSequenceRequirementEntry struct {
 	id           int
@@ -847,6 +851,30 @@ func addIntegerSequenceSuffix(
 	return integerSequenceEndsWith(requirements.suffix, suffix)
 }
 
+func addIntegerSequenceExactLength(
+	requirements *integerSequenceRequirements,
+	length int,
+) bool {
+	if !requirements.hasLength {
+		requirements.exactLength = length
+		requirements.hasLength = true
+		return true
+	}
+	return requirements.exactLength == length
+}
+
+func symbolicIntegerSequenceLength(term any) (int, bool) {
+	length, ok := term.(sequenceLength)
+	if !ok {
+		return 0, false
+	}
+	sequence, ok := length.value.(Term[SequenceSort[IntSort]])
+	if !ok {
+		return 0, false
+	}
+	return integerSequenceSymbolID(sequence)
+}
+
 func collectPositiveIntegerSequenceRequirements(
 	term Term[BoolSort],
 	model integerSequenceModel,
@@ -886,6 +914,48 @@ func collectPositiveIntegerSequenceRequirements(
 		}
 		return true, true
 	case Equal:
+		lengthID, leftLength := symbolicIntegerSequenceLength(value.Left)
+		lengthTerm := value.Right
+		if !leftLength {
+			lengthID, leftLength = symbolicIntegerSequenceLength(value.Right)
+			lengthTerm = value.Left
+		}
+		if leftLength {
+			if assigned, ok := model.lookup(lengthID); ok {
+				ground, ok := lengthTerm.(Term[IntSort])
+				if !ok {
+					return true, false
+				}
+				expected, ok := evaluateInteger(
+					ground, booleanModel{}, integerModel{}, rationalModel{},
+				)
+				if !ok {
+					return true, false
+				}
+				actual, fits := expected.Int64()
+				return fits && actual == int64(assigned.Len()), true
+			}
+			ground, ok := lengthTerm.(Term[IntSort])
+			if !ok {
+				return true, false
+			}
+			expected, ok := evaluateInteger(
+				ground, booleanModel{}, integerModel{}, rationalModel{},
+			)
+			if !ok {
+				return true, false
+			}
+			length, fits := expected.Int64()
+			if !fits || length > maximumConstructedIntegerSequenceLength {
+				return true, false
+			}
+			if length < 0 {
+				return false, true
+			}
+			return addIntegerSequenceExactLength(
+				requirements.forSymbol(lengthID), int(length),
+			), true
+		}
 		_, leftSymbol := integerSequenceSymbolID(value.Left)
 		_, rightSymbol := integerSequenceSymbolID(value.Right)
 		if leftSymbol || rightSymbol {
@@ -979,7 +1049,186 @@ func collectPositiveIntegerSequenceRequirements(
 	}
 }
 
-func buildIntegerSequenceWitness(requirements integerSequenceRequirements) IntegerSequenceValue {
+type fixedIntegerSequenceBuilder struct {
+	length         int
+	inline         [8]IntegerValue
+	inlineAssigned [8]bool
+	overflow       []IntegerValue
+	assigned       []bool
+}
+
+func newFixedIntegerSequenceBuilder(length int) fixedIntegerSequenceBuilder {
+	result := fixedIntegerSequenceBuilder{length: length}
+	if length > len(result.inline) {
+		result.overflow = make([]IntegerValue, length)
+		result.assigned = make([]bool, length)
+	}
+	return result
+}
+
+func (builder *fixedIntegerSequenceBuilder) valueAt(index int) (IntegerValue, bool) {
+	if builder.overflow != nil {
+		return builder.overflow[index], builder.assigned[index]
+	}
+	return builder.inline[index], builder.inlineAssigned[index]
+}
+
+func (builder *fixedIntegerSequenceBuilder) assign(index int, value IntegerValue) bool {
+	existing, assigned := builder.valueAt(index)
+	if assigned {
+		return CompareIntegerValue(existing, value) == 0
+	}
+	if builder.overflow != nil {
+		builder.overflow[index] = value
+		builder.assigned[index] = true
+	} else {
+		builder.inline[index] = value
+		builder.inlineAssigned[index] = true
+	}
+	return true
+}
+
+func (builder *fixedIntegerSequenceBuilder) clear(index int) {
+	if builder.overflow != nil {
+		builder.assigned[index] = false
+		builder.overflow[index] = IntegerValue{}
+	} else {
+		builder.inlineAssigned[index] = false
+		builder.inline[index] = IntegerValue{}
+	}
+}
+
+func (builder *fixedIntegerSequenceBuilder) placeFixed(
+	value IntegerSequenceValue,
+	offset int,
+) bool {
+	for index := 0; index < value.Len(); index++ {
+		element, _ := value.At(index)
+		if !builder.assign(offset+index, element) {
+			return false
+		}
+	}
+	return true
+}
+
+func (builder *fixedIntegerSequenceBuilder) tryPlacement(
+	value IntegerSequenceValue,
+	offset int,
+	changed *[8]int,
+	overflow *[]int,
+) bool {
+	for index := 0; index < value.Len(); index++ {
+		position := offset + index
+		element, _ := value.At(index)
+		existing, assigned := builder.valueAt(position)
+		if assigned {
+			if CompareIntegerValue(existing, element) != 0 {
+				builder.rollbackPlacement(changed, overflow)
+				return false
+			}
+			continue
+		}
+		builder.assign(position, element)
+		if len(*overflow) != 0 || index >= len(changed) {
+			*overflow = append(*overflow, position)
+		} else {
+			changed[index] = position + 1
+		}
+	}
+	return true
+}
+
+func (builder *fixedIntegerSequenceBuilder) rollbackPlacement(
+	changed *[8]int,
+	overflow *[]int,
+) {
+	for index := range changed {
+		if changed[index] != 0 {
+			builder.clear(changed[index] - 1)
+			changed[index] = 0
+		}
+	}
+	for _, position := range *overflow {
+		builder.clear(position)
+	}
+	*overflow = (*overflow)[:0]
+}
+
+func placeIntegerSequenceContainments(
+	builder *fixedIntegerSequenceBuilder,
+	requirements integerSequenceRequirements,
+	index int,
+	states *int,
+) (bool, bool) {
+	if index == requirements.containment {
+		return true, true
+	}
+	part := requirements.containmentAt(index)
+	for offset := 0; offset+part.Len() <= builder.length; offset++ {
+		*states++
+		if *states > maximumConstructedIntegerSequenceLength {
+			return false, false
+		}
+		var changed [8]int
+		var overflow []int
+		if !builder.tryPlacement(part, offset, &changed, &overflow) {
+			continue
+		}
+		found, complete := placeIntegerSequenceContainments(
+			builder, requirements, index+1, states,
+		)
+		if found || !complete {
+			return found, complete
+		}
+		builder.rollbackPlacement(&changed, &overflow)
+	}
+	return false, true
+}
+
+func buildFixedLengthIntegerSequenceWitness(
+	requirements integerSequenceRequirements,
+) (IntegerSequenceValue, bool, bool) {
+	length := requirements.exactLength
+	if requirements.prefix.Len() > length || requirements.suffix.Len() > length {
+		return IntegerSequenceValue{}, false, true
+	}
+	for index := 0; index < requirements.containment; index++ {
+		if requirements.containmentAt(index).Len() > length {
+			return IntegerSequenceValue{}, false, true
+		}
+	}
+	builder := newFixedIntegerSequenceBuilder(length)
+	if requirements.hasPrefix && !builder.placeFixed(requirements.prefix, 0) {
+		return IntegerSequenceValue{}, false, true
+	}
+	if requirements.hasSuffix &&
+		!builder.placeFixed(requirements.suffix, length-requirements.suffix.Len()) {
+		return IntegerSequenceValue{}, false, true
+	}
+	states := 0
+	found, complete := placeIntegerSequenceContainments(
+		&builder, requirements, 0, &states,
+	)
+	if !found {
+		return IntegerSequenceValue{}, !complete, complete
+	}
+	var result IntegerSequenceValue
+	for index := 0; index < length; index++ {
+		value, assigned := builder.valueAt(index)
+		if !assigned {
+			value = IntegerValue{}
+		}
+		result.append(value)
+	}
+	return result, true, true
+}
+
+func buildIntegerSequenceWitness(
+	requirements integerSequenceRequirements,
+) (IntegerSequenceValue, bool, bool) {
+	if requirements.hasLength {
+		return buildFixedLengthIntegerSequenceWitness(requirements)
+	}
 	var result IntegerSequenceValue
 	if requirements.hasPrefix {
 		result.appendSequence(requirements.prefix)
@@ -993,7 +1242,7 @@ func buildIntegerSequenceWitness(requirements integerSequenceRequirements) Integ
 	if requirements.hasSuffix && !integerSequenceEndsWith(result, requirements.suffix) {
 		result.appendSequence(requirements.suffix)
 	}
-	return result
+	return result, true, true
 }
 
 func bindPositiveIntegerSequenceWitnesses(
@@ -1011,12 +1260,20 @@ func bindPositiveIntegerSequenceWitnesses(
 	}
 	for index := 0; index < requirements.count && index < len(requirements.inline); index++ {
 		entry := requirements.inline[index]
-		if !model.set(entry.id, buildIntegerSequenceWitness(entry.requirements)) {
+		witness, consistent, supported := buildIntegerSequenceWitness(entry.requirements)
+		if !consistent || !supported {
+			return consistent, supported
+		}
+		if !model.set(entry.id, witness) {
 			return false, true
 		}
 	}
 	for id, entry := range requirements.overflow {
-		if !model.set(id, buildIntegerSequenceWitness(*entry)) {
+		witness, consistent, supported := buildIntegerSequenceWitness(*entry)
+		if !consistent || !supported {
+			return consistent, supported
+		}
+		if !model.set(id, witness) {
 			return false, true
 		}
 	}
