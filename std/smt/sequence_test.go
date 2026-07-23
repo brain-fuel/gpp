@@ -203,9 +203,12 @@ func TestGroundAssignedSymbolicIntegerSequence(t *testing.T) {
 	}
 
 	unbound := SequenceContains(x, unit(2))
-	unknown := Check(Assert(7, New(), unbound))
-	if _, ok := unknown.(Unknown); !ok {
-		t.Fatalf("unbound result=%T", unknown)
+	symbolic, ok := Check(Assert(7, New(), unbound)).(Satisfiable)
+	if !ok {
+		t.Fatalf("unbound result=%T", Check(Assert(7, New(), unbound)))
+	}
+	if value, found := IntegerSequenceModelValue(symbolic.Value, x); !found || value.Len() != 1 {
+		t.Fatalf("symbolic x len=(%d,%v)", value.Len(), found)
 	}
 
 	assumed := CheckAssuming(
@@ -219,5 +222,55 @@ func TestGroundAssignedSymbolicIntegerSequence(t *testing.T) {
 	}
 	if value, found := IntegerSequenceModelValue(assumptionResult.Value, x); !found || value.Len() != 3 {
 		t.Fatalf("assumption x len=(%d,%v)", value.Len(), found)
+	}
+}
+
+func TestPositiveSymbolicIntegerSequenceWitness(t *testing.T) {
+	unit := func(value int64) Term[SequenceSort[IntSort]] {
+		return SequenceUnit[IntSort](Integer{Value: value})
+	}
+	x := SequenceConst[IntSort](10, "x")
+	y := SequenceConst[IntSort](11, "y")
+	formula := And{Values: []Term[BoolSort]{
+		SequenceHasPrefix(x, SequenceConcat(unit(1), unit(2))),
+		SequenceHasPrefix(x, unit(1)),
+		SequenceContains(x, SequenceConcat(unit(3), unit(4))),
+		SequenceContains(x, unit(3)),
+		SequenceHasSuffix(x, SequenceConcat(unit(5), unit(6))),
+		SequenceHasSuffix(x, unit(6)),
+		SequenceContains(y, SequenceConcat(unit(9), unit(8))),
+	}}
+	checked := Check(Assert(8, New(), formula))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", checked)
+	}
+	if valid, found := BoolValue(result.Value, formula); !found || !valid {
+		t.Fatalf("formula=(%v,%v)", valid, found)
+	}
+	if value, found := IntegerSequenceModelValue(result.Value, x); !found || value.Len() != 6 {
+		t.Fatalf("x len=(%d,%v)", value.Len(), found)
+	}
+	if value, found := IntegerSequenceModelValue(result.Value, y); !found || value.Len() != 2 {
+		t.Fatalf("y len=(%d,%v)", value.Len(), found)
+	}
+
+	incompatible := And{Values: []Term[BoolSort]{
+		SequenceHasPrefix(x, unit(1)),
+		SequenceHasPrefix(x, unit(2)),
+	}}
+	if checked := Check(Assert(9, New(), incompatible)); func() bool {
+		_, ok := checked.(Unsatisfiable)
+		return ok
+	}() == false {
+		t.Fatalf("incompatible result=%T", checked)
+	}
+
+	unsupported := Not{Value: SequenceContains(x, unit(1))}
+	if checked := Check(Assert(10, New(), unsupported)); func() bool {
+		_, ok := checked.(Unknown)
+		return ok
+	}() == false {
+		t.Fatalf("unsupported result=%T", checked)
 	}
 }

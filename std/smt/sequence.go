@@ -49,6 +49,27 @@ type integerSequenceModel struct {
 	overflow map[int]IntegerSequenceValue
 }
 
+type integerSequenceRequirements struct {
+	prefix      IntegerSequenceValue
+	suffix      IntegerSequenceValue
+	hasPrefix   bool
+	hasSuffix   bool
+	contains    [4]IntegerSequenceValue
+	overflow    []IntegerSequenceValue
+	containment int
+}
+
+type integerSequenceRequirementEntry struct {
+	id           int
+	requirements integerSequenceRequirements
+}
+
+type integerSequenceRequirementSet struct {
+	count    int
+	inline   [4]integerSequenceRequirementEntry
+	overflow map[int]*integerSequenceRequirements
+}
+
 func (model integerSequenceModel) lookup(id int) (IntegerSequenceValue, bool) {
 	for index := 0; index < model.count && index < len(model.inline); index++ {
 		if model.inline[index].id == id {
@@ -82,6 +103,51 @@ func (model *integerSequenceModel) set(id int, value IntegerSequenceValue) bool 
 	model.overflow[id] = value
 	model.count++
 	return true
+}
+
+func (set *integerSequenceRequirementSet) forSymbol(id int) *integerSequenceRequirements {
+	for index := 0; index < set.count && index < len(set.inline); index++ {
+		if set.inline[index].id == id {
+			return &set.inline[index].requirements
+		}
+	}
+	if requirements := set.overflow[id]; requirements != nil {
+		return requirements
+	}
+	if set.count < len(set.inline) {
+		set.inline[set.count].id = id
+		set.count++
+		return &set.inline[set.count-1].requirements
+	}
+	if set.overflow == nil {
+		set.overflow = make(map[int]*integerSequenceRequirements)
+	}
+	requirements := new(integerSequenceRequirements)
+	set.overflow[id] = requirements
+	set.count++
+	return requirements
+}
+
+func (requirements *integerSequenceRequirements) addContainment(value IntegerSequenceValue) {
+	for index := 0; index < requirements.containment; index++ {
+		existing := requirements.containmentAt(index)
+		if equalIntegerSequences(existing, value) {
+			return
+		}
+	}
+	if requirements.containment < len(requirements.contains) {
+		requirements.contains[requirements.containment] = value
+	} else {
+		requirements.overflow = append(requirements.overflow, value)
+	}
+	requirements.containment++
+}
+
+func (requirements integerSequenceRequirements) containmentAt(index int) IntegerSequenceValue {
+	if index < len(requirements.contains) {
+		return requirements.contains[index]
+	}
+	return requirements.overflow[index-len(requirements.contains)]
 }
 
 // Len reports the number of elements.
@@ -732,7 +798,232 @@ func integerSequenceSymbolID(term any) (int, bool) {
 	return value.iD, ok
 }
 
-func solveGroundIntegerSequenceAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
+func integerSequenceStartsWith(
+	value,
+	prefix IntegerSequenceValue,
+) bool {
+	return prefix.Len() <= value.Len() &&
+		findIntegerSubsequence(value, prefix, 0) == 0
+}
+
+func integerSequenceEndsWith(
+	value,
+	suffix IntegerSequenceValue,
+) bool {
+	return suffix.Len() <= value.Len() &&
+		findIntegerSubsequence(value, suffix, value.Len()-suffix.Len()) ==
+			value.Len()-suffix.Len()
+}
+
+func addIntegerSequencePrefix(
+	requirements *integerSequenceRequirements,
+	prefix IntegerSequenceValue,
+) bool {
+	if !requirements.hasPrefix {
+		requirements.prefix = prefix
+		requirements.hasPrefix = true
+		return true
+	}
+	if integerSequenceStartsWith(prefix, requirements.prefix) {
+		requirements.prefix = prefix
+		return true
+	}
+	return integerSequenceStartsWith(requirements.prefix, prefix)
+}
+
+func addIntegerSequenceSuffix(
+	requirements *integerSequenceRequirements,
+	suffix IntegerSequenceValue,
+) bool {
+	if !requirements.hasSuffix {
+		requirements.suffix = suffix
+		requirements.hasSuffix = true
+		return true
+	}
+	if integerSequenceEndsWith(suffix, requirements.suffix) {
+		requirements.suffix = suffix
+		return true
+	}
+	return integerSequenceEndsWith(requirements.suffix, suffix)
+}
+
+func collectPositiveIntegerSequenceRequirements(
+	term Term[BoolSort],
+	model integerSequenceModel,
+	requirements *integerSequenceRequirementSet,
+) (bool, bool) {
+	switch value := term.(type) {
+	case And:
+		for _, item := range value.Values {
+			consistent, supported := collectPositiveIntegerSequenceRequirements(
+				item, model, requirements,
+			)
+			if !consistent || !supported {
+				return consistent, supported
+			}
+		}
+		return true, true
+	case BooleanConjunction:
+		items, negated := value.values()
+		for index, item := range items {
+			if negated[index] && containsIntegerSequenceTheory(item) {
+				_, ok := evaluateBoolWithIntegerSequences(
+					item, booleanModel{}, integerModel{}, rationalModel{}, model,
+				)
+				if !ok {
+					return true, false
+				}
+			}
+			if negated[index] {
+				continue
+			}
+			consistent, supported := collectPositiveIntegerSequenceRequirements(
+				item, model, requirements,
+			)
+			if !consistent || !supported {
+				return consistent, supported
+			}
+		}
+		return true, true
+	case Equal:
+		_, leftSymbol := integerSequenceSymbolID(value.Left)
+		_, rightSymbol := integerSequenceSymbolID(value.Right)
+		if leftSymbol || rightSymbol {
+			return true, true
+		}
+		if containsIntegerSequenceTheory(term) {
+			_, ok := evaluateBoolWithIntegerSequences(
+				term, booleanModel{}, integerModel{}, rationalModel{}, model,
+			)
+			return true, ok
+		}
+		return true, true
+	case sequenceContains:
+		sequence, sequenceOK := value.value.(Term[SequenceSort[IntSort]])
+		part, partOK := value.subsequence.(Term[SequenceSort[IntSort]])
+		if !sequenceOK || !partOK {
+			return true, false
+		}
+		id, symbolic := integerSequenceSymbolID(sequence)
+		if !symbolic {
+			_, ok := evaluateBoolWithIntegerSequences(
+				term, booleanModel{}, integerModel{}, rationalModel{}, model,
+			)
+			return true, ok
+		}
+		if _, assigned := model.lookup(id); assigned {
+			return true, true
+		}
+		ground, ok := evaluateIntegerSequenceWithModel(
+			part, booleanModel{}, integerModel{}, rationalModel{}, model,
+		)
+		if !ok {
+			return true, false
+		}
+		requirements.forSymbol(id).addContainment(ground)
+		return true, true
+	case sequencePrefix:
+		sequence, sequenceOK := value.value.(Term[SequenceSort[IntSort]])
+		prefix, prefixOK := value.prefix.(Term[SequenceSort[IntSort]])
+		if !sequenceOK || !prefixOK {
+			return true, false
+		}
+		id, symbolic := integerSequenceSymbolID(sequence)
+		if !symbolic {
+			_, ok := evaluateBoolWithIntegerSequences(
+				term, booleanModel{}, integerModel{}, rationalModel{}, model,
+			)
+			return true, ok
+		}
+		if _, assigned := model.lookup(id); assigned {
+			return true, true
+		}
+		ground, ok := evaluateIntegerSequenceWithModel(
+			prefix, booleanModel{}, integerModel{}, rationalModel{}, model,
+		)
+		if !ok {
+			return true, false
+		}
+		return addIntegerSequencePrefix(requirements.forSymbol(id), ground), true
+	case sequenceSuffix:
+		sequence, sequenceOK := value.value.(Term[SequenceSort[IntSort]])
+		suffix, suffixOK := value.suffix.(Term[SequenceSort[IntSort]])
+		if !sequenceOK || !suffixOK {
+			return true, false
+		}
+		id, symbolic := integerSequenceSymbolID(sequence)
+		if !symbolic {
+			_, ok := evaluateBoolWithIntegerSequences(
+				term, booleanModel{}, integerModel{}, rationalModel{}, model,
+			)
+			return true, ok
+		}
+		if _, assigned := model.lookup(id); assigned {
+			return true, true
+		}
+		ground, ok := evaluateIntegerSequenceWithModel(
+			suffix, booleanModel{}, integerModel{}, rationalModel{}, model,
+		)
+		if !ok {
+			return true, false
+		}
+		return addIntegerSequenceSuffix(requirements.forSymbol(id), ground), true
+	default:
+		if containsIntegerSequenceTheory(term) {
+			_, ok := evaluateBoolWithIntegerSequences(
+				term, booleanModel{}, integerModel{}, rationalModel{}, model,
+			)
+			return true, ok
+		}
+		return true, true
+	}
+}
+
+func buildIntegerSequenceWitness(requirements integerSequenceRequirements) IntegerSequenceValue {
+	var result IntegerSequenceValue
+	if requirements.hasPrefix {
+		result.appendSequence(requirements.prefix)
+	}
+	for index := 0; index < requirements.containment; index++ {
+		part := requirements.containmentAt(index)
+		if findIntegerSubsequence(result, part, 0) < 0 {
+			result.appendSequence(part)
+		}
+	}
+	if requirements.hasSuffix && !integerSequenceEndsWith(result, requirements.suffix) {
+		result.appendSequence(requirements.suffix)
+	}
+	return result
+}
+
+func bindPositiveIntegerSequenceWitnesses(
+	assertions []Term[BoolSort],
+	model *integerSequenceModel,
+) (bool, bool) {
+	var requirements integerSequenceRequirementSet
+	for _, assertion := range assertions {
+		consistent, supported := collectPositiveIntegerSequenceRequirements(
+			assertion, *model, &requirements,
+		)
+		if !consistent || !supported {
+			return consistent, supported
+		}
+	}
+	for index := 0; index < requirements.count && index < len(requirements.inline); index++ {
+		entry := requirements.inline[index]
+		if !model.set(entry.id, buildIntegerSequenceWitness(entry.requirements)) {
+			return false, true
+		}
+	}
+	for id, entry := range requirements.overflow {
+		if !model.set(id, buildIntegerSequenceWitness(*entry)) {
+			return false, true
+		}
+	}
+	return true, true
+}
+
+func solveIntegerSequenceAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
 	found := false
 	for _, assertion := range assertions {
 		found = found || containsIntegerSequenceTheory(assertion)
@@ -746,6 +1037,16 @@ func solveGroundIntegerSequenceAssertions(assertions []Term[BoolSort]) (checkOut
 		if bound && !consistent {
 			return checkOutcome{status: checkUnsat}, true
 		}
+	}
+	consistent, supported := bindPositiveIntegerSequenceWitnesses(assertions, &sequences)
+	if !consistent {
+		return checkOutcome{status: checkUnsat}, true
+	}
+	if !supported {
+		return checkOutcome{
+			status: checkUnknown,
+			reason: UnsupportedTheory{Name: "integer sequence expression outside the positive symbolic fragment"},
+		}, true
 	}
 	for _, assertion := range assertions {
 		value, ok := evaluateBoolWithIntegerSequences(

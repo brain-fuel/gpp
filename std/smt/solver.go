@@ -289,7 +289,7 @@ func (e *engine) solveAdditional(assumptions []Term[BoolSort]) checkOutcome {
 	if outcome, recognized := solveCompactArrayIntegerExchange(allAssertions); recognized {
 		return outcome
 	}
-	if outcome, recognized := solveGroundIntegerSequenceAssertions(allAssertions); recognized {
+	if outcome, recognized := solveIntegerSequenceAssertions(allAssertions); recognized {
 		return outcome
 	}
 	integerTheory := false
