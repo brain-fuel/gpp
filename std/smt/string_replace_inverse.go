@@ -6,12 +6,21 @@ import "strings"
 // str.replace(x, source, replacement) = target for a direct symbol x and
 // ground string operands.
 type CompactStringReplaceEquality struct {
-	SymbolID    int
-	SymbolName  string
-	Source      string
-	Replacement string
-	Target      string
-	All         bool
+	SymbolID          int
+	SymbolName        string
+	Source            string
+	SourceID          int
+	SourceName        string
+	SourceSymbol      bool
+	Replacement       string
+	ReplacementID     int
+	ReplacementName   string
+	ReplacementSymbol bool
+	Target            string
+	TargetID          int
+	TargetName        string
+	TargetSymbol      bool
+	All               bool
 }
 
 func (CompactStringReplaceEquality) isTerm(BoolSort) {}
@@ -154,15 +163,19 @@ func solveGroundStringReplaceEqualities(assertions []Term[BoolSort]) (checkOutco
 	if len(conjuncts) == 0 {
 		return checkOutcome{}, false
 	}
+	assignments, contradiction := groundStringReplaceAssignments(conjuncts)
+	if contradiction {
+		return checkOutcome{status: checkUnsat}, true
+	}
 	var constraints groundStringReplaceConstraints
 	for _, conjunct := range conjuncts {
-		if ground, known := evaluateStringBoolean(conjunct, stringModel{}, integerModel{}); known {
+		if ground, known := evaluateStringBoolean(conjunct, assignments, integerModel{}); known {
 			if !ground {
 				return checkOutcome{status: checkUnsat}, true
 			}
 			continue
 		}
-		equality, ok := groundStringReplaceEquality(conjunct)
+		equality, ok := groundStringReplaceEquality(conjunct, assignments)
 		if ok {
 			constraints.findOrAppend(equality.SymbolID).append(equality)
 			continue
@@ -177,10 +190,11 @@ func solveGroundStringReplaceEqualities(assertions []Term[BoolSort]) (checkOutco
 		}
 		var symbols stringSymbols
 		collectStringSymbolsBoolean(conjunct, &symbols)
-		if symbols.count != 1 || len(symbols.overflow) != 0 {
+		unbound, count := unboundStringSymbol(symbols, assignments)
+		if count != 1 {
 			return checkOutcome{}, false
 		}
-		constraints.findOrAppend(symbols.inline[0]).appendPredicate(conjunct)
+		constraints.findOrAppend(unbound).appendPredicate(conjunct)
 	}
 	if constraints.count == 0 {
 		return checkOutcome{}, false
@@ -190,10 +204,10 @@ func solveGroundStringReplaceEqualities(assertions []Term[BoolSort]) (checkOutco
 			return checkOutcome{}, false
 		}
 	}
-	var model stringModel
+	model := assignments
 	for index := 0; index < constraints.count; index++ {
 		constraint := constraints.at(index)
-		candidate, found, complete := groundStringReplacePreimage(constraint)
+		candidate, found, complete := groundStringReplacePreimage(constraint, assignments)
 		if !complete {
 			return checkOutcome{
 				status: checkUnknown,
@@ -208,21 +222,143 @@ func solveGroundStringReplaceEqualities(assertions []Term[BoolSort]) (checkOutco
 	return checkOutcome{status: checkSat, strings: model}, true
 }
 
-func groundStringReplaceEquality(term Term[BoolSort]) (CompactStringReplaceEquality, bool) {
+func unboundStringSymbol(symbols stringSymbols, model stringModel) (int, int) {
+	id := 0
+	count := 0
+	for index := 0; index < symbols.count; index++ {
+		candidate := symbols.inline[index]
+		if _, bound := model.lookup(candidate); bound {
+			continue
+		}
+		id = candidate
+		count++
+	}
+	for candidate := range symbols.overflow {
+		if _, bound := model.lookup(candidate); bound {
+			continue
+		}
+		id = candidate
+		count++
+	}
+	return id, count
+}
+
+func groundStringReplaceAssignments(
+	conjuncts []Term[BoolSort],
+) (stringModel, bool) {
+	var model stringModel
+	for pass := 0; pass < len(conjuncts)+1; pass++ {
+		changed := false
+		for _, conjunct := range conjuncts {
+			switch value := conjunct.(type) {
+			case Equal:
+				var id int
+				var assignment string
+				var found bool
+				if id, assignment, found = groundStringAssignmentSides(
+					value.Left, value.Right, model,
+				); !found {
+					id, assignment, found = groundStringAssignmentSides(
+						value.Right, value.Left, model,
+					)
+				}
+				if found {
+					if existing, bound := model.lookup(id); bound && existing != assignment {
+						return model, true
+					}
+					changed = setExistingString(&model, id, assignment) || changed
+				}
+			case stringSystem:
+				for _, relation := range value.system.relations() {
+					if relation.Kind != CompactStringEqual || relation.Negated {
+						continue
+					}
+					left, leftOK := evaluateCompactString(relation.Left, model)
+					right, rightOK := evaluateCompactString(relation.Right, model)
+					if relation.Left.Kind == compactStringSymbol && rightOK {
+						if existing, bound := model.lookup(relation.Left.ID); bound && existing != right {
+							return model, true
+						}
+						changed = setExistingString(&model, relation.Left.ID, right) || changed
+					}
+					if relation.Right.Kind == compactStringSymbol && leftOK {
+						if existing, bound := model.lookup(relation.Right.ID); bound && existing != left {
+							return model, true
+						}
+						changed = setExistingString(&model, relation.Right.ID, left) || changed
+					}
+				}
+			}
+		}
+		if !changed {
+			break
+		}
+	}
+	return model, false
+}
+
+func groundStringAssignmentSides(
+	symbol any, value any, model stringModel,
+) (int, string, bool) {
+	symbolTerm, ok := symbol.(Term[StringSort])
+	if !ok {
+		return 0, "", false
+	}
+	id, direct := stringSymbolID(symbolTerm)
+	if !direct {
+		return 0, "", false
+	}
+	valueTerm, ok := value.(Term[StringSort])
+	if !ok {
+		return 0, "", false
+	}
+	assignment, ground := evaluateString(valueTerm, model, integerModel{})
+	return id, assignment, ground
+}
+
+func groundStringReplaceEquality(
+	term Term[BoolSort], model stringModel,
+) (CompactStringReplaceEquality, bool) {
 	if compact, ok := term.(CompactStringReplaceEquality); ok {
+		if compact.SourceSymbol {
+			value, found := model.lookup(compact.SourceID)
+			if !found {
+				return CompactStringReplaceEquality{}, false
+			}
+			compact.Source = value
+			compact.SourceSymbol = false
+		}
+		if compact.ReplacementSymbol {
+			value, found := model.lookup(compact.ReplacementID)
+			if !found {
+				return CompactStringReplaceEquality{}, false
+			}
+			compact.Replacement = value
+			compact.ReplacementSymbol = false
+		}
+		if compact.TargetSymbol {
+			value, found := model.lookup(compact.TargetID)
+			if !found {
+				return CompactStringReplaceEquality{}, false
+			}
+			compact.Target = value
+			compact.TargetSymbol = false
+		}
 		return compact, true
 	}
 	equality, ok := term.(Equal)
 	if !ok {
 		return CompactStringReplaceEquality{}, false
 	}
-	if result, ok := groundStringReplaceEqualitySides(equality.Left, equality.Right); ok {
+	if result, ok := groundStringReplaceEqualitySides(equality.Left, equality.Right, model); ok {
 		return result, true
 	}
-	return groundStringReplaceEqualitySides(equality.Right, equality.Left)
+	return groundStringReplaceEqualitySides(equality.Right, equality.Left, model)
 }
 
-func groundStringReplaceEqualitySides(derived, target any) (CompactStringReplaceEquality, bool) {
+func groundStringReplaceEqualitySides(
+	derived, target any, model stringModel,
+) (CompactStringReplaceEquality, bool) {
 	replacement, ok := derived.(stringReplace[StringSort])
 	all := false
 	if !ok {
@@ -238,13 +374,13 @@ func groundStringReplaceEqualitySides(derived, target any) (CompactStringReplace
 		all = true
 	}
 	id, symbol := stringSymbolID(replacement.value)
-	source, sourceGround := evaluateString(replacement.source, stringModel{}, integerModel{})
-	newValue, replacementGround := evaluateString(replacement.replacement, stringModel{}, integerModel{})
+	source, sourceGround := evaluateString(replacement.source, model, integerModel{})
+	newValue, replacementGround := evaluateString(replacement.replacement, model, integerModel{})
 	targetTerm, targetString := target.(Term[StringSort])
 	if !symbol || !sourceGround || !replacementGround || !targetString {
 		return CompactStringReplaceEquality{}, false
 	}
-	targetValue, targetGround := evaluateString(targetTerm, stringModel{}, integerModel{})
+	targetValue, targetGround := evaluateString(targetTerm, model, integerModel{})
 	if !targetGround {
 		return CompactStringReplaceEquality{}, false
 	}
@@ -259,6 +395,7 @@ func groundStringReplaceEqualitySides(derived, target any) (CompactStringReplace
 
 func groundStringReplacePreimage(
 	constraint *groundStringReplaceConstraint,
+	assignments stringModel,
 ) (string, bool, bool) {
 	anchor := constraint.equalityAt(0)
 	steps := 0
@@ -285,7 +422,7 @@ func groundStringReplacePreimage(
 			}
 		}
 		if constraint.predicateCount > 0 {
-			var model stringModel
+			model := assignments
 			model.set(constraint.id, candidate)
 			for index := 0; index < constraint.predicateCount; index++ {
 				accepted, known := evaluateStringBoolean(

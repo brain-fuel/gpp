@@ -1179,6 +1179,66 @@ func TestGroundStringReplaceAllEqualities(t *testing.T) {
 	})
 }
 
+func TestGroundAssignedStringReplaceOperands(t *testing.T) {
+	x := StringConst(1, "x")
+	source := StringConst(2, "source")
+	replacement := StringConst(3, "replacement")
+	target := StringConst(4, "target")
+	sourceAlias := StringConst(5, "source_alias")
+	formula := And{Values: []Term[BoolSort]{
+		Equal{Left: source, Right: sourceAlias},
+		Equal{Left: sourceAlias, Right: StringVal("a")},
+		Equal{Left: replacement, Right: StringVal("z")},
+		Equal{Left: target, Right: StringVal("zz")},
+		Equal{Left: StringReplaceAll(x, source, replacement), Right: target},
+		StringContains(x, source),
+		Equal{Left: StringLength(x), Right: Integer{Value: 2}},
+	}}
+	checked := Check(Assert(80, New(), formula))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", checked)
+	}
+	for symbol, want := range map[Term[StringSort]]string{
+		x: "aa", source: "a", sourceAlias: "a", replacement: "z", target: "zz",
+	} {
+		if actual, found := StringModelValue(result.Value, symbol); !found || actual != want {
+			t.Fatalf("value=(%q,%v), want %q", actual, found, want)
+		}
+	}
+	if valid, found := BoolValue(result.Value, formula); !found || !valid {
+		t.Fatalf("formula=(%v,%v)", valid, found)
+	}
+
+	firstOnly := And{Values: []Term[BoolSort]{
+		Equal{Left: source, Right: StringVal("a")},
+		Equal{Left: replacement, Right: StringVal("z")},
+		Equal{Left: target, Right: StringVal("za")},
+		Equal{Left: StringReplace(x, source, replacement), Right: target},
+	}}
+	checked = Check(Assert(81, New(), firstOnly))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("first result=%T", checked)
+	}
+	if actual, found := StringModelValue(result.Value, x); !found || actual != "aa" {
+		t.Fatalf("first x=(%q,%v)", actual, found)
+	}
+
+	conflicting := And{Values: []Term[BoolSort]{
+		Equal{Left: source, Right: StringVal("a")},
+		Equal{Left: source, Right: StringVal("b")},
+		Equal{
+			Left:  StringReplaceAll(x, source, StringVal("z")),
+			Right: StringVal("z"),
+		},
+	}}
+	checked = Check(Assert(82, New(), conflicting))
+	if _, ok := checked.(Unsatisfiable); !ok {
+		t.Fatalf("conflicting result=%T", checked)
+	}
+}
+
 func TestShortestStringDeletionPreimageExhaustive(t *testing.T) {
 	sources := []string{"a", "b", "aa", "ab", "ba", "aba"}
 	targets := []string{"", "a", "b", "aa", "ab", "ba", "aba", "bab"}

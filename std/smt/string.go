@@ -825,6 +825,15 @@ func collectStringSymbolsBoolean(term Term[BoolSort], symbols *stringSymbols) {
 		symbols.add(value.SymbolID)
 	case CompactStringReplaceEquality:
 		symbols.add(value.SymbolID)
+		if value.SourceSymbol {
+			symbols.add(value.SourceID)
+		}
+		if value.ReplacementSymbol {
+			symbols.add(value.ReplacementID)
+		}
+		if value.TargetSymbol {
+			symbols.add(value.TargetID)
+		}
 	case CompactStringBooleanFormula:
 		for index := 0; index < value.AtomCount; index++ {
 			symbols.add(value.Atoms[index].SymbolID)
@@ -1239,7 +1248,11 @@ func evaluateStringBoolean(term Term[BoolSort], model stringModel, integers inte
 		if !found {
 			return false, false
 		}
-		return compactStringReplacementEquals(symbol, value), true
+		ground, ok := groundStringReplaceEquality(value, model)
+		if !ok {
+			return false, false
+		}
+		return compactStringReplacementEquals(symbol, ground), true
 	case CompactStringIndexedEquality:
 		symbol, found := model.lookup(value.SymbolID)
 		if !found {
