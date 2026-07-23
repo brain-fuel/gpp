@@ -13,7 +13,8 @@ type CompactStringPattern struct {
 }
 
 // CompactStringWordEquation equates a bounded symbolic pattern with a ground
-// target. Ambiguous empty or repeated delimiters remain unsupported.
+// target. Standalone solving searches all bounded splits; conjunction
+// propagation only commits uniquely forced splits.
 type CompactStringWordEquation struct {
 	Pattern CompactStringPattern
 	Target  string
@@ -65,11 +66,6 @@ func compactPatternFromStringTerm(term any) (CompactStringPattern, bool) {
 			if pattern.Count == len(pattern.SymbolIDs) {
 				return CompactStringPattern{}, false
 			}
-			for index := 0; index < pattern.Count; index++ {
-				if pattern.SymbolIDs[index] == symbol.iD {
-					return CompactStringPattern{}, false
-				}
-			}
 			pattern.Delimiters[pattern.Count] = literal
 			pattern.SymbolIDs[pattern.Count] = symbol.iD
 			pattern.SymbolNames[pattern.Count] = symbol.name
@@ -95,6 +91,20 @@ func solveCompactStringWordEquation(equation CompactStringWordEquation, requireU
 	if pattern.Count < 1 || pattern.Count > len(pattern.SymbolIDs) {
 		return checkOutcome{}, false
 	}
+	if !requireUnique {
+		steps := 0
+		model, found, complete := searchCompactStringWordEquation(pattern, equation.Target, 0, 0, stringModel{}, &steps)
+		if !complete {
+			return checkOutcome{
+				status: checkUnknown,
+				reason: ResourceLimit{Limit: compactStringWordEquationSearchLimit},
+			}, true
+		}
+		if !found {
+			return checkOutcome{status: checkUnsat}, true
+		}
+		return checkOutcome{status: checkSat, strings: model}, true
+	}
 	for index := 0; index < pattern.Count; index++ {
 		for previous := 0; previous < index; previous++ {
 			if pattern.SymbolIDs[previous] == pattern.SymbolIDs[index] {
@@ -113,17 +123,13 @@ func solveCompactStringWordEquation(equation CompactStringWordEquation, requireU
 	for index := 1; index < pattern.Count; index++ {
 		delimiter := pattern.Delimiters[index]
 		if delimiter == "" {
-			if requireUnique {
-				return checkOutcome{}, false
-			}
-			model.set(pattern.SymbolIDs[index-1], "")
-			continue
+			return checkOutcome{}, false
 		}
 		first := strings.Index(remaining, delimiter)
 		if first < 0 {
 			return checkOutcome{status: checkUnsat}, true
 		}
-		if requireUnique && strings.LastIndex(remaining, delimiter) != first {
+		if strings.LastIndex(remaining, delimiter) != first {
 			return checkOutcome{}, false
 		}
 		model.set(pattern.SymbolIDs[index-1], remaining[:first])
@@ -131,6 +137,55 @@ func solveCompactStringWordEquation(equation CompactStringWordEquation, requireU
 	}
 	model.set(pattern.SymbolIDs[pattern.Count-1], remaining)
 	return checkOutcome{status: checkSat, strings: model}, true
+}
+
+const compactStringWordEquationSearchLimit = 4096
+
+func searchCompactStringWordEquation(
+	pattern CompactStringPattern,
+	target string,
+	index, offset int,
+	model stringModel,
+	steps *int,
+) (stringModel, bool, bool) {
+	*steps++
+	if *steps > compactStringWordEquationSearchLimit {
+		return stringModel{}, false, false
+	}
+	delimiter := pattern.Delimiters[index]
+	if offset > len(target) || !strings.HasPrefix(target[offset:], delimiter) {
+		return stringModel{}, false, true
+	}
+	offset += len(delimiter)
+	if index == pattern.Count {
+		return model, offset == len(target), true
+	}
+	id := pattern.SymbolIDs[index]
+	if value, bound := model.lookup(id); bound {
+		if !strings.HasPrefix(target[offset:], value) {
+			return stringModel{}, false, true
+		}
+		return searchCompactStringWordEquation(pattern, target, index+1, offset+len(value), model, steps)
+	}
+	for end := offset; end <= len(target); end++ {
+		if !stringWordEquationBoundary(target, end) {
+			continue
+		}
+		candidate := model
+		candidate.set(id, target[offset:end])
+		result, found, complete := searchCompactStringWordEquation(pattern, target, index+1, end, candidate, steps)
+		if !complete {
+			return stringModel{}, false, false
+		}
+		if found {
+			return result, true, true
+		}
+	}
+	return stringModel{}, false, true
+}
+
+func stringWordEquationBoundary(value string, offset int) bool {
+	return offset == 0 || offset == len(value) || value[offset]&0xc0 != 0x80
 }
 
 func bindCompactStringWordEquation(equation CompactStringWordEquation, model *stringModel) bool {

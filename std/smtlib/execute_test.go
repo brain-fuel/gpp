@@ -321,6 +321,37 @@ func TestExecuteCanonicalBoundedWordEquation(t *testing.T) {
 	}
 }
 
+func TestExecuteRepeatedSymbolWordEquation(t *testing.T) {
+	script := `(set-logic QF_SLIA)
+(declare-const x String)
+(assert (= (str.++ x "-" x) "go-go"))
+(check-sat)
+(get-value (x))`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("result=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[len(result.Responses)-2].(Satisfiable); !ok {
+		t.Fatalf("check response=%T", result.Responses[len(result.Responses)-2])
+	}
+	values := result.Responses[len(result.Responses)-1].(ValuesAvailable).Values
+	if value, ok := values[0].(StringValue); !ok || value.Value != "go" {
+		t.Fatalf("x=%#v", values[0])
+	}
+
+	impossible := `(set-logic QF_SLIA)
+(declare-const x String)
+(assert (= (str.++ x "-" x) "go-rust"))
+(check-sat)`
+	result, ok = Execute(impossible).(Executed)
+	if !ok {
+		t.Fatalf("result=%#v", Execute(impossible))
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Unsatisfiable); !ok {
+		t.Fatalf("check response=%T", result.Responses[len(result.Responses)-1])
+	}
+}
+
 func TestExecuteDifferenceLogicPushPop(t *testing.T) {
 	script := `(set-logic QF_IDL)
 (declare-const x Int)

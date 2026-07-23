@@ -1,6 +1,9 @@
 package smt
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestStringGroundOperations(t *testing.T) {
 	value := StringConcat(StringVal("Go"), StringVal("+"), StringVal("🙂"))
@@ -353,6 +356,72 @@ func TestCompactStringWordEquationModel(t *testing.T) {
 	}
 	if valid, found := CompactStringWordEquationValue(result.Value, equation); !found || !valid {
 		t.Fatalf("equation=(%v,%v)", valid, found)
+	}
+}
+
+func TestRepeatedSymbolWordEquation(t *testing.T) {
+	x := StringConst(1, "x")
+	for _, test := range []struct {
+		name   string
+		left   Term[StringSort]
+		target string
+		value  string
+		sat    bool
+	}{
+		{
+			name: "adjacent", left: StringConcat(x, x),
+			target: "abab", value: "ab", sat: true,
+		},
+		{
+			name: "delimited", left: StringConcat(x, StringVal("-"), x),
+			target: "go-go", value: "go", sat: true,
+		},
+		{
+			name: "unicode", left: StringConcat(x, x),
+			target: "🙂🙂", value: "🙂", sat: true,
+		},
+		{
+			name: "inconsistent", left: StringConcat(x, StringVal("-"), x),
+			target: "go-rust", sat: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			equation := Equal{Left: test.left, Right: StringVal(test.target)}
+			checked := Check(Assert(26, New(), equation))
+			if !test.sat {
+				if _, ok := checked.(Unsatisfiable); !ok {
+					t.Fatalf("result=%T", checked)
+				}
+				return
+			}
+			result, ok := checked.(Satisfiable)
+			if !ok {
+				t.Fatalf("result=%T", checked)
+			}
+			if actual, found := StringModelValue(result.Value, x); !found || actual != test.value {
+				t.Fatalf("x=(%q,%v)", actual, found)
+			}
+			if valid, found := BoolValue(result.Value, equation); !found || !valid {
+				t.Fatalf("equation=(%v,%v)", valid, found)
+			}
+		})
+	}
+}
+
+func TestRepeatedSymbolWordEquationSearchLimit(t *testing.T) {
+	x := StringConst(1, "x")
+	y := StringConst(2, "y")
+	equation := Equal{
+		Left:  StringConcat(x, y, x, y),
+		Right: StringVal(strings.Repeat("a", 96) + "b"),
+	}
+	checked := Check(Assert(27, New(), equation))
+	result, ok := checked.(Unknown)
+	if !ok {
+		t.Fatalf("result=%T", checked)
+	}
+	if limit, ok := result.Reason.(ResourceLimit); !ok || limit.Limit != compactStringWordEquationSearchLimit {
+		t.Fatalf("reason=%#v", result.Reason)
 	}
 }
 
