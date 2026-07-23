@@ -1008,6 +1008,44 @@ func TestGroundStringReplaceEqualities(t *testing.T) {
 	})
 }
 
+func TestGroundStringReplaceIndexedInteraction(t *testing.T) {
+	x := StringConst(1, "x")
+	t.Run("at selects replacement preimage", func(t *testing.T) {
+		formula := And{Values: []Term[BoolSort]{
+			Equal{
+				Left:  StringReplace(x, StringVal("a"), StringVal("z")),
+				Right: StringVal("z"),
+			},
+			Equal{Left: StringAt(x, Integer{Value: 0}), Right: StringVal("a")},
+		}}
+		checked := Check(Assert(63, New(), formula))
+		result, ok := checked.(Satisfiable)
+		if !ok {
+			t.Fatalf("result=%T", checked)
+		}
+		if actual, found := StringModelValue(result.Value, x); !found || actual != "a" {
+			t.Fatalf("x=(%q,%v)", actual, found)
+		}
+	})
+
+	t.Run("substring rejects every preimage", func(t *testing.T) {
+		formula := And{Values: []Term[BoolSort]{
+			Equal{
+				Left:  StringReplace(x, StringVal("a"), StringVal("z")),
+				Right: StringVal("z"),
+			},
+			Equal{
+				Left:  StringSubstring(x, Integer{Value: 0}, Integer{Value: 1}),
+				Right: StringVal("b"),
+			},
+		}}
+		checked := Check(Assert(64, New(), formula))
+		if _, ok := checked.(Unsatisfiable); !ok {
+			t.Fatalf("result=%T", checked)
+		}
+	})
+}
+
 func TestMultipleWordEquationInteraction(t *testing.T) {
 	x := StringConst(1, "x")
 	y := StringConst(2, "y")

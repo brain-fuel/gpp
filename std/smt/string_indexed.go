@@ -229,6 +229,66 @@ func groundIndexedStringEquality(equality Equal) (Term[StringSort], string, bool
 	return nil, "", false
 }
 
+func compactGroundIndexedStringEquality(term Term[BoolSort]) (CompactStringIndexedEquality, bool) {
+	if compact, ok := term.(CompactStringIndexedEquality); ok {
+		return compact, true
+	}
+	equality, ok := term.(Equal)
+	if !ok {
+		return CompactStringIndexedEquality{}, false
+	}
+	derived, target, ok := groundIndexedStringEquality(equality)
+	if !ok {
+		return CompactStringIndexedEquality{}, false
+	}
+	switch value := derived.(type) {
+	case stringAt[StringSort]:
+		id, symbol := stringSymbolID(value.value)
+		offset, constant := integerConstant(value.index)
+		if !symbol || !constant {
+			return CompactStringIndexedEquality{}, false
+		}
+		return CompactStringIndexedEquality{
+			Kind: CompactStringAtEquality, SymbolID: id,
+			Offset: offset, Target: target,
+		}, true
+	case stringSubstring[StringSort]:
+		id, symbol := stringSymbolID(value.value)
+		offset, offsetConstant := integerConstant(value.offset)
+		length, lengthConstant := integerConstant(value.length)
+		if !symbol || !offsetConstant || !lengthConstant {
+			return CompactStringIndexedEquality{}, false
+		}
+		return CompactStringIndexedEquality{
+			Kind: CompactStringSubstringEquality, SymbolID: id,
+			Offset: offset, Length: length, Target: target,
+		}, true
+	default:
+		return CompactStringIndexedEquality{}, false
+	}
+}
+
+func evaluateCompactIndexedStringEquality(
+	equality CompactStringIndexedEquality,
+	value string,
+) bool {
+	var derived Term[StringSort]
+	switch equality.Kind {
+	case CompactStringAtEquality:
+		derived = StringAt(StringVal(value), Integer{Value: equality.Offset})
+	case CompactStringSubstringEquality:
+		derived = StringSubstring(
+			StringVal(value),
+			Integer{Value: equality.Offset},
+			Integer{Value: equality.Length},
+		)
+	default:
+		return false
+	}
+	actual, known := evaluateString(derived, stringModel{}, integerModel{})
+	return known && actual == equality.Target
+}
+
 func isGroundIndexedStringTerm(term Term[StringSort]) bool {
 	switch term.(type) {
 	case stringAt[StringSort], stringSubstring[StringSort]:

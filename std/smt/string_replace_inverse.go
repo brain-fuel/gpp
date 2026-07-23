@@ -16,10 +16,13 @@ type CompactStringReplaceEquality struct {
 func (CompactStringReplaceEquality) isTerm(BoolSort) {}
 
 type groundStringReplaceConstraint struct {
-	id            int
-	equalityCount int
-	equalities    [4]CompactStringReplaceEquality
-	overflow      []CompactStringReplaceEquality
+	id              int
+	equalityCount   int
+	equalities      [4]CompactStringReplaceEquality
+	overflow        []CompactStringReplaceEquality
+	indexedCount    int
+	indexed         [4]CompactStringIndexedEquality
+	indexedOverflow []CompactStringIndexedEquality
 }
 
 type groundStringReplaceConstraints struct {
@@ -86,6 +89,32 @@ func (constraint *groundStringReplaceConstraint) append(equality CompactStringRe
 	constraint.equalityCount++
 }
 
+func (constraint *groundStringReplaceConstraint) indexedAt(index int) CompactStringIndexedEquality {
+	if constraint.indexedOverflow != nil {
+		return constraint.indexedOverflow[index]
+	}
+	return constraint.indexed[index]
+}
+
+func (constraint *groundStringReplaceConstraint) appendIndexed(equality CompactStringIndexedEquality) {
+	if constraint.indexedOverflow != nil {
+		constraint.indexedOverflow = append(constraint.indexedOverflow, equality)
+		constraint.indexedCount++
+		return
+	}
+	if constraint.indexedCount < len(constraint.indexed) {
+		constraint.indexed[constraint.indexedCount] = equality
+		constraint.indexedCount++
+		return
+	}
+	constraint.indexedOverflow = make(
+		[]CompactStringIndexedEquality, constraint.indexedCount, constraint.indexedCount*2,
+	)
+	copy(constraint.indexedOverflow, constraint.indexed[:])
+	constraint.indexedOverflow = append(constraint.indexedOverflow, equality)
+	constraint.indexedCount++
+}
+
 func solveGroundStringReplaceEqualities(assertions []Term[BoolSort]) (checkOutcome, bool) {
 	var storage boundedWordEquationConjuncts
 	for _, assertion := range assertions {
@@ -104,13 +133,23 @@ func solveGroundStringReplaceEqualities(assertions []Term[BoolSort]) (checkOutco
 			continue
 		}
 		equality, ok := groundStringReplaceEquality(conjunct)
-		if !ok {
+		if ok {
+			constraints.findOrAppend(equality.SymbolID).append(equality)
+			continue
+		}
+		indexed, indexedOK := compactGroundIndexedStringEquality(conjunct)
+		if !indexedOK {
 			return checkOutcome{}, false
 		}
-		constraints.findOrAppend(equality.SymbolID).append(equality)
+		constraints.findOrAppend(indexed.SymbolID).appendIndexed(indexed)
 	}
 	if constraints.count == 0 {
 		return checkOutcome{}, false
+	}
+	for index := 0; index < constraints.count; index++ {
+		if constraints.at(index).equalityCount == 0 {
+			return checkOutcome{}, false
+		}
 	}
 	var model stringModel
 	for index := 0; index < constraints.count; index++ {
@@ -185,6 +224,13 @@ func groundStringReplacePreimage(
 		for index := 1; index < constraint.equalityCount; index++ {
 			equality := constraint.equalityAt(index)
 			if strings.Replace(candidate, equality.Source, equality.Replacement, 1) != equality.Target {
+				return "", false, true
+			}
+		}
+		for index := 0; index < constraint.indexedCount; index++ {
+			if !evaluateCompactIndexedStringEquality(
+				constraint.indexedAt(index), candidate,
+			) {
 				return "", false, true
 			}
 		}
