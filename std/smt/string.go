@@ -140,6 +140,9 @@ func solveStringAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
 	var model stringModel
 	var symbols stringSymbols
 	for _, assertion := range assertions {
+		if value, ground := evaluateStringBoolean(assertion, stringModel{}); ground && !value {
+			return checkOutcome{status: checkUnsat}, true
+		}
 		collectStringSymbolsBoolean(assertion, &symbols)
 	}
 	for pass := 0; pass < len(assertions)+1; pass++ {
