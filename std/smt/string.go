@@ -388,7 +388,8 @@ func containsStringTheory(term Term[BoolSort]) bool {
 	switch value := term.(type) {
 	case stringContains, stringPrefix, stringSuffix, stringIsDigit, stringInRegex, stringSystem,
 		CompactStringBooleanFormula, CompactStringWordEquation, CompactStringLengthRelation,
-		CompactStringIndexedEquality, CompactStringReplaceEquality, *CompactGroundIndexedStringFormula:
+		CompactStringIndexedEquality, CompactStringReplaceEquality, *CompactGroundIndexedStringFormula,
+		CompactStringIndexOfEquality, *CompactGroundStringEvaluationFormula:
 		return true
 	case Equal:
 		return isStringTerm(value.Left) || isStringTerm(value.Right) || isStringIntegerTerm(value.Left) || isStringIntegerTerm(value.Right)
@@ -446,6 +447,9 @@ func solveStringAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
 		return outcome, true
 	}
 	if outcome, recognized := solveGroundIndexedStringEqualities(assertions); recognized {
+		return outcome, true
+	}
+	if outcome, recognized := solveGroundAssignedStringEvaluation(assertions); recognized {
 		return outcome, true
 	}
 	if outcome, recognized := solveBoundedWordEquationConjunction(assertions); recognized {
@@ -519,6 +523,120 @@ func solveStringAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
 		}
 	}
 	return checkOutcome{status: checkSat, strings: model}, true
+}
+
+func solveGroundAssignedStringEvaluation(
+	assertions []Term[BoolSort],
+) (checkOutcome, bool) {
+	if len(assertions) == 1 {
+		if compact, ok := assertions[0].(*CompactGroundStringEvaluationFormula); ok {
+			return solveCompactGroundStringEvaluation(compact), true
+		}
+	}
+	var storage boundedWordEquationConjuncts
+	for _, assertion := range assertions {
+		appendBoundedWordEquationConjunct(assertion, &storage)
+	}
+	conjuncts := storage.values()
+	if len(conjuncts) == 0 {
+		return checkOutcome{}, false
+	}
+	strings, stringConflict := groundStringReplaceAssignments(conjuncts)
+	integers, integerConflict := groundIndexedIntegerAssignments(conjuncts)
+	if stringConflict || integerConflict {
+		return checkOutcome{status: checkUnsat}, true
+	}
+	for _, conjunct := range conjuncts {
+		value, known := evaluateStringBoolean(conjunct, strings, integers)
+		if !known {
+			return checkOutcome{}, false
+		}
+		if !value {
+			return checkOutcome{status: checkUnsat}, true
+		}
+	}
+	return checkOutcome{
+		status: checkSat, strings: strings, integers: integers,
+	}, true
+}
+
+func solveCompactGroundStringEvaluation(
+	formula *CompactGroundStringEvaluationFormula,
+) checkOutcome {
+	var strings stringModel
+	for pass := 0; pass < int(formula.StringAssignmentCount)+1; pass++ {
+		changed := false
+		for index := 0; index < int(formula.StringAssignmentCount); index++ {
+			relation := formula.StringAssignments[index]
+			left, leftOK := evaluateCompactString(relation.Left, strings)
+			right, rightOK := evaluateCompactString(relation.Right, strings)
+			if relation.Left.Kind == compactStringSymbol && rightOK {
+				if existing, found := strings.lookup(relation.Left.ID); found && existing != right {
+					return checkOutcome{status: checkUnsat}
+				}
+				changed = setExistingString(&strings, relation.Left.ID, right) || changed
+			}
+			if relation.Right.Kind == compactStringSymbol && leftOK {
+				if existing, found := strings.lookup(relation.Right.ID); found && existing != left {
+					return checkOutcome{status: checkUnsat}
+				}
+				changed = setExistingString(&strings, relation.Right.ID, left) || changed
+			}
+		}
+		if !changed {
+			break
+		}
+	}
+	var integers integerModel
+	for index := 0; index < int(formula.IntegerAssignmentCount); index++ {
+		assignment := formula.IntegerAssignments[index]
+		outcome := solveCompactIntegerLinearEquality(assignment)
+		if outcome.status != checkSat {
+			return outcome
+		}
+		value, found := outcome.integers.lookup(assignment.ID)
+		if !found {
+			continue
+		}
+		if existing, assigned := integers.lookup(assignment.ID); assigned {
+			if CompareIntegerValue(existing, value) != 0 {
+				return checkOutcome{status: checkUnsat}
+			}
+			continue
+		}
+		integers.set(assignment.ID, value)
+	}
+	for index := 0; index < int(formula.IndexOfCount); index++ {
+		valid, known := evaluateCompactStringIndexOfEquality(
+			formula.IndexOf[index], strings, integers,
+		)
+		if !known {
+			return checkOutcome{}
+		}
+		if !valid {
+			return checkOutcome{status: checkUnsat}
+		}
+	}
+	return checkOutcome{
+		status: checkSat, strings: strings, integers: integers,
+	}
+}
+
+func evaluateCompactStringIndexOfEquality(
+	equality CompactStringIndexOfEquality,
+	strings stringModel,
+	integers integerModel,
+) (bool, bool) {
+	text, textOK := strings.lookup(equality.TextID)
+	needle, needleOK := strings.lookup(equality.NeedleID)
+	offset, offsetOK := integers.lookup(equality.OffsetID)
+	result, resultOK := integers.lookup(equality.ResultID)
+	offsetValue, offsetFits := offset.Int64()
+	resultValue, resultFits := result.Int64()
+	if !textOK || !needleOK || !offsetOK || !resultOK || !offsetFits || !resultFits {
+		return false, false
+	}
+	return stringIndexOfRunes(text, needle, offsetValue) == resultValue, true
 }
 
 func allStringSymbolsBound(symbols stringSymbols, model stringModel) bool {
@@ -1288,6 +1406,25 @@ func evaluateStringBoolean(term Term[BoolSort], model stringModel, integers inte
 		for index := 0; index < int(value.EqualityCount); index++ {
 			valid, known := evaluateStringBoolean(value.Equalities[index], model, integers)
 			if !known || !valid {
+				return valid, known
+			}
+		}
+		return true, true
+	case CompactStringIndexOfEquality:
+		return evaluateCompactStringIndexOfEquality(value, model, integers)
+	case *CompactGroundStringEvaluationFormula:
+		for index := 0; index < int(value.StringAssignmentCount); index++ {
+			if valid, known := evaluateCompactStringRelation(value.StringAssignments[index], model); !known || !valid {
+				return valid, known
+			}
+		}
+		for index := 0; index < int(value.IntegerAssignmentCount); index++ {
+			if valid, known := evaluateBool(value.IntegerAssignments[index], booleanModel{}, integers, rationalModel{}); !known || !valid {
+				return valid, known
+			}
+		}
+		for index := 0; index < int(value.IndexOfCount); index++ {
+			if valid, known := evaluateCompactStringIndexOfEquality(value.IndexOf[index], model, integers); !known || !valid {
 				return valid, known
 			}
 		}

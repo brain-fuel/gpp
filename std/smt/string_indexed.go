@@ -40,6 +40,34 @@ type CompactGroundIndexedStringFormula struct {
 
 func (*CompactGroundIndexedStringFormula) isTerm(BoolSort) {}
 
+// CompactStringIndexOfEquality represents
+// str.indexof(text, needle, offset) = result for direct symbols.
+type CompactStringIndexOfEquality struct {
+	TextID     int
+	TextName   string
+	NeedleID   int
+	NeedleName string
+	OffsetID   int
+	OffsetName string
+	ResultID   int
+	ResultName string
+}
+
+func (CompactStringIndexOfEquality) isTerm(BoolSort) {}
+
+// CompactGroundStringEvaluationFormula groups direct ground assignments and
+// derived index-of equalities without an allocating general conjunction.
+type CompactGroundStringEvaluationFormula struct {
+	StringAssignmentCount  uint8
+	StringAssignments      [4]CompactStringRelation
+	IntegerAssignmentCount uint8
+	IntegerAssignments     [4]IntegerLinearEquality
+	IndexOfCount           uint8
+	IndexOf                [4]CompactStringIndexOfEquality
+}
+
+func (*CompactGroundStringEvaluationFormula) isTerm(BoolSort) {}
+
 type indexedStringPlacement struct {
 	index int64
 	value string
@@ -127,6 +155,9 @@ func solveGroundIndexedStringEqualities(assertions []Term[BoolSort]) (checkOutco
 	if len(assertions) == 1 {
 		if compact, ok := assertions[0].(*CompactGroundIndexedStringFormula); ok {
 			return solveCompactGroundIndexedStringFormula(compact), true
+		}
+		if _, evaluation := assertions[0].(*CompactGroundStringEvaluationFormula); evaluation {
+			return checkOutcome{}, false
 		}
 	}
 	var storage boundedWordEquationConjuncts

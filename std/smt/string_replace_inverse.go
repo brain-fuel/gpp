@@ -159,6 +159,9 @@ func solveGroundStringReplaceEqualities(assertions []Term[BoolSort]) (checkOutco
 		if _, indexed := assertions[0].(*CompactGroundIndexedStringFormula); indexed {
 			return checkOutcome{}, false
 		}
+		if _, evaluation := assertions[0].(*CompactGroundStringEvaluationFormula); evaluation {
+			return checkOutcome{}, false
+		}
 	}
 	var storage boundedWordEquationConjuncts
 	for _, assertion := range assertions {

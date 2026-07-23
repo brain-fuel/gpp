@@ -1297,6 +1297,39 @@ func TestGroundAssignedIndexedStringOperands(t *testing.T) {
 	}
 }
 
+func TestGroundAssignedStringIndexOfOperands(t *testing.T) {
+	text := StringConst(1, "text")
+	needle := StringConst(2, "needle")
+	offset := IntSymbol{ID: 3, Name: "offset"}
+	result := IntSymbol{ID: 4, Name: "result"}
+	formula := And{Values: []Term[BoolSort]{
+		Equal{Left: text, Right: StringVal("abcabc")},
+		Equal{Left: needle, Right: StringVal("bc")},
+		Equal{Left: offset, Right: Integer{Value: 2}},
+		Equal{Left: result, Right: Integer{Value: 4}},
+		Equal{Left: StringIndexOf(text, needle, offset), Right: result},
+	}}
+	checked := Check(Assert(86, New(), formula))
+	sat, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", checked)
+	}
+	if valid, found := BoolValue(sat.Value, formula); !found || !valid {
+		t.Fatalf("formula=(%v,%v)", valid, found)
+	}
+	contradiction := And{Values: []Term[BoolSort]{
+		Equal{Left: text, Right: StringVal("abcabc")},
+		Equal{Left: needle, Right: StringVal("bc")},
+		Equal{Left: offset, Right: Integer{Value: 2}},
+		Equal{Left: result, Right: Integer{Value: 3}},
+		Equal{Left: StringIndexOf(text, needle, offset), Right: result},
+	}}
+	checked = Check(Assert(87, New(), contradiction))
+	if _, unsat := checked.(Unsatisfiable); !unsat {
+		t.Fatalf("contradiction result=%T", checked)
+	}
+}
+
 func TestShortestStringDeletionPreimageExhaustive(t *testing.T) {
 	sources := []string{"a", "b", "aa", "ab", "ba", "aba"}
 	targets := []string{"", "a", "b", "aa", "ab", "ba", "aba", "bab"}
