@@ -100,6 +100,45 @@ func TestStringRegexLanguageOperations(t *testing.T) {
 	}
 }
 
+func TestStringRegexSynthesizesSymbolicWitnesses(t *testing.T) {
+	x := StringConst(1, "x")
+	language := ConcatRegex(
+		StringToRegex(StringVal("go-")),
+		LoopRegex(2, 4, StringRangeRegex(StringVal("a"), StringVal("z"))),
+	)
+	checked := Check(Assert(9, New(), StringInRegex(x, language)))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("positive result=%T (%#v)", checked, checked)
+	}
+	if actual, found := StringModelValue(result.Value, x); !found || actual != "go-aa" {
+		t.Fatalf("positive x=(%q,%v)", actual, found)
+	}
+
+	y := StringConst(2, "y")
+	negative := Not{Value: StringInRegex(y, StringToRegex(StringVal("")))}
+	checked = Check(Assert(10, New(), negative))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("negative result=%T (%#v)", checked, checked)
+	}
+	if actual, found := StringModelValue(result.Value, y); !found || actual == "" {
+		t.Fatalf("negative y=(%q,%v)", actual, found)
+	}
+}
+
+func TestStringRegexRejectsForcedSymbolContradiction(t *testing.T) {
+	x := StringConst(1, "x")
+	formula := And{Values: []Term[BoolSort]{
+		Equal{Left: x, Right: StringVal("a")},
+		StringInRegex(x, StringToRegex(StringVal("b"))),
+	}}
+	checked := Check(Assert(11, New(), formula))
+	if _, ok := checked.(Unsatisfiable); !ok {
+		t.Fatalf("result=%T", checked)
+	}
+}
+
 func TestStringSymbolModel(t *testing.T) {
 	x := StringConst(1, "x")
 	formula := And{Values: []Term[BoolSort]{

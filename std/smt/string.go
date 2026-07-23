@@ -368,7 +368,7 @@ func isStringIntegerTerm(term any) bool {
 }
 
 func solveStringAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
-	var model stringModel
+	var forcedModel stringModel
 	var symbols stringSymbols
 	for _, assertion := range assertions {
 		if value, ground := evaluateStringBoolean(assertion, stringModel{}, integerModel{}); ground && !value {
@@ -376,6 +376,17 @@ func solveStringAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
 		}
 		collectStringSymbolsBoolean(assertion, &symbols)
 	}
+	for pass := 0; pass < len(assertions)+1; pass++ {
+		changed := false
+		for _, assertion := range assertions {
+			changed = bindForcedStringAssertion(assertion, false, &forcedModel) || changed
+		}
+		if !changed {
+			break
+		}
+	}
+	forcedComplete := allStringSymbolsBound(symbols, forcedModel)
+	model := forcedModel
 	for pass := 0; pass < len(assertions)+1; pass++ {
 		changed := false
 		for _, assertion := range assertions {
@@ -398,13 +409,27 @@ func solveStringAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
 			// A failed synthesized candidate is not, by itself, an
 			// unsatisfiability proof. Ground formulas are complete; symbolic
 			// formulas outside the constructive fragment must remain unknown.
-			if symbols.count == 0 && len(symbols.overflow) == 0 {
+			if symbols.count == 0 && len(symbols.overflow) == 0 || forcedComplete {
 				return checkOutcome{status: checkUnsat}, true
 			}
 			return checkOutcome{}, false
 		}
 	}
 	return checkOutcome{status: checkSat, strings: model}, true
+}
+
+func allStringSymbolsBound(symbols stringSymbols, model stringModel) bool {
+	for index := 0; index < symbols.count; index++ {
+		if _, ok := model.lookup(symbols.inline[index]); !ok {
+			return false
+		}
+	}
+	for id := range symbols.overflow {
+		if _, ok := model.lookup(id); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func solveCompactStringSystem(system CompactStringSystem) (checkOutcome, bool) {
@@ -550,6 +575,15 @@ func evaluateCompactStringRelation(relation CompactStringRelation, model stringM
 
 func collectStringSymbolsBoolean(term Term[BoolSort], symbols *stringSymbols) {
 	switch value := term.(type) {
+	case stringSystem:
+		for _, relation := range value.system.relations() {
+			if relation.Left.Kind == compactStringSymbol {
+				symbols.add(relation.Left.ID)
+			}
+			if relation.Right.Kind == compactStringSymbol {
+				symbols.add(relation.Right.ID)
+			}
+		}
 	case Equal:
 		collectStringSymbols(value.Left, symbols)
 		collectStringSymbols(value.Right, symbols)
@@ -564,7 +598,9 @@ func collectStringSymbolsBoolean(term Term[BoolSort], symbols *stringSymbols) {
 		collectStringSymbols(value.value, symbols)
 	case stringInRegex:
 		collectStringSymbols(value.value, symbols)
-		collectRegexStringSymbols(value.expression.node, symbols)
+		if value.expression.node != nil {
+			collectRegexStringSymbols(value.expression.node, symbols)
+		}
 	case Not:
 		collectStringSymbolsBoolean(value.Value, symbols)
 	case And:
@@ -689,6 +725,66 @@ func bindStringAssertion(term Term[BoolSort], negated bool, model *stringModel) 
 	return false
 }
 
+func bindForcedStringAssertion(term Term[BoolSort], negated bool, model *stringModel) bool {
+	switch value := term.(type) {
+	case stringSystem:
+		if negated {
+			return false
+		}
+		changed := false
+		for _, relation := range value.system.relations() {
+			if relation.Kind != CompactStringEqual || relation.Negated {
+				continue
+			}
+			left, leftOK := evaluateCompactString(relation.Left, *model)
+			right, rightOK := evaluateCompactString(relation.Right, *model)
+			if relation.Left.Kind == compactStringSymbol && rightOK {
+				changed = setExistingString(model, relation.Left.ID, right) || changed
+			}
+			if relation.Right.Kind == compactStringSymbol && leftOK {
+				changed = setExistingString(model, relation.Right.ID, left) || changed
+			}
+		}
+		return changed
+	case Not:
+		return bindForcedStringAssertion(value.Value, !negated, model)
+	case And:
+		if negated {
+			return false
+		}
+		changed := false
+		for _, item := range value.Values {
+			changed = bindForcedStringAssertion(item, false, model) || changed
+		}
+		return changed
+	case BooleanConjunction:
+		if negated {
+			return false
+		}
+		items, polarities := value.values()
+		changed := false
+		for index, item := range items {
+			changed = bindForcedStringAssertion(item, polarities[index], model) || changed
+		}
+		return changed
+	case Equal:
+		if negated || !isStringTerm(value.Left) || !isStringTerm(value.Right) {
+			return false
+		}
+		leftID, leftSymbol := stringSymbolID(value.Left)
+		rightID, rightSymbol := stringSymbolID(value.Right)
+		left, leftOK := evaluateString(value.Left.(Term[StringSort]), *model, integerModel{})
+		right, rightOK := evaluateString(value.Right.(Term[StringSort]), *model, integerModel{})
+		if leftSymbol && rightOK {
+			return setExistingString(model, leftID, right)
+		}
+		if rightSymbol && leftOK {
+			return setExistingString(model, rightID, left)
+		}
+	}
+	return false
+}
+
 func synthesizeStringAssertion(term Term[BoolSort], negated bool, model *stringModel) {
 	switch value := term.(type) {
 	case Not:
@@ -726,6 +822,8 @@ func synthesizeStringAssertion(term Term[BoolSort], negated bool, model *stringM
 		synthesizeStringPredicate(value.value, value.prefix, negated, 1, model)
 	case stringSuffix:
 		synthesizeStringPredicate(value.value, value.suffix, negated, 2, model)
+	case stringInRegex:
+		synthesizeStringRegex(value.value, value.expression, negated, model)
 	}
 }
 
@@ -840,6 +938,9 @@ func evaluateStringBoolean(term Term[BoolSort], model stringModel, integers inte
 		text, ok := evaluateString(value.value, model, integers)
 		if !ok {
 			return false, false
+		}
+		if witness, found := regexExpressionWitness(value.expression, model, integers); found && text == witness {
+			return true, true
 		}
 		return matchesStringRegex(text, value.expression, model, integers)
 	default:
