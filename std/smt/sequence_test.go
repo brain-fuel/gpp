@@ -482,11 +482,14 @@ func TestAffineLengthSymbolicIntegerSequenceWitness(t *testing.T) {
 		Left:  Add{Values: []Term[IntSort]{SequenceLength(x), SequenceLength(y)}},
 		Right: Integer{Value: 3},
 	}
-	if checked := Check(Assert(25, New(), multiple)); func() bool {
-		_, ok := checked.(Unknown)
-		return ok
-	}() == false {
-		t.Fatalf("multiple-symbol result=%T", checked)
+	multipleResult, ok := Check(Assert(25, New(), multiple)).(Satisfiable)
+	if !ok {
+		t.Fatal("two-symbol affine equality must be satisfiable")
+	}
+	xLength, xFound := IntValue(multipleResult.Value, SequenceLength(x))
+	yLength, yFound := IntValue(multipleResult.Value, SequenceLength(y))
+	if !xFound || !yFound || xLength+yLength != 3 {
+		t.Fatalf("multiple-symbol lengths=(%d,%v)/(%d,%v)", xLength, xFound, yLength, yFound)
 	}
 }
 
@@ -556,5 +559,53 @@ func TestSymbolicIntegerSequenceEqualityClasses(t *testing.T) {
 	}
 	if left, leftOK := IntegerSequenceModelValue(aliasResult.Value, x); !leftOK || left.Len() != 0 {
 		t.Fatalf("alias-only x len=(%d,%v)", left.Len(), leftOK)
+	}
+}
+
+func TestTwoSymbolAffineIntegerSequenceLengths(t *testing.T) {
+	unit := func(value int64) Term[SequenceSort[IntSort]] {
+		return SequenceUnit[IntSort](Integer{Value: value})
+	}
+	x := SequenceConst[IntSort](60, "x")
+	y := SequenceConst[IntSort](61, "y")
+	relation := Equal{
+		Left: Add{Values: []Term[IntSort]{
+			IntegerScale{
+				Coefficient: NewIntegerValue(2),
+				Value:       SequenceLength(x),
+			},
+			SequenceLength(y),
+		}},
+		Right: Integer{Value: 7},
+	}
+	formula := And{Values: []Term[BoolSort]{
+		relation,
+		SequenceHasPrefix(x, unit(1)),
+		SequenceHasSuffix(y, unit(3)),
+	}}
+	checked := Check(Assert(30, New(), formula))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", checked)
+	}
+	xValue, xFound := IntegerSequenceModelValue(result.Value, x)
+	yValue, yFound := IntegerSequenceModelValue(result.Value, y)
+	if !xFound || !yFound || 2*xValue.Len()+yValue.Len() != 7 {
+		t.Fatalf("lengths=(%d,%v)/(%d,%v)", xValue.Len(), xFound, yValue.Len(), yFound)
+	}
+	if valid, found := BoolValue(result.Value, formula); !found || !valid {
+		t.Fatalf("formula=(%v,%v)", valid, found)
+	}
+
+	conflicting := And{Values: []Term[BoolSort]{
+		relation,
+		Equal{Left: SequenceLength(x), Right: Integer{Value: 2}},
+		Equal{Left: SequenceLength(y), Right: Integer{Value: 2}},
+	}}
+	if checked := Check(Assert(31, New(), conflicting)); func() bool {
+		_, ok := checked.(Unsatisfiable)
+		return ok
+	}() == false {
+		t.Fatalf("conflicting result=%T", checked)
 	}
 }

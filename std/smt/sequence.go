@@ -145,9 +145,40 @@ type integerSequenceRequirementEntry struct {
 }
 
 type integerSequenceRequirementSet struct {
-	count    int
-	inline   [4]integerSequenceRequirementEntry
-	overflow map[int]*integerSequenceRequirements
+	count            int
+	inline           [4]integerSequenceRequirementEntry
+	overflow         map[int]*integerSequenceRequirements
+	relations        [4]integerSequenceLengthRelation
+	relationOverflow []integerSequenceLengthRelation
+	relationCount    int
+}
+
+type integerSequenceLengthRelation struct {
+	firstID           int
+	secondID          int
+	firstCoefficient  IntegerValue
+	secondCoefficient IntegerValue
+	constant          IntegerValue
+}
+
+func (set *integerSequenceRequirementSet) addRelation(
+	relation integerSequenceLengthRelation,
+) {
+	if set.relationCount < len(set.relations) {
+		set.relations[set.relationCount] = relation
+	} else {
+		set.relationOverflow = append(set.relationOverflow, relation)
+	}
+	set.relationCount++
+}
+
+func (set *integerSequenceRequirementSet) relationAt(
+	index int,
+) integerSequenceLengthRelation {
+	if index < len(set.relations) {
+		return set.relations[index]
+	}
+	return set.relationOverflow[index-len(set.relations)]
 }
 
 func (model integerSequenceModel) lookup(id int) (IntegerSequenceValue, bool) {
@@ -1140,6 +1171,123 @@ func normalizeIntegerSequenceLengthAffine(
 	return form
 }
 
+type integerSequenceLengthPairAffine struct {
+	ids          [2]int
+	coefficients [2]IntegerValue
+	count        int
+	constant     IntegerValue
+	valid        bool
+}
+
+func (form *integerSequenceLengthPairAffine) add(
+	id int,
+	coefficient IntegerValue,
+) {
+	for index := 0; index < form.count; index++ {
+		if form.ids[index] == id {
+			form.coefficients[index] = AddIntegerValue(
+				form.coefficients[index], coefficient,
+			)
+			return
+		}
+	}
+	if form.count == len(form.ids) {
+		form.valid = false
+		return
+	}
+	form.ids[form.count] = id
+	form.coefficients[form.count] = coefficient
+	form.count++
+}
+
+func accumulateIntegerSequenceLengthPairAffine(
+	term Term[IntSort],
+	multiplier IntegerValue,
+	form *integerSequenceLengthPairAffine,
+	aliases *integerSequenceAliases,
+) {
+	if !form.valid {
+		return
+	}
+	if id, ok := symbolicIntegerSequenceLength(term); ok {
+		form.add(aliases.root(id), multiplier)
+		return
+	}
+	if containsIntegerSequenceAffineLength(term) {
+		if value, ok := evaluateIntegerWithSequences(
+			term,
+			booleanModel{},
+			integerModel{},
+			rationalModel{},
+			bitVectorModel{},
+			integerSequenceModel{},
+		); ok {
+			form.constant = AddIntegerValue(
+				form.constant, MultiplyIntegerValue(multiplier, value),
+			)
+			return
+		}
+	}
+	switch value := term.(type) {
+	case Integer:
+		form.constant = AddIntegerValue(
+			form.constant,
+			MultiplyIntegerValue(multiplier, NewIntegerValue(value.Value)),
+		)
+	case integerExact[IntSort]:
+		form.constant = AddIntegerValue(
+			form.constant,
+			MultiplyIntegerValue(multiplier, value.value),
+		)
+	case Add:
+		for _, item := range value.Values {
+			accumulateIntegerSequenceLengthPairAffine(
+				item, multiplier, form, aliases,
+			)
+		}
+	case Subtract:
+		accumulateIntegerSequenceLengthPairAffine(
+			value.Left, multiplier, form, aliases,
+		)
+		accumulateIntegerSequenceLengthPairAffine(
+			value.Right, NegateIntegerValue(multiplier), form, aliases,
+		)
+	case IntegerScale:
+		accumulateIntegerSequenceLengthPairAffine(
+			value.Value,
+			MultiplyIntegerValue(multiplier, value.Coefficient),
+			form,
+			aliases,
+		)
+	default:
+		form.valid = false
+	}
+}
+
+func normalizeIntegerSequenceLengthPairAffine(
+	left,
+	right Term[IntSort],
+	aliases *integerSequenceAliases,
+) integerSequenceLengthPairAffine {
+	form := integerSequenceLengthPairAffine{valid: true}
+	accumulateIntegerSequenceLengthPairAffine(
+		left, NewIntegerValue(1), &form, aliases,
+	)
+	accumulateIntegerSequenceLengthPairAffine(
+		right, NewIntegerValue(-1), &form, aliases,
+	)
+	compacted := integerSequenceLengthPairAffine{
+		constant: form.constant,
+		valid:    form.valid,
+	}
+	for index := 0; index < form.count; index++ {
+		if CompareIntegerValue(form.coefficients[index], IntegerValue{}) != 0 {
+			compacted.add(form.ids[index], form.coefficients[index])
+		}
+	}
+	return compacted
+}
+
 func applyIntegerSequenceMinimumValue(
 	requirements *integerSequenceRequirements,
 	value IntegerValue,
@@ -1183,6 +1331,19 @@ func collectAffineIntegerSequenceLengthEquality(
 	}
 	form := normalizeIntegerSequenceLengthAffine(left, right)
 	if !form.valid {
+		pair := normalizeIntegerSequenceLengthPairAffine(left, right, aliases)
+		if pair.valid && pair.count == 2 {
+			requirements.forSymbol(pair.ids[0])
+			requirements.forSymbol(pair.ids[1])
+			requirements.addRelation(integerSequenceLengthRelation{
+				firstID:           pair.ids[0],
+				secondID:          pair.ids[1],
+				firstCoefficient:  pair.coefficients[0],
+				secondCoefficient: pair.coefficients[1],
+				constant:          pair.constant,
+			})
+			return true, true, true
+		}
 		return true, false, true
 	}
 	if !form.hasSymbol {
@@ -1755,6 +1916,85 @@ func buildIntegerSequenceWitness(
 	return result, true, true
 }
 
+func buildIntegerSequenceAtLength(
+	requirements integerSequenceRequirements,
+	length int,
+) (IntegerSequenceValue, bool, bool) {
+	if !addIntegerSequenceExactLength(&requirements, length) {
+		return IntegerSequenceValue{}, false, true
+	}
+	return buildIntegerSequenceWitness(requirements)
+}
+
+func solveIntegerSequenceLengthRelation(
+	relation integerSequenceLengthRelation,
+	requirements *integerSequenceRequirementSet,
+	model *integerSequenceModel,
+) (bool, bool) {
+	firstRequirements := *requirements.forSymbol(relation.firstID)
+	secondRequirements := *requirements.forSymbol(relation.secondID)
+	firstAssigned, firstHasValue := model.lookup(relation.firstID)
+	secondAssigned, secondHasValue := model.lookup(relation.secondID)
+	firstStart, firstEnd := 0, maximumConstructedIntegerSequenceLength
+	if firstHasValue {
+		firstStart, firstEnd = firstAssigned.Len(), firstAssigned.Len()
+	}
+	for firstLength := firstStart; firstLength <= firstEnd; firstLength++ {
+		firstTerm := MultiplyIntegerValue(
+			relation.firstCoefficient, NewIntegerValue(int64(firstLength)),
+		)
+		right := NegateIntegerValue(
+			AddIntegerValue(firstTerm, relation.constant),
+		)
+		secondLengthValue, remainder, ok := DivModIntegerValue(
+			right, relation.secondCoefficient,
+		)
+		if !ok || CompareIntegerValue(remainder, IntegerValue{}) != 0 {
+			continue
+		}
+		secondLength, fits := secondLengthValue.Int64()
+		if !fits || secondLength < 0 ||
+			secondLength > maximumConstructedIntegerSequenceLength {
+			continue
+		}
+		if secondHasValue && int64(secondAssigned.Len()) != secondLength {
+			continue
+		}
+		firstValue := firstAssigned
+		if !firstHasValue {
+			var consistent, supported bool
+			firstValue, consistent, supported = buildIntegerSequenceAtLength(
+				firstRequirements, firstLength,
+			)
+			if !supported {
+				return true, false
+			}
+			if !consistent {
+				continue
+			}
+		}
+		secondValue := secondAssigned
+		if !secondHasValue {
+			var consistent, supported bool
+			secondValue, consistent, supported = buildIntegerSequenceAtLength(
+				secondRequirements, int(secondLength),
+			)
+			if !supported {
+				return true, false
+			}
+			if !consistent {
+				continue
+			}
+		}
+		if !model.set(relation.firstID, firstValue) ||
+			!model.set(relation.secondID, secondValue) {
+			return false, true
+		}
+		return true, true
+	}
+	return false, true
+}
+
 func bindPositiveIntegerSequenceWitnesses(
 	assertions []Term[BoolSort],
 	model *integerSequenceModel,
@@ -1769,8 +2009,19 @@ func bindPositiveIntegerSequenceWitnesses(
 			return consistent, supported
 		}
 	}
+	for index := 0; index < requirements.relationCount; index++ {
+		consistent, supported := solveIntegerSequenceLengthRelation(
+			requirements.relationAt(index), &requirements, model,
+		)
+		if !consistent || !supported {
+			return consistent, supported
+		}
+	}
 	for index := 0; index < requirements.count && index < len(requirements.inline); index++ {
 		entry := requirements.inline[index]
+		if _, assigned := model.lookup(entry.id); assigned {
+			continue
+		}
 		witness, consistent, supported := buildIntegerSequenceWitness(entry.requirements)
 		if !consistent || !supported {
 			return consistent, supported
@@ -1780,6 +2031,9 @@ func bindPositiveIntegerSequenceWitnesses(
 		}
 	}
 	for id, entry := range requirements.overflow {
+		if _, assigned := model.lookup(id); assigned {
+			continue
+		}
 		witness, consistent, supported := buildIntegerSequenceWitness(*entry)
 		if !consistent || !supported {
 			return consistent, supported
