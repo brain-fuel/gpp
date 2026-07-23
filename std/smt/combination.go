@@ -855,7 +855,35 @@ func solveConjunctiveTheoryProduct(assertions []Term[BoolSort]) (checkOutcome, b
 	}
 	if partition.euf.count != 0 {
 		terms, negated := partition.euf.values()
-		outcome, recognized := solveEUFPolarized(terms, negated)
+		var inlineTerms [16]Term[BoolSort]
+		var inlineNegated [16]bool
+		exchangedTerms := inlineTerms[:0]
+		exchangedNegated := inlineNegated[:0]
+		exchangedTerms = append(exchangedTerms, terms...)
+		exchangedNegated = append(exchangedNegated, negated...)
+		if partition.integers.count != 0 {
+			integerTerms, integerNegated := partition.integers.values()
+			for index, term := range integerTerms {
+				equality, ok := term.(Equal)
+				if !ok {
+					continue
+				}
+				left, leftOK := equality.Left.(Term[IntSort])
+				right, rightOK := equality.Right.(Term[IntSort])
+				if !leftOK || !rightOK {
+					continue
+				}
+				if _, _, leftOK = IntegerSymbol(left); !leftOK {
+					continue
+				}
+				if _, _, rightOK = IntegerSymbol(right); !rightOK {
+					continue
+				}
+				exchangedTerms = append(exchangedTerms, term)
+				exchangedNegated = append(exchangedNegated, integerNegated[index])
+			}
+		}
+		outcome, recognized := solveEUFPolarized(exchangedTerms, exchangedNegated)
 		if !recognized {
 			return checkOutcome{}, false
 		}

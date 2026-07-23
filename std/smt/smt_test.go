@@ -1463,6 +1463,22 @@ func TestIntegerSortedFunctionCongruence(t *testing.T) {
 	if result := Check(Assert(3, New(), constantFormula)); func() bool { _, ok := result.(Unsatisfiable); return ok }() == false {
 		t.Fatalf("constant result=%T", result)
 	}
+	compact := TheoryConjunction{AtomCount: 2}
+	compact.Atoms[0] = Equal{Left: x, Right: y}
+	compact.Atoms[1] = UninterpretedEUFRelation{
+		Left: UninterpretedEUFTerm{
+			Kind: 3, SortID: -2, FunctionID: 4,
+			FirstSortID: -2, SecondSortID: -2, FirstID: 1, SecondID: 2,
+		},
+		Right: UninterpretedEUFTerm{
+			Kind: 3, SortID: -2, FunctionID: 4,
+			FirstSortID: -2, SecondSortID: -2, FirstID: 2, SecondID: 1,
+		},
+	}
+	compact.AtomNegated[1] = true
+	if result := Check(Assert(4, New(), compact)); func() bool { _, ok := result.(Unsatisfiable); return ok }() == false {
+		t.Fatalf("compact result=%T", result)
+	}
 }
 
 func TestSharedRealEUFExchangesLRAImpliedEquality(t *testing.T) {
