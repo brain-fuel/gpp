@@ -311,6 +311,13 @@ func (e *engine) solveAdditional(assumptions []Term[BoolSort]) checkOutcome {
 		if datatypeTheory || arrayTheory || bitVectorTheory || eufTheory || realTheory {
 			return checkOutcome{status: checkUnknown, reason: UnsupportedTheory{Name: "string combination with another theory"}}
 		}
+		if len(allAssertions) == 1 {
+			if compact, ok := allAssertions[0].(stringSystem); ok {
+				if outcome, recognized := solveCompactStringSystem(compact.system); recognized {
+					return outcome
+				}
+			}
+		}
 		if outcome, recognized := solveStringAssertions(allAssertions); recognized {
 			return outcome
 		}

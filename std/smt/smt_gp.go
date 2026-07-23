@@ -946,6 +946,13 @@ type stringSuffix struct {
 
 func (stringSuffix) isTerm(BoolSort) {}
 
+//goplus:variant (Term[S]) stringSystem(System CompactStringSystem) Term[BoolSort]
+type stringSystem struct {
+	system CompactStringSystem
+}
+
+func (stringSystem) isTerm(BoolSort) {}
+
 //goplus:variant (Term[S]) sequenceEmpty() Term[S]
 type sequenceEmpty[S any] struct{}
 
@@ -1589,6 +1596,7 @@ type TermCases[S any, R any] struct {
 	stringContains                     func(Value Term[StringSort], Substring Term[StringSort]) R
 	stringPrefix                       func(Prefix Term[StringSort], Value Term[StringSort]) R
 	stringSuffix                       func(Suffix Term[StringSort], Value Term[StringSort]) R
+	stringSystem                       func(System CompactStringSystem) R
 	sequenceEmpty                      func() R
 	sequenceUnit                       func(Value any) R
 	sequenceConcat                     func(Values any) R
@@ -1736,6 +1744,8 @@ func TermFold[S any, R any](t Term[S], cs TermCases[S, R]) R {
 		return cs.stringPrefix(m.prefix, m.value)
 	case stringSuffix:
 		return cs.stringSuffix(m.suffix, m.value)
+	case stringSystem:
+		return cs.stringSystem(m.system)
 	case sequenceEmpty[S]:
 		return cs.sequenceEmpty()
 	case sequenceUnit[S]:
@@ -2884,10 +2894,8 @@ func StringVal(value string) Term[StringSort] { return stringValue[StringSort]{v
 func StringConst(id int, name string) Term[StringSort] {
 	return stringSymbol[StringSort]{iD: id, name: name}
 }
-func StringConcat(values ...Term[StringSort]) Term[StringSort] {
-	return stringConcat[StringSort]{values: values}
-}
-func StringLength(value Term[StringSort]) Term[IntSort] { return stringLength{value: value} }
+func StringConcat(values ...Term[StringSort]) Term[StringSort] { return makeStringConcat(values) }
+func StringLength(value Term[StringSort]) Term[IntSort]        { return stringLength{value: value} }
 func StringContains(value Term[StringSort], substring Term[StringSort]) Term[BoolSort] {
 	return stringContains{value: value, substring: substring}
 }

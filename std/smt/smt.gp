@@ -171,6 +171,7 @@ type Term[S any] enum {
 	stringContains(Value Term[StringSort], Substring Term[StringSort]) Term[BoolSort]
 	stringPrefix(Prefix Term[StringSort], Value Term[StringSort]) Term[BoolSort]
 	stringSuffix(Suffix Term[StringSort], Value Term[StringSort]) Term[BoolSort]
+	stringSystem(System CompactStringSystem) Term[BoolSort]
 	sequenceEmpty() Term[S]
 	sequenceUnit(Value any) Term[S]
 	sequenceConcat(Values any) Term[S]
@@ -532,7 +533,7 @@ func IntegerVariableID(term Term[IntSort]) (int, bool) {
 
 func StringVal(value string) Term[StringSort] { return Term[StringSort].stringValue(value) }
 func StringConst(id int, name string) Term[StringSort] { return Term[StringSort].stringSymbol(id, name) }
-func StringConcat(values ...Term[StringSort]) Term[StringSort] { return Term[StringSort].stringConcat(values) }
+func StringConcat(values ...Term[StringSort]) Term[StringSort] { return makeStringConcat(values) }
 func StringLength(value Term[StringSort]) Term[IntSort] { return stringLength(value) }
 func StringContains(value Term[StringSort], substring Term[StringSort]) Term[BoolSort] { return stringContains(value, substring) }
 func StringHasPrefix(value Term[StringSort], prefix Term[StringSort]) Term[BoolSort] { return stringPrefix(prefix, value) }

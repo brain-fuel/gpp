@@ -88,3 +88,25 @@ func BenchmarkStringQFSLIA(b *testing.B) {
 		}
 	}
 }
+
+func TestCompactStringSystemModel(t *testing.T) {
+	x := CompactStringSymbolTerm(1, "x")
+	literal := CompactStringLiteralTerm("go-forge")
+	var system CompactStringSystem
+	system = AppendCompactStringRelation(system, CompactStringRelation{Kind: CompactStringEqual, Left: x, Right: literal})
+	system = AppendCompactStringRelation(system, CompactStringRelation{Kind: CompactStringLengthEqual, Left: x, Integer: 8})
+	system = AppendCompactStringRelation(system, CompactStringRelation{Kind: CompactStringContains, Left: x, Right: CompactStringLiteralTerm("-")})
+	system = AppendCompactStringRelation(system, CompactStringRelation{Kind: CompactStringPrefix, Left: x, Right: CompactStringLiteralTerm("go")})
+	system = AppendCompactStringRelation(system, CompactStringRelation{Kind: CompactStringSuffix, Left: x, Right: CompactStringLiteralTerm("forge")})
+	term := CompactStringAssertions(system)
+	result, ok := Check(Assert(5, New(), term)).(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", Check(Assert(5, New(), term)))
+	}
+	if value, found := StringModelValue(result.Value, StringConst(1, "x")); !found || value != "go-forge" {
+		t.Fatalf("x=(%q,%v)", value, found)
+	}
+	if valid, found := BoolValue(result.Value, term); !found || !valid {
+		t.Fatalf("formula=(%v,%v)", valid, found)
+	}
+}
