@@ -193,6 +193,29 @@ func TestStringLexicographicOrdering(t *testing.T) {
 	}
 }
 
+func TestStringCharacterValue(t *testing.T) {
+	cases := []struct {
+		code int64
+		want string
+		ok   bool
+	}{
+		{-1, "", false},
+		{0, "\x00", true},
+		{0x41, "A", true},
+		{0xd800, "\xed\xa0\x80", true},
+		{0x1f642, "🙂", true},
+		{0x2ffff, "\xf0\xaf\xbf\xbf", true},
+		{0x30000, "", false},
+	}
+	for _, test := range cases {
+		term, ok := StringCharacter(test.code)
+		value, known := evaluateString(term, stringModel{}, integerModel{})
+		if ok != test.ok || !known || value != test.want {
+			t.Fatalf("code=%x value=%q known=%v ok=%v", test.code, value, known, ok)
+		}
+	}
+}
+
 func TestStringRegexLanguageOperations(t *testing.T) {
 	a := StringToRegex(StringVal("a"))
 	b := StringToRegex(StringVal("b"))

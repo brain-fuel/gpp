@@ -3125,6 +3125,10 @@ func IntegerVariableID(term Term[IntSort]) (int, bool) {
 }
 
 func StringVal(value string) Term[StringSort] { return stringValue[StringSort]{value: value} }
+func StringCharacter(value int64) (Term[StringSort], bool) {
+	encoded, ok := EncodeStringCodePoint(value)
+	return stringValue[StringSort]{value: encoded}, ok
+}
 func StringConst(id int, name string) Term[StringSort] {
 	return stringSymbol[StringSort]{iD: id, name: name}
 }

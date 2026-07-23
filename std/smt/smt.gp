@@ -553,6 +553,10 @@ func IntegerVariableID(term Term[IntSort]) (int, bool) {
 }
 
 func StringVal(value string) Term[StringSort] { return Term[StringSort].stringValue(value) }
+func StringCharacter(value int64) (Term[StringSort], bool) {
+	encoded, ok := EncodeStringCodePoint(value)
+	return Term[StringSort].stringValue(encoded), ok
+}
 func StringConst(id int, name string) Term[StringSort] { return Term[StringSort].stringSymbol(id, name) }
 func StringConcat(values ...Term[StringSort]) Term[StringSort] { return makeStringConcat(values) }
 func StringLength(value Term[StringSort]) Term[IntSort] { return stringLength(value) }

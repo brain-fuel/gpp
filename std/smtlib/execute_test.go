@@ -144,6 +144,38 @@ func TestExecuteStringConversionsAndReplaceAll(t *testing.T) {
 	}
 }
 
+func TestExecuteIndexedCharacterConstants(t *testing.T) {
+	script := `(set-logic QF_SLIA)
+(assert (= (_ char #x0) "\u{0}"))
+(assert (= (_ char #x00041) "A"))
+(assert (= (_ char #xd800) "\u{d800}"))
+(assert (= (_ char #x1F642) "\u{1f642}"))
+(assert (= (str.to_code (_ char #x2ffff)) 196607))
+(check-sat)`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("result=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+		t.Fatalf("check=%T", result.Responses[len(result.Responses)-1])
+	}
+}
+
+func TestExecuteRejectsInvalidIndexedCharacterConstants(t *testing.T) {
+	for _, constant := range []string{
+		`(_ char #x)`,
+		`(_ char #xG)`,
+		`(_ char #x30000)`,
+		`(_ char #x000001)`,
+		`(_ char 65)`,
+	} {
+		result, ok := Execute("(assert (= " + constant + ` ""))`).(ExecutionFailed)
+		if !ok || len(result.Errors) == 0 {
+			t.Fatalf("constant=%s result=%#v", constant, Execute(constant))
+		}
+	}
+}
+
 func TestExecuteStringRegularExpressions(t *testing.T) {
 	script := `(set-logic ALL)
 (assert (str.in_re "abbb" (re.++ (str.to_re "a") (re.* (str.to_re "b")))))

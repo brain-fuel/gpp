@@ -1373,6 +1373,12 @@ func (executor *executor) term(expression SExpr) (dynamicTerm, error) {
 	if !ok || len(list.Values) == 0 {
 		return dynamicTerm{}, fmt.Errorf("term must be a nonempty application")
 	}
+	if character, recognized, err := indexedCharacterConstant(list); recognized {
+		if err != nil {
+			return dynamicTerm{}, err
+		}
+		return dynamicTerm{sort: sortString, stringValue: character}, nil
+	}
 	if operator, operatorOK := atomText(list.Values[0]); operatorOK && operator == "match" {
 		return executor.matchParametricDatatype(list)
 	}
@@ -1628,6 +1634,37 @@ func (executor *executor) term(expression SExpr) (dynamicTerm, error) {
 		return dynamicTerm{sort: function.rangeSort + 2, uninterpreted: smt.ApplyBinary(function.value, terms[0].uninterpreted, terms[1].uninterpreted)}, nil
 	}
 	return buildApplication(operator, terms)
+}
+
+func indexedCharacterConstant(list List) (smt.Term[smt.StringSort], bool, error) {
+	if len(list.Values) != 3 {
+		return nil, false, nil
+	}
+	qualifier, qualifierOK := atomText(list.Values[0])
+	name, nameOK := atomText(list.Values[1])
+	if !qualifierOK || !nameOK || qualifier != "_" || name != "char" {
+		return nil, false, nil
+	}
+	index, indexOK := atomText(list.Values[2])
+	if !indexOK || len(index) < 3 || len(index) > 7 ||
+		!strings.HasPrefix(index, "#x") {
+		return nil, true, fmt.Errorf("invalid indexed character constant")
+	}
+	digits := index[2:]
+	for _, digit := range digits {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", digit) {
+			return nil, true, fmt.Errorf("invalid indexed character constant %s", index)
+		}
+	}
+	value, err := strconv.ParseInt(digits, 16, 64)
+	if err != nil {
+		return nil, true, fmt.Errorf("invalid indexed character constant %s", index)
+	}
+	character, valid := smt.StringCharacter(value)
+	if !valid {
+		return nil, true, fmt.Errorf("indexed character constant out of range %s", index)
+	}
+	return character, true, nil
 }
 
 func (executor *executor) matchParametricDatatype(expression List) (dynamicTerm, error) {
