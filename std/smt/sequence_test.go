@@ -902,11 +902,42 @@ func TestFourSymbolAffineLengthIntegerSequenceSystems(t *testing.T) {
 		}},
 		Right: Integer{Value: 10},
 	}
-	if checked := Check(Assert(39, New(), nineSymbol)); func() bool {
+	nineResult, ok := Check(Assert(39, New(), nineSymbol)).(Satisfiable)
+	if !ok {
+		t.Fatalf("nine-symbol result=%T", Check(Assert(39, New(), nineSymbol)))
+	}
+	total = 0
+	for index, expression := range []Term[SequenceSort[IntSort]]{
+		x, y, z, w, v, a, b, c, d,
+	} {
+		value, found := IntegerSequenceModelValue(nineResult.Value, expression)
+		if !found {
+			t.Fatalf("missing nine-symbol model index=%d", index)
+		}
+		total += value.Len()
+	}
+	if total != 10 {
+		t.Fatalf("nine-symbol total=%d", total)
+	}
+
+	seventeenLengths := []Term[IntSort]{
+		SequenceLength(x), SequenceLength(y), SequenceLength(z),
+		SequenceLength(w), SequenceLength(v), SequenceLength(a),
+		SequenceLength(b), SequenceLength(c), SequenceLength(d),
+	}
+	for index := 0; index < 8; index++ {
+		expression := SequenceConst[IntSort](80+index, "overflow")
+		seventeenLengths = append(seventeenLengths, SequenceLength(expression))
+	}
+	seventeenSymbol := Equal{
+		Left:  Add{Values: seventeenLengths},
+		Right: Integer{Value: 17},
+	}
+	if checked := Check(Assert(40, New(), seventeenSymbol)); func() bool {
 		_, ok := checked.(Unknown)
 		return ok
 	}() == false {
-		t.Fatalf("nine-symbol result=%T", checked)
+		t.Fatalf("seventeen-symbol result=%T", checked)
 	}
 }
 

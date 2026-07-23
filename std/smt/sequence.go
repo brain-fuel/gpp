@@ -45,7 +45,7 @@ type integerSequenceModelEntry struct {
 
 type integerSequenceModel struct {
 	count    int
-	inline   [4]integerSequenceModelEntry
+	inline   [maximumIntegerSequenceAffineRoots]integerSequenceModelEntry
 	overflow map[int]IntegerSequenceValue
 }
 
@@ -56,7 +56,7 @@ type integerSequenceAliasEntry struct {
 
 type integerSequenceAliases struct {
 	count    int
-	inline   [8]integerSequenceAliasEntry
+	inline   [maximumIntegerSequenceAffineRoots]integerSequenceAliasEntry
 	overflow map[int]int
 }
 
@@ -152,6 +152,7 @@ type negativeIntegerSequenceRequirement struct {
 }
 
 const maximumConstructedIntegerSequenceLength = 4096
+const maximumIntegerSequenceAffineRoots = 16
 
 type integerSequenceRequirementEntry struct {
 	id           int
@@ -160,7 +161,7 @@ type integerSequenceRequirementEntry struct {
 
 type integerSequenceRequirementSet struct {
 	count             int
-	inline            [4]integerSequenceRequirementEntry
+	inline            [maximumIntegerSequenceAffineRoots]integerSequenceRequirementEntry
 	overflow          map[int]*integerSequenceRequirements
 	relations         [4]integerSequenceLengthRelation
 	relationOverflow  []integerSequenceLengthRelation
@@ -185,8 +186,8 @@ type negativeIntegerSequencePair struct {
 }
 
 type integerSequenceLengthRelation struct {
-	ids          [8]int
-	coefficients [8]IntegerValue
+	ids          [maximumIntegerSequenceAffineRoots]int
+	coefficients [maximumIntegerSequenceAffineRoots]IntegerValue
 	count        int
 	constant     IntegerValue
 	equality     bool
@@ -1553,8 +1554,8 @@ func normalizeIntegerSequenceLengthAffine(
 }
 
 type integerSequenceLengthMultiAffine struct {
-	ids          [8]int
-	coefficients [8]IntegerValue
+	ids          [maximumIntegerSequenceAffineRoots]int
+	coefficients [maximumIntegerSequenceAffineRoots]IntegerValue
 	count        int
 	constant     IntegerValue
 	valid        bool
@@ -2606,11 +2607,11 @@ func buildIntegerSequenceAtLength(
 type integerSequenceLengthSearch struct {
 	relation     integerSequenceLengthRelation
 	relations    *integerSequenceRequirementSet
-	requirements [8]integerSequenceRequirements
-	assigned     [8]IntegerSequenceValue
-	hasAssigned  [8]bool
-	values       [8]IntegerSequenceValue
-	lengths      [8]int
+	requirements [maximumIntegerSequenceAffineRoots]integerSequenceRequirements
+	assigned     [maximumIntegerSequenceAffineRoots]IntegerSequenceValue
+	hasAssigned  [maximumIntegerSequenceAffineRoots]bool
+	values       [maximumIntegerSequenceAffineRoots]IntegerSequenceValue
+	lengths      [maximumIntegerSequenceAffineRoots]int
 	states       int
 }
 
@@ -2618,8 +2619,8 @@ func addEarlierIntegerSequenceDisequalityExclusions(
 	set *integerSequenceRequirementSet,
 	id int,
 	position int,
-	ids *[8]int,
-	values *[8]IntegerSequenceValue,
+	ids *[maximumIntegerSequenceAffineRoots]int,
+	values *[maximumIntegerSequenceAffineRoots]IntegerSequenceValue,
 	requirements *integerSequenceRequirements,
 ) bool {
 	for disequalityIndex := 0; disequalityIndex < set.disequalityCount; disequalityIndex++ {
@@ -2647,8 +2648,8 @@ func addEarlierIntegerSequenceNegativePairRequirements(
 	set *integerSequenceRequirementSet,
 	id int,
 	position int,
-	ids *[8]int,
-	values *[8]IntegerSequenceValue,
+	ids *[maximumIntegerSequenceAffineRoots]int,
+	values *[maximumIntegerSequenceAffineRoots]IntegerSequenceValue,
 	requirements *integerSequenceRequirements,
 ) bool {
 	for pairIndex := 0; pairIndex < set.negativePairCount; pairIndex++ {
@@ -2671,13 +2672,13 @@ func addEarlierIntegerSequenceNegativePairRequirements(
 
 func integerSequenceNegativePairOrder(
 	set *integerSequenceRequirementSet,
-	ids *[8]int,
-	coefficients *[8]IntegerValue,
+	ids *[maximumIntegerSequenceAffineRoots]int,
+	coefficients *[maximumIntegerSequenceAffineRoots]IntegerValue,
 	count int,
 ) bool {
 	originalIDs := *ids
 	originalCoefficients := *coefficients
-	var used [8]bool
+	var used [maximumIntegerSequenceAffineRoots]bool
 	for output := 0; output < count; output++ {
 		selected := -1
 		for candidate := 0; candidate < count; candidate++ {
@@ -2759,7 +2760,7 @@ func integerSequenceLengthRange(
 }
 
 func (search *integerSequenceLengthSearch) buildCandidate() (bool, bool) {
-	var ids [8]int
+	var ids [maximumIntegerSequenceAffineRoots]int
 	copy(ids[:], search.relation.ids[:search.relation.count])
 	for index := 0; index < search.relation.count; index++ {
 		requirements := search.requirements[index]
@@ -2837,6 +2838,43 @@ func (search *integerSequenceLengthSearch) inequalityCanStillHold(
 	) <= 0
 }
 
+func (search *integerSequenceLengthSearch) equalityCanStillHold(
+	index int,
+	sum IntegerValue,
+) bool {
+	minimum := AddIntegerValue(sum, search.relation.constant)
+	maximum := minimum
+	for ; index < search.relation.count; index++ {
+		start, end, admissible := integerSequenceLengthRange(
+			search.requirements[index],
+			search.assigned[index],
+			search.hasAssigned[index],
+		)
+		if !admissible {
+			return false
+		}
+		minimumLength, maximumLength := start, end
+		coefficient := search.relation.coefficients[index]
+		if CompareIntegerValue(coefficient, IntegerValue{}) < 0 {
+			minimumLength, maximumLength = end, start
+		}
+		minimum = AddIntegerValue(
+			minimum,
+			MultiplyIntegerValue(
+				coefficient, NewIntegerValue(int64(minimumLength)),
+			),
+		)
+		maximum = AddIntegerValue(
+			maximum,
+			MultiplyIntegerValue(
+				coefficient, NewIntegerValue(int64(maximumLength)),
+			),
+		)
+	}
+	return CompareIntegerValue(minimum, IntegerValue{}) <= 0 &&
+		CompareIntegerValue(maximum, IntegerValue{}) >= 0
+}
+
 func (search *integerSequenceLengthSearch) solve(
 	index int,
 	sum IntegerValue,
@@ -2910,6 +2948,10 @@ func (search *integerSequenceLengthSearch) solve(
 			NewIntegerValue(int64(length)),
 		)
 		nextSum := AddIntegerValue(sum, term)
+		if search.relation.equality &&
+			!search.equalityCanStillHold(index+1, nextSum) {
+			continue
+		}
 		if !search.relation.equality &&
 			!search.inequalityCanStillHold(index+1, nextSum) {
 			continue
@@ -2957,13 +2999,13 @@ func solveIntegerSequenceLengthRelation(
 
 type integerSequenceLengthSystemSearch struct {
 	relations    *integerSequenceRequirementSet
-	ids          [8]int
+	ids          [maximumIntegerSequenceAffineRoots]int
 	count        int
-	requirements [8]integerSequenceRequirements
-	assigned     [8]IntegerSequenceValue
-	hasAssigned  [8]bool
-	values       [8]IntegerSequenceValue
-	lengths      [8]int
+	requirements [maximumIntegerSequenceAffineRoots]integerSequenceRequirements
+	assigned     [maximumIntegerSequenceAffineRoots]IntegerSequenceValue
+	hasAssigned  [maximumIntegerSequenceAffineRoots]bool
+	values       [maximumIntegerSequenceAffineRoots]IntegerSequenceValue
+	lengths      [maximumIntegerSequenceAffineRoots]int
 	states       int
 }
 
@@ -3217,7 +3259,7 @@ func solveIntegerSequenceLengthSystem(
 			}
 		}
 	}
-	var unusedCoefficients [8]IntegerValue
+	var unusedCoefficients [maximumIntegerSequenceAffineRoots]IntegerValue
 	if !integerSequenceNegativePairOrder(
 		requirements, &search.ids, &unusedCoefficients, search.count,
 	) {
@@ -4029,4 +4071,13 @@ func IntegerSequenceModelValue(
 	return evaluateIntegerSequenceWithModel(
 		term, model.booleans, model.integers, model.reals, model.integerSequences,
 	)
+}
+
+// IntegerSequenceSymbolModelValue returns the exact value of an integer
+// sequence symbol without materializing an expression node.
+func IntegerSequenceSymbolModelValue(
+	model Model,
+	id int,
+) (IntegerSequenceValue, bool) {
+	return model.integerSequences.lookup(id)
 }
