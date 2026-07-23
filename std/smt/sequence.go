@@ -336,41 +336,6 @@ func (set *integerSequenceRequirementSet) addKnownNegativePairRequirements(
 	return true
 }
 
-func (set *integerSequenceRequirementSet) negativePairsAcyclic() bool {
-	if set.negativePairCount < 2 {
-		return true
-	}
-	indegree := make(map[int]int)
-	edges := make(map[int][]int)
-	for index := 0; index < set.negativePairCount; index++ {
-		item := set.negativePairAt(index)
-		if _, ok := indegree[item.pattern]; !ok {
-			indegree[item.pattern] = 0
-		}
-		indegree[item.value]++
-		edges[item.pattern] = append(edges[item.pattern], item.value)
-	}
-	queue := make([]int, 0, len(indegree))
-	for id, degree := range indegree {
-		if degree == 0 {
-			queue = append(queue, id)
-		}
-	}
-	visited := 0
-	for len(queue) > 0 {
-		id := queue[len(queue)-1]
-		queue = queue[:len(queue)-1]
-		visited++
-		for _, next := range edges[id] {
-			indegree[next]--
-			if indegree[next] == 0 {
-				queue = append(queue, next)
-			}
-		}
-	}
-	return visited == len(indegree)
-}
-
 func (set *integerSequenceRequirementSet) excludesDisequalModels(
 	id int,
 	requirements *integerSequenceRequirements,
@@ -2688,13 +2653,16 @@ func addEarlierIntegerSequenceNegativePairRequirements(
 ) bool {
 	for pairIndex := 0; pairIndex < set.negativePairCount; pairIndex++ {
 		item := set.negativePairAt(pairIndex)
-		if item.value != id {
-			continue
-		}
 		for index := 0; index < position; index++ {
-			if ids[index] == item.pattern &&
-				!requirements.addNegative(item.kind, values[index]) {
-				return false
+			switch {
+			case item.value == id && ids[index] == item.pattern:
+				if !requirements.addNegative(item.kind, values[index]) {
+					return false
+				}
+			case item.pattern == id && ids[index] == item.value:
+				if !requirements.addPatternNegative(item.kind, values[index]) {
+					return false
+				}
 			}
 		}
 	}
@@ -2739,7 +2707,9 @@ func integerSequenceNegativePairOrder(
 			}
 		}
 		if selected < 0 {
-			return false
+			*ids = originalIDs
+			*coefficients = originalCoefficients
+			return true
 		}
 		used[selected] = true
 		ids[output] = originalIDs[selected]
@@ -3286,9 +3256,6 @@ func bindPositiveIntegerSequenceWitnesses(
 		if !consistent || !supported {
 			return consistent, supported
 		}
-	}
-	if !requirements.negativePairsAcyclic() {
-		return true, false
 	}
 	for index := 0; index < requirements.disequalityCount; index++ {
 		item := requirements.disequalityAt(index)

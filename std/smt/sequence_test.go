@@ -1374,11 +1374,51 @@ func TestNegatedSymbolicPatternIntegerSequencePredicates(t *testing.T) {
 		Not{Value: SequenceContains(x, y)},
 		Not{Value: SequenceContains(y, x)},
 	}}
-	if checked := Check(Assert(76, New(), cyclic)); func() bool {
-		_, ok := checked.(Unknown)
-		return ok
-	}() == false {
-		t.Fatalf("cyclic result=%T", checked)
+	cyclicResult, ok := Check(Assert(76, New(), cyclic)).(Satisfiable)
+	if !ok {
+		t.Fatalf("cyclic result=%T", Check(Assert(76, New(), cyclic)))
+	}
+	xValue, xFound = IntegerSequenceModelValue(cyclicResult.Value, x)
+	yValue, yFound = IntegerSequenceModelValue(cyclicResult.Value, y)
+	if !xFound || !yFound || xValue.Len() != 1 || yValue.Len() != 1 ||
+		equalIntegerSequences(xValue, yValue) {
+		t.Fatalf(
+			"cyclic models=(%d,%v)/(%d,%v)",
+			xValue.Len(), xFound, yValue.Len(), yFound,
+		)
+	}
+	if valid, found := BoolValue(cyclicResult.Value, cyclic); !found || !valid {
+		t.Fatalf("cyclic formula=(%v,%v)", valid, found)
+	}
+
+	cyclicAffine := And{Values: []Term[BoolSort]{
+		Equal{Left: SequenceLength(x), Right: SequenceLength(y)},
+		SequenceHasPrefix(x, unit(1)),
+		SequenceHasPrefix(y, unit(1)),
+		Not{Value: SequenceHasPrefix(x, y)},
+		Not{Value: SequenceHasPrefix(y, x)},
+	}}
+	cyclicAffineResult, ok := Check(
+		Assert(77, New(), cyclicAffine),
+	).(Satisfiable)
+	if !ok {
+		t.Fatalf(
+			"cyclic affine result=%T",
+			Check(Assert(77, New(), cyclicAffine)),
+		)
+	}
+	xValue, xFound = IntegerSequenceModelValue(cyclicAffineResult.Value, x)
+	yValue, yFound = IntegerSequenceModelValue(cyclicAffineResult.Value, y)
+	if !xFound || !yFound || xValue.Len() != 2 || yValue.Len() != 2 {
+		t.Fatalf(
+			"cyclic affine lengths=(%d,%v)/(%d,%v)",
+			xValue.Len(), xFound, yValue.Len(), yFound,
+		)
+	}
+	if valid, found := BoolValue(
+		cyclicAffineResult.Value, cyclicAffine,
+	); !found || !valid {
+		t.Fatalf("cyclic affine formula=(%v,%v)", valid, found)
 	}
 }
 
