@@ -122,25 +122,28 @@ func (aliases *integerSequenceAliases) union(left, right int) {
 }
 
 type integerSequenceRequirements struct {
-	prefix        IntegerSequenceValue
-	suffix        IntegerSequenceValue
-	exactLength   int
-	minLength     int
-	maxLength     int
-	hasPrefix     bool
-	hasSuffix     bool
-	hasLength     bool
-	hasMin        bool
-	hasMax        bool
-	contains      [4]IntegerSequenceValue
-	overflow      []IntegerSequenceValue
-	containment   int
-	excluded      [4]IntegerSequenceValue
-	excludeMore   []IntegerSequenceValue
-	exclusion     int
-	negative      [4]negativeIntegerSequenceRequirement
-	negativeMore  []negativeIntegerSequenceRequirement
-	negativeCount int
+	prefix               IntegerSequenceValue
+	suffix               IntegerSequenceValue
+	exactLength          int
+	minLength            int
+	maxLength            int
+	hasPrefix            bool
+	hasSuffix            bool
+	hasLength            bool
+	hasMin               bool
+	hasMax               bool
+	contains             [4]IntegerSequenceValue
+	overflow             []IntegerSequenceValue
+	containment          int
+	excluded             [4]IntegerSequenceValue
+	excludeMore          []IntegerSequenceValue
+	exclusion            int
+	negative             [4]negativeIntegerSequenceRequirement
+	negativeMore         []negativeIntegerSequenceRequirement
+	negativeCount        int
+	patternNegative      [4]negativeIntegerSequenceRequirement
+	patternNegativeMore  []negativeIntegerSequenceRequirement
+	patternNegativeCount int
 }
 
 type negativeIntegerSequenceRequirement struct {
@@ -156,20 +159,29 @@ type integerSequenceRequirementEntry struct {
 }
 
 type integerSequenceRequirementSet struct {
-	count            int
-	inline           [4]integerSequenceRequirementEntry
-	overflow         map[int]*integerSequenceRequirements
-	relations        [4]integerSequenceLengthRelation
-	relationOverflow []integerSequenceLengthRelation
-	relationCount    int
-	disequalities    [4]integerSequenceDisequality
-	disequalityMore  []integerSequenceDisequality
-	disequalityCount int
+	count             int
+	inline            [4]integerSequenceRequirementEntry
+	overflow          map[int]*integerSequenceRequirements
+	relations         [4]integerSequenceLengthRelation
+	relationOverflow  []integerSequenceLengthRelation
+	relationCount     int
+	disequalities     [4]integerSequenceDisequality
+	disequalityMore   []integerSequenceDisequality
+	disequalityCount  int
+	negativePairs     [4]negativeIntegerSequencePair
+	negativePairMore  []negativeIntegerSequencePair
+	negativePairCount int
 }
 
 type integerSequenceDisequality struct {
 	left  int
 	right int
+}
+
+type negativeIntegerSequencePair struct {
+	value   int
+	pattern int
+	kind    uint8
 }
 
 type integerSequenceLengthRelation struct {
@@ -238,6 +250,125 @@ func (set *integerSequenceRequirementSet) disequalityAt(
 		return set.disequalities[index]
 	}
 	return set.disequalityMore[index-len(set.disequalities)]
+}
+
+func (set *integerSequenceRequirementSet) addNegativePair(
+	value,
+	pattern int,
+	kind uint8,
+) (bool, bool) {
+	if value == pattern {
+		return false, true
+	}
+	for index := 0; index < set.negativePairCount; index++ {
+		existing := set.negativePairAt(index)
+		if existing.value == value && existing.pattern == pattern &&
+			existing.kind == kind {
+			return true, true
+		}
+	}
+	if set.negativePairCount == maximumConstructedIntegerSequenceLength {
+		return true, false
+	}
+	item := negativeIntegerSequencePair{
+		value: value, pattern: pattern, kind: kind,
+	}
+	if set.negativePairCount < len(set.negativePairs) {
+		set.negativePairs[set.negativePairCount] = item
+	} else {
+		set.negativePairMore = append(set.negativePairMore, item)
+	}
+	set.negativePairCount++
+	// Construct the pattern before the value whenever no affine relation
+	// imposes a separate root order.
+	if !addIntegerSequenceMinimumLength(set.forSymbol(pattern), 1) {
+		return false, true
+	}
+	set.forSymbol(value)
+	return true, true
+}
+
+func (set *integerSequenceRequirementSet) negativePairAt(
+	index int,
+) negativeIntegerSequencePair {
+	if index < len(set.negativePairs) {
+		return set.negativePairs[index]
+	}
+	return set.negativePairMore[index-len(set.negativePairs)]
+}
+
+func negativeIntegerSequencePairHolds(
+	item negativeIntegerSequencePair,
+	value,
+	pattern IntegerSequenceValue,
+) bool {
+	switch item.kind {
+	case 0:
+		return findIntegerSubsequence(value, pattern, 0) < 0
+	case 1:
+		return !integerSequenceStartsWith(value, pattern)
+	default:
+		return !integerSequenceEndsWith(value, pattern)
+	}
+}
+
+func (set *integerSequenceRequirementSet) addKnownNegativePairRequirements(
+	id int,
+	requirements *integerSequenceRequirements,
+	model integerSequenceModel,
+) bool {
+	for index := 0; index < set.negativePairCount; index++ {
+		item := set.negativePairAt(index)
+		if item.value != id {
+			if item.pattern == id {
+				if value, ok := model.lookup(item.value); ok &&
+					!requirements.addPatternNegative(item.kind, value) {
+					return false
+				}
+			}
+			continue
+		}
+		if pattern, ok := model.lookup(item.pattern); ok &&
+			!requirements.addNegative(item.kind, pattern) {
+			return false
+		}
+	}
+	return true
+}
+
+func (set *integerSequenceRequirementSet) negativePairsAcyclic() bool {
+	if set.negativePairCount < 2 {
+		return true
+	}
+	indegree := make(map[int]int)
+	edges := make(map[int][]int)
+	for index := 0; index < set.negativePairCount; index++ {
+		item := set.negativePairAt(index)
+		if _, ok := indegree[item.pattern]; !ok {
+			indegree[item.pattern] = 0
+		}
+		indegree[item.value]++
+		edges[item.pattern] = append(edges[item.pattern], item.value)
+	}
+	queue := make([]int, 0, len(indegree))
+	for id, degree := range indegree {
+		if degree == 0 {
+			queue = append(queue, id)
+		}
+	}
+	visited := 0
+	for len(queue) > 0 {
+		id := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+		visited++
+		for _, next := range edges[id] {
+			indegree[next]--
+			if indegree[next] == 0 {
+				queue = append(queue, next)
+			}
+		}
+	}
+	return visited == len(indegree)
 }
 
 func (set *integerSequenceRequirementSet) excludesDisequalModels(
@@ -417,6 +548,41 @@ func (requirements integerSequenceRequirements) negativeAt(
 	return requirements.negativeMore[index-len(requirements.negative)]
 }
 
+func (requirements *integerSequenceRequirements) addPatternNegative(
+	kind uint8,
+	target IntegerSequenceValue,
+) bool {
+	for index := 0; index < requirements.patternNegativeCount; index++ {
+		existing := requirements.patternNegativeAt(index)
+		if existing.kind == kind &&
+			equalIntegerSequences(existing.value, target) {
+			return true
+		}
+	}
+	if requirements.patternNegativeCount == maximumConstructedIntegerSequenceLength {
+		return false
+	}
+	item := negativeIntegerSequenceRequirement{value: target, kind: kind}
+	if requirements.patternNegativeCount < len(requirements.patternNegative) {
+		requirements.patternNegative[requirements.patternNegativeCount] = item
+	} else {
+		requirements.patternNegativeMore = append(
+			requirements.patternNegativeMore, item,
+		)
+	}
+	requirements.patternNegativeCount++
+	return true
+}
+
+func (requirements integerSequenceRequirements) patternNegativeAt(
+	index int,
+) negativeIntegerSequenceRequirement {
+	if index < len(requirements.patternNegative) {
+		return requirements.patternNegative[index]
+	}
+	return requirements.patternNegativeMore[index-len(requirements.patternNegative)]
+}
+
 func (requirements integerSequenceRequirements) acceptsNegativeConstraints(
 	value IntegerSequenceValue,
 ) bool {
@@ -437,6 +603,13 @@ func (requirements integerSequenceRequirements) acceptsNegativeConstraints(
 			}
 		}
 	}
+	for index := 0; index < requirements.patternNegativeCount; index++ {
+		item := requirements.patternNegativeAt(index)
+		relation := negativeIntegerSequencePair{kind: item.kind}
+		if !negativeIntegerSequencePairHolds(relation, item.value, value) {
+			return false
+		}
+	}
 	return true
 }
 
@@ -445,6 +618,16 @@ func (requirements integerSequenceRequirements) freshNegativeElement() IntegerVa
 		found := false
 		for index := 0; index < requirements.negativeCount && !found; index++ {
 			value := requirements.negativeAt(index).value
+			for elementIndex := 0; elementIndex < value.Len(); elementIndex++ {
+				element, _ := value.At(elementIndex)
+				if actual, fits := element.Int64(); fits && actual == candidate {
+					found = true
+					break
+				}
+			}
+		}
+		for index := 0; index < requirements.patternNegativeCount && !found; index++ {
+			value := requirements.patternNegativeAt(index).value
 			for elementIndex := 0; elementIndex < value.Len(); elementIndex++ {
 				element, _ := value.At(elementIndex)
 				if actual, fits := element.Int64(); fits && actual == candidate {
@@ -1801,6 +1984,12 @@ func collectNegatedIntegerSequenceRequirement(
 			return !result, ok, true
 		}
 		id = aliases.root(id)
+		if patternID, patternSymbolic := integerSequenceSymbolID(groundTerm); patternSymbolic {
+			consistent, supported := requirements.addNegativePair(
+				id, aliases.root(patternID), kind,
+			)
+			return consistent, supported, true
+		}
 		ground, ok := groundTerm.(Term[SequenceSort[IntSort]])
 		if !ok {
 			return true, false, true
@@ -2271,7 +2460,8 @@ func (builder *fixedIntegerSequenceBuilder) satisfyNegativeConstraintsAndExclusi
 		if assigned {
 			continue
 		}
-		limit := requirements.exclusion + requirements.negativeCount + 1
+		limit := requirements.exclusion + requirements.negativeCount +
+			requirements.patternNegativeCount + 1
 		for discriminator := 0; discriminator <= limit; discriminator++ {
 			builder.assign(position, NewIntegerValue(int64(discriminator)))
 			candidate = builder.value()
@@ -2402,7 +2592,8 @@ func buildIntegerSequenceWitness(
 		}
 		return IntegerSequenceValue{}, false, true
 	}
-	if requirements.exclusion > 0 || requirements.negativeCount > 0 {
+	if requirements.exclusion > 0 || requirements.negativeCount > 0 ||
+		requirements.patternNegativeCount > 0 {
 		minimum := result.Len()
 		if requirements.hasMin && requirements.minLength > minimum {
 			minimum = requirements.minLength
@@ -2487,6 +2678,76 @@ func addEarlierIntegerSequenceDisequalityExclusions(
 	return true
 }
 
+func addEarlierIntegerSequenceNegativePairRequirements(
+	set *integerSequenceRequirementSet,
+	id int,
+	position int,
+	ids *[8]int,
+	values *[8]IntegerSequenceValue,
+	requirements *integerSequenceRequirements,
+) bool {
+	for pairIndex := 0; pairIndex < set.negativePairCount; pairIndex++ {
+		item := set.negativePairAt(pairIndex)
+		if item.value != id {
+			continue
+		}
+		for index := 0; index < position; index++ {
+			if ids[index] == item.pattern &&
+				!requirements.addNegative(item.kind, values[index]) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func integerSequenceNegativePairOrder(
+	set *integerSequenceRequirementSet,
+	ids *[8]int,
+	coefficients *[8]IntegerValue,
+	count int,
+) bool {
+	originalIDs := *ids
+	originalCoefficients := *coefficients
+	var used [8]bool
+	for output := 0; output < count; output++ {
+		selected := -1
+		for candidate := 0; candidate < count; candidate++ {
+			if used[candidate] {
+				continue
+			}
+			ready := true
+			for pairIndex := 0; pairIndex < set.negativePairCount; pairIndex++ {
+				item := set.negativePairAt(pairIndex)
+				if item.value != originalIDs[candidate] {
+					continue
+				}
+				for dependency := 0; dependency < count; dependency++ {
+					if originalIDs[dependency] == item.pattern &&
+						!used[dependency] {
+						ready = false
+						break
+					}
+				}
+				if !ready {
+					break
+				}
+			}
+			if ready {
+				selected = candidate
+				break
+			}
+		}
+		if selected < 0 {
+			return false
+		}
+		used[selected] = true
+		ids[output] = originalIDs[selected]
+		coefficients[output] = originalCoefficients[selected]
+	}
+	return true
+}
+
 func integerSequenceLengthRange(
 	requirements integerSequenceRequirements,
 	assigned IntegerSequenceValue,
@@ -2533,6 +2794,16 @@ func (search *integerSequenceLengthSearch) buildCandidate() (bool, bool) {
 	for index := 0; index < search.relation.count; index++ {
 		requirements := search.requirements[index]
 		if !addEarlierIntegerSequenceDisequalityExclusions(
+			search.relations,
+			search.relation.ids[index],
+			index,
+			&ids,
+			&search.values,
+			&requirements,
+		) {
+			return false, false
+		}
+		if !addEarlierIntegerSequenceNegativePairRequirements(
 			search.relations,
 			search.relation.ids[index],
 			index,
@@ -2686,6 +2957,11 @@ func solveIntegerSequenceLengthRelation(
 	requirements *integerSequenceRequirementSet,
 	model *integerSequenceModel,
 ) (bool, bool) {
+	if !integerSequenceNegativePairOrder(
+		requirements, &relation.ids, &relation.coefficients, relation.count,
+	) {
+		return true, false
+	}
 	search := integerSequenceLengthSearch{
 		relation: relation, relations: requirements,
 	}
@@ -2814,6 +3090,16 @@ func (search *integerSequenceLengthSystemSearch) buildCandidate() (bool, bool) {
 	for index := 0; index < search.count; index++ {
 		requirements := search.requirements[index]
 		if !addEarlierIntegerSequenceDisequalityExclusions(
+			search.relations,
+			search.ids[index],
+			index,
+			&search.ids,
+			&search.values,
+			&requirements,
+		) {
+			return false, false
+		}
+		if !addEarlierIntegerSequenceNegativePairRequirements(
 			search.relations,
 			search.ids[index],
 			index,
@@ -2961,6 +3247,12 @@ func solveIntegerSequenceLengthSystem(
 			}
 		}
 	}
+	var unusedCoefficients [8]IntegerValue
+	if !integerSequenceNegativePairOrder(
+		requirements, &search.ids, &unusedCoefficients, search.count,
+	) {
+		return true, false
+	}
 	for index := 0; index < search.count; index++ {
 		search.requirements[index] = *requirements.forSymbol(search.ids[index])
 		search.assigned[index], search.hasAssigned[index] =
@@ -2995,6 +3287,9 @@ func bindPositiveIntegerSequenceWitnesses(
 			return consistent, supported
 		}
 	}
+	if !requirements.negativePairsAcyclic() {
+		return true, false
+	}
 	for index := 0; index < requirements.disequalityCount; index++ {
 		item := requirements.disequalityAt(index)
 		left, leftAssigned := model.lookup(item.left)
@@ -3011,6 +3306,29 @@ func bindPositiveIntegerSequenceWitnesses(
 			}
 		} else if rightAssigned {
 			if !requirements.forSymbol(item.left).addExclusion(right) {
+				return true, false
+			}
+		}
+	}
+	for index := 0; index < requirements.negativePairCount; index++ {
+		item := requirements.negativePairAt(index)
+		value, valueAssigned := model.lookup(item.value)
+		pattern, patternAssigned := model.lookup(item.pattern)
+		switch {
+		case valueAssigned && patternAssigned:
+			if !negativeIntegerSequencePairHolds(item, value, pattern) {
+				return false, true
+			}
+		case patternAssigned:
+			if !requirements.forSymbol(item.value).addNegative(
+				item.kind, pattern,
+			) {
+				return true, false
+			}
+		case valueAssigned:
+			if !requirements.forSymbol(item.pattern).addPatternNegative(
+				item.kind, value,
+			) {
 				return true, false
 			}
 		}
@@ -3041,6 +3359,11 @@ func bindPositiveIntegerSequenceWitnesses(
 		) {
 			return true, false
 		}
+		if !requirements.addKnownNegativePairRequirements(
+			entry.id, &local, *model,
+		) {
+			return true, false
+		}
 		witness, consistent, supported := buildIntegerSequenceWitness(local)
 		if !consistent || !supported {
 			return consistent, supported
@@ -3055,6 +3378,9 @@ func bindPositiveIntegerSequenceWitnesses(
 		}
 		local := *entry
 		if !requirements.excludesDisequalModels(id, &local, *model) {
+			return true, false
+		}
+		if !requirements.addKnownNegativePairRequirements(id, &local, *model) {
 			return true, false
 		}
 		witness, consistent, supported := buildIntegerSequenceWitness(local)
@@ -3073,6 +3399,17 @@ func bindPositiveIntegerSequenceWitnesses(
 			return true, false
 		}
 		if equalIntegerSequences(left, right) {
+			return false, true
+		}
+	}
+	for index := 0; index < requirements.negativePairCount; index++ {
+		item := requirements.negativePairAt(index)
+		value, valueOK := model.lookup(item.value)
+		pattern, patternOK := model.lookup(item.pattern)
+		if !valueOK || !patternOK {
+			return true, false
+		}
+		if !negativeIntegerSequencePairHolds(item, value, pattern) {
 			return false, true
 		}
 	}

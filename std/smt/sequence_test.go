@@ -1305,6 +1305,83 @@ func TestNegatedGroundSymbolicIntegerSequencePredicates(t *testing.T) {
 	}
 }
 
+func TestNegatedSymbolicPatternIntegerSequencePredicates(t *testing.T) {
+	unit := func(value int64) Term[SequenceSort[IntSort]] {
+		return SequenceUnit[IntSort](Integer{Value: value})
+	}
+	x := SequenceConst[IntSort](72, "x")
+	y := SequenceConst[IntSort](73, "y")
+
+	bare := Not{Value: SequenceContains(x, y)}
+	bareResult, ok := Check(Assert(72, New(), bare)).(Satisfiable)
+	if !ok {
+		t.Fatalf("bare result=%T", Check(Assert(72, New(), bare)))
+	}
+	if valid, found := BoolValue(bareResult.Value, bare); !found || !valid {
+		t.Fatalf("bare formula=(%v,%v)", valid, found)
+	}
+
+	backtracks := And{Values: []Term[BoolSort]{
+		Equal{Left: SequenceLength(x), Right: SequenceLength(y)},
+		SequenceHasPrefix(x, unit(1)),
+		SequenceHasPrefix(y, unit(1)),
+		Not{Value: SequenceHasPrefix(x, y)},
+	}}
+	backtrackResult, ok := Check(Assert(73, New(), backtracks)).(Satisfiable)
+	if !ok {
+		t.Fatalf("backtracking result=%T", Check(Assert(73, New(), backtracks)))
+	}
+	xValue, xFound := IntegerSequenceModelValue(backtrackResult.Value, x)
+	yValue, yFound := IntegerSequenceModelValue(backtrackResult.Value, y)
+	if !xFound || !yFound || xValue.Len() != 2 || yValue.Len() != 2 {
+		t.Fatalf(
+			"backtracking lengths=(%d,%v)/(%d,%v)",
+			xValue.Len(), xFound, yValue.Len(), yFound,
+		)
+	}
+	if valid, found := BoolValue(
+		backtrackResult.Value, backtracks,
+	); !found || !valid {
+		t.Fatalf("backtracking formula=(%v,%v)", valid, found)
+	}
+
+	assignedValue := And{Values: []Term[BoolSort]{
+		Equal{Left: x, Right: unit(1)},
+		Not{Value: SequenceHasSuffix(x, y)},
+	}}
+	assignedResult, ok := Check(Assert(74, New(), assignedValue)).(Satisfiable)
+	if !ok {
+		t.Fatalf("assigned-value result=%T", Check(Assert(74, New(), assignedValue)))
+	}
+	if valid, found := BoolValue(
+		assignedResult.Value, assignedValue,
+	); !found || !valid {
+		t.Fatalf("assigned-value formula=(%v,%v)", valid, found)
+	}
+
+	alias := And{Values: []Term[BoolSort]{
+		Equal{Left: x, Right: y},
+		Not{Value: SequenceContains(x, y)},
+	}}
+	if checked := Check(Assert(75, New(), alias)); func() bool {
+		_, ok := checked.(Unsatisfiable)
+		return ok
+	}() == false {
+		t.Fatalf("alias result=%T", checked)
+	}
+
+	cyclic := And{Values: []Term[BoolSort]{
+		Not{Value: SequenceContains(x, y)},
+		Not{Value: SequenceContains(y, x)},
+	}}
+	if checked := Check(Assert(76, New(), cyclic)); func() bool {
+		_, ok := checked.(Unknown)
+		return ok
+	}() == false {
+		t.Fatalf("cyclic result=%T", checked)
+	}
+}
+
 func TestSymbolicIntegerSequenceEqualityClasses(t *testing.T) {
 	unit := func(value int64) Term[SequenceSort[IntSort]] {
 		return SequenceUnit[IntSort](Integer{Value: value})
