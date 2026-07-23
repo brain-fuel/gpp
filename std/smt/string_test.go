@@ -77,6 +77,37 @@ func TestStringConversionsAndReplaceAll(t *testing.T) {
 	}
 }
 
+func TestGroundStringRegexReplacement(t *testing.T) {
+	digit := StringRangeRegex(StringVal("0"), StringVal("9"))
+	digits := PlusRegex(digit)
+	input := StringVal("abc123def456")
+	replacement := StringVal("!")
+	cases := []struct {
+		name string
+		term Term[StringSort]
+		want string
+	}{
+		{"first-shortest-leftmost", StringReplaceRegex(input, digits, replacement), "abc!23def456"},
+		{"all-shortest-nonempty", StringReplaceRegexAll(input, digits, replacement), "abc!!!def!!!"},
+		{"first-empty-prepends", StringReplaceRegex(input, StarRegex(digit), replacement), "!abc123def456"},
+		{"all-ignores-empty", StringReplaceRegexAll(input, StarRegex(digit), replacement), "abc!!!def!!!"},
+		{"no-match", StringReplaceRegex(input, StringLiteralRegex("z"), replacement), "abc123def456"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			actual, known := evaluateString(test.term, stringModel{}, integerModel{})
+			if !known || actual != test.want {
+				t.Fatalf("value=(%q,%v), want %q", actual, known, test.want)
+			}
+			formula := Equal{Left: test.term, Right: StringVal(test.want)}
+			checked := Check(Assert(89, New(), formula))
+			if _, sat := checked.(Satisfiable); !sat {
+				t.Fatalf("result=%T", checked)
+			}
+		})
+	}
+}
+
 func TestStringRegexLanguageOperations(t *testing.T) {
 	a := StringToRegex(StringVal("a"))
 	b := StringToRegex(StringVal("b"))

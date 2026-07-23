@@ -2137,6 +2137,26 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 		if values, ok := stringTerms(); ok && len(values) == 3 {
 			return dynamicTerm{sort: sortString, stringValue: smt.StringReplaceAll(values[0], values[1], values[2])}, nil
 		}
+	case "str.replace_re":
+		if len(terms) == 3 && terms[0].sort == sortString &&
+			terms[1].sort == sortRegexString && terms[2].sort == sortString {
+			return dynamicTerm{
+				sort: sortString,
+				stringValue: smt.StringReplaceRegex(
+					terms[0].stringValue, terms[1].regexString, terms[2].stringValue,
+				),
+			}, nil
+		}
+	case "str.replace_re_all":
+		if len(terms) == 3 && terms[0].sort == sortString &&
+			terms[1].sort == sortRegexString && terms[2].sort == sortString {
+			return dynamicTerm{
+				sort: sortString,
+				stringValue: smt.StringReplaceRegexAll(
+					terms[0].stringValue, terms[1].regexString, terms[2].stringValue,
+				),
+			}, nil
+		}
 	case "str.to_int":
 		if values, ok := stringTerms(); ok && len(values) == 1 {
 			return dynamicTerm{sort: sortInt, integer: smt.StringToInt(values[0])}, nil

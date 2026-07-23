@@ -562,6 +562,8 @@ func StringSubstring(value Term[StringSort], offset Term[IntSort], length Term[I
 func StringIndexOf(value Term[StringSort], substring Term[StringSort], offset Term[IntSort]) Term[IntSort] { return stringIndexOf(value, substring, offset) }
 func StringReplace(value Term[StringSort], source Term[StringSort], replacement Term[StringSort]) Term[StringSort] { return Term[StringSort].stringReplace(value, source, replacement) }
 func StringReplaceAll(value Term[StringSort], source Term[StringSort], replacement Term[StringSort]) Term[StringSort] { return Term[StringSort].stringReplaceAll(value, source, replacement) }
+func StringReplaceRegex(value Term[StringSort], expression Regex[StringSort], replacement Term[StringSort]) Term[StringSort] { return makeStringRegexReplace(value, expression, replacement, false) }
+func StringReplaceRegexAll(value Term[StringSort], expression Regex[StringSort], replacement Term[StringSort]) Term[StringSort] { return makeStringRegexReplace(value, expression, replacement, true) }
 func StringToInt(value Term[StringSort]) Term[IntSort] { return stringToInteger(value) }
 func IntToString(value Term[IntSort]) Term[StringSort] { return Term[StringSort].integerToString(value) }
 func StringToCode(value Term[StringSort]) Term[IntSort] { return stringToCode(value) }

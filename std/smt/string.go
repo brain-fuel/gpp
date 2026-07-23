@@ -349,6 +349,15 @@ func evaluateString(term Term[StringSort], model stringModel, integers integerMo
 			return text, true
 		}
 		return strings.ReplaceAll(text, source, replacement), true
+	case stringRegexReplace:
+		text, textOK := evaluateString(value.value, model, integers)
+		replacement, replacementOK := evaluateString(value.replacement, model, integers)
+		if !textOK || !replacementOK {
+			return "", false
+		}
+		return evaluateStringRegexReplace(
+			text, value.expression, replacement, model, integers, value.all,
+		)
 	case integerToString[StringSort]:
 		integer, ok := evaluateInteger(value.value, booleanModel{}, integers, rationalModel{})
 		if !ok {
@@ -426,7 +435,7 @@ func containsStringTheory(term Term[BoolSort]) bool {
 
 func isStringTerm(term any) bool {
 	switch term.(type) {
-	case stringValue[StringSort], stringSymbol[StringSort], stringConcat[StringSort], stringAt[StringSort], stringSubstring[StringSort], stringReplace[StringSort], stringReplaceAll[StringSort], integerToString[StringSort], codeToString[StringSort]:
+	case stringValue[StringSort], stringSymbol[StringSort], stringConcat[StringSort], stringAt[StringSort], stringSubstring[StringSort], stringReplace[StringSort], stringReplaceAll[StringSort], stringRegexReplace, integerToString[StringSort], codeToString[StringSort]:
 		return true
 	default:
 		return false
@@ -1040,6 +1049,12 @@ func collectStringSymbols(term any, symbols *stringSymbols) {
 		collectStringSymbols(value.value, symbols)
 		collectStringSymbols(value.source, symbols)
 		collectStringSymbols(value.replacement, symbols)
+	case stringRegexReplace:
+		collectStringSymbols(value.value, symbols)
+		collectStringSymbols(value.replacement, symbols)
+		if value.expression.node != nil {
+			collectRegexStringSymbols(value.expression.node, symbols)
+		}
 	case integerToString[StringSort], codeToString[StringSort]:
 		// Integer-valued children contain no string symbols.
 	case stringLength:

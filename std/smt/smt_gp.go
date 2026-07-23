@@ -3132,6 +3132,12 @@ func StringReplace(value Term[StringSort], source Term[StringSort], replacement 
 func StringReplaceAll(value Term[StringSort], source Term[StringSort], replacement Term[StringSort]) Term[StringSort] {
 	return stringReplaceAll[StringSort]{value: value, source: source, replacement: replacement}
 }
+func StringReplaceRegex(value Term[StringSort], expression Regex[StringSort], replacement Term[StringSort]) Term[StringSort] {
+	return makeStringRegexReplace(value, expression, replacement, false)
+}
+func StringReplaceRegexAll(value Term[StringSort], expression Regex[StringSort], replacement Term[StringSort]) Term[StringSort] {
+	return makeStringRegexReplace(value, expression, replacement, true)
+}
 func StringToInt(value Term[StringSort]) Term[IntSort] { return stringToInteger{value: value} }
 func IntToString(value Term[IntSort]) Term[StringSort] {
 	return integerToString[StringSort]{value: value}
