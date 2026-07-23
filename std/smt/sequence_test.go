@@ -868,11 +868,42 @@ func TestFourSymbolAffineLengthIntegerSequenceSystems(t *testing.T) {
 		}},
 		Right: Integer{Value: 10},
 	}
-	if checked := Check(Assert(38, New(), fiveSymbol)); func() bool {
+	fiveResult, ok := Check(Assert(38, New(), fiveSymbol)).(Satisfiable)
+	if !ok {
+		t.Fatal("five-symbol affine equality must be satisfiable")
+	}
+	total = 0
+	for index, expression := range []Term[SequenceSort[IntSort]]{x, y, z, w, v} {
+		value, found := IntegerSequenceModelValue(fiveResult.Value, expression)
+		if !found {
+			t.Fatalf("missing five-symbol model index=%d", index)
+		}
+		total += value.Len()
+	}
+	if total != 10 {
+		t.Fatalf("five-symbol total=%d", total)
+	}
+
+	a := SequenceConst[IntSort](65, "a")
+	b := SequenceConst[IntSort](66, "b")
+	c := SequenceConst[IntSort](67, "c")
+	d := SequenceConst[IntSort](68, "d")
+	nineSymbol := Equal{
+		Left: Add{Values: []Term[IntSort]{
+			sum,
+			SequenceLength(v),
+			SequenceLength(a),
+			SequenceLength(b),
+			SequenceLength(c),
+			SequenceLength(d),
+		}},
+		Right: Integer{Value: 10},
+	}
+	if checked := Check(Assert(39, New(), nineSymbol)); func() bool {
 		_, ok := checked.(Unknown)
 		return ok
 	}() == false {
-		t.Fatalf("five-symbol result=%T", checked)
+		t.Fatalf("nine-symbol result=%T", checked)
 	}
 }
 
