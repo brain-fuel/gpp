@@ -695,6 +695,53 @@ func TestWordEquationBooleanRegexInteraction(t *testing.T) {
 	}
 }
 
+func TestWordEquationStringDisequalityInteraction(t *testing.T) {
+	x := StringConst(1, "x")
+	y := StringConst(2, "y")
+	equation := Equal{Left: StringConcat(x, y), Right: StringVal("ab")}
+	nonempty := Not{Value: Equal{Left: x, Right: StringVal("")}}
+	formula := And{Values: []Term[BoolSort]{equation, nonempty}}
+	checked := Check(Assert(43, New(), formula))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", checked)
+	}
+	if actual, found := StringModelValue(result.Value, x); !found || actual != "a" {
+		t.Fatalf("x=(%q,%v)", actual, found)
+	}
+	if actual, found := StringModelValue(result.Value, y); !found || actual != "b" {
+		t.Fatalf("y=(%q,%v)", actual, found)
+	}
+	if valid, found := BoolValue(result.Value, formula); !found || !valid {
+		t.Fatalf("formula=(%v,%v)", valid, found)
+	}
+
+	choice := And{Values: []Term[BoolSort]{
+		equation,
+		Or{Values: []Term[BoolSort]{
+			Equal{Left: x, Right: StringVal("z")},
+			Equal{Left: x, Right: StringVal("a")},
+		}},
+	}}
+	checked = Check(Assert(44, New(), choice))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("choice result=%T", checked)
+	}
+	if actual, found := StringModelValue(result.Value, x); !found || actual != "a" {
+		t.Fatalf("choice x=(%q,%v)", actual, found)
+	}
+
+	impossible := And{Values: []Term[BoolSort]{
+		Equal{Left: StringConcat(x, y), Right: StringVal("")},
+		nonempty,
+	}}
+	checked = Check(Assert(45, New(), impossible))
+	if _, ok := checked.(Unsatisfiable); !ok {
+		t.Fatalf("impossible result=%T", checked)
+	}
+}
+
 func TestStringSymbolModel(t *testing.T) {
 	x := StringConst(1, "x")
 	formula := And{Values: []Term[BoolSort]{

@@ -207,6 +207,15 @@ func bindBoundedWordEquationGroundConjunct(term Term[BoolSort], constraints *bou
 	case Or, Implies, Iff, If[BoolSort]:
 		return appendBoundedWordEquationPredicate(constraints, value)
 	case stringSystem:
+		hasNegatedEquality := false
+		onlyEqualities := true
+		for _, relation := range value.system.relations() {
+			hasNegatedEquality = hasNegatedEquality || relation.Kind == CompactStringEqual && relation.Negated
+			onlyEqualities = onlyEqualities && relation.Kind == CompactStringEqual
+		}
+		if hasNegatedEquality && onlyEqualities {
+			return appendBoundedWordEquationPredicate(constraints, value)
+		}
 		for _, relation := range value.system.relations() {
 			if relation.Negated &&
 				relation.Kind != CompactStringLengthLess &&
@@ -268,6 +277,15 @@ func appendBoundedWordEquationPredicate(
 func isBoundedWordEquationRegexPredicate(term Term[BoolSort]) bool {
 	switch value := term.(type) {
 	case Bool, stringInRegex, CompactStringBooleanFormula:
+		return true
+	case Equal:
+		return isStringTerm(value.Left) && isStringTerm(value.Right)
+	case stringSystem:
+		for _, relation := range value.system.relations() {
+			if relation.Kind != CompactStringEqual {
+				return false
+			}
+		}
 		return true
 	case Not:
 		return isBoundedWordEquationRegexPredicate(value.Value)
