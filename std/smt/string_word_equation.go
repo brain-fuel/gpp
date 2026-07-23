@@ -201,14 +201,11 @@ func bindBoundedWordEquationGroundConjunct(term Term[BoolSort], constraints *bou
 		if membership, ok := value.Value.(stringInRegex); ok {
 			return assignBoundedWordEquationRegex(constraints, membership, true)
 		}
-		return false, false
+		return appendBoundedWordEquationPredicate(constraints, value)
 	case CompactStringBooleanFormula:
-		if constraints.predicateCount == len(constraints.predicates) {
-			return false, false
-		}
-		constraints.predicates[constraints.predicateCount] = value
-		constraints.predicateCount++
-		return true, false
+		return appendBoundedWordEquationPredicate(constraints, value)
+	case Or, Implies, Iff, If[BoolSort]:
+		return appendBoundedWordEquationPredicate(constraints, value)
 	case stringSystem:
 		for _, relation := range value.system.relations() {
 			if relation.Negated &&
@@ -252,6 +249,62 @@ func bindBoundedWordEquationGroundConjunct(term Term[BoolSort], constraints *bou
 		return true, false
 	default:
 		return false, false
+	}
+}
+
+func appendBoundedWordEquationPredicate(
+	constraints *boundedWordEquationConstraints,
+	predicate Term[BoolSort],
+) (bool, bool) {
+	if !isBoundedWordEquationRegexPredicate(predicate) ||
+		constraints.predicateCount == len(constraints.predicates) {
+		return false, false
+	}
+	constraints.predicates[constraints.predicateCount] = predicate
+	constraints.predicateCount++
+	return true, false
+}
+
+func isBoundedWordEquationRegexPredicate(term Term[BoolSort]) bool {
+	switch value := term.(type) {
+	case Bool, stringInRegex, CompactStringBooleanFormula:
+		return true
+	case Not:
+		return isBoundedWordEquationRegexPredicate(value.Value)
+	case And:
+		for _, child := range value.Values {
+			if !isBoundedWordEquationRegexPredicate(child) {
+				return false
+			}
+		}
+		return true
+	case BooleanConjunction:
+		children, _ := value.values()
+		for _, child := range children {
+			if !isBoundedWordEquationRegexPredicate(child) {
+				return false
+			}
+		}
+		return true
+	case Or:
+		for _, child := range value.Values {
+			if !isBoundedWordEquationRegexPredicate(child) {
+				return false
+			}
+		}
+		return true
+	case Implies:
+		return isBoundedWordEquationRegexPredicate(value.Left) &&
+			isBoundedWordEquationRegexPredicate(value.Right)
+	case Iff:
+		return isBoundedWordEquationRegexPredicate(value.Left) &&
+			isBoundedWordEquationRegexPredicate(value.Right)
+	case If[BoolSort]:
+		return isBoundedWordEquationRegexPredicate(value.Condition) &&
+			isBoundedWordEquationRegexPredicate(value.Then) &&
+			isBoundedWordEquationRegexPredicate(value.Else)
+	default:
+		return false
 	}
 }
 
