@@ -151,6 +151,17 @@ func (model bitVectorModel) lookup(id int) (BitVectorValue, bool) {
 	return value, ok
 }
 
+func (model *bitVectorModel) merge(other bitVectorModel) {
+	for index := 0; index < other.count; index++ {
+		entry := other.inline[index]
+		model.set(entry.id, entry.value)
+	}
+	for id, value := range other.overflow {
+		model.set(id, value)
+	}
+	model.applications = append(model.applications, other.applications...)
+}
+
 func (model bitVectorModel) lookupApplication(functionID int, first BitVectorValue, second BitVectorValue, arity uint8) (BitVectorValue, bool) {
 	for _, application := range model.applications {
 		if application.functionID == functionID && application.arity == arity && EqualBitVectorValue(application.first, first) && (arity == 1 || EqualBitVectorValue(application.second, second)) {

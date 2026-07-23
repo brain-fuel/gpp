@@ -16,6 +16,7 @@ const (
 	sortReal         = -1
 	sortBool         = 0
 	sortInt          = 1
+	sortDatatypeSelf = 2
 	sortDatatypeBase = -1000000
 )
 
@@ -51,6 +52,8 @@ type dynamicDatatypeRecognizer struct {
 	witness          smt.RecursiveDatatypeConstructor
 	binaryWitness    smt.BinaryRecursiveDatatypeConstructor
 	naryWitness      smt.NaryRecursiveDatatypeConstructor
+	mixedWitness     smt.MixedRecursiveDatatypeConstructor
+	mixed            bool
 	arity            int
 }
 
@@ -58,6 +61,10 @@ type dynamicRecursiveDatatypeConstructor struct {
 	witness       smt.RecursiveDatatypeConstructor
 	binaryWitness smt.BinaryRecursiveDatatypeConstructor
 	naryWitness   smt.NaryRecursiveDatatypeConstructor
+	mixedWitness  smt.MixedRecursiveDatatypeConstructor
+	fieldSorts    []datatypeFieldSort
+	datatypeID    int
+	constructors  int
 	sortCode      int
 	arity         int
 	field         int
@@ -66,7 +73,13 @@ type dynamicRecursiveDatatypeConstructor struct {
 type datatypeConstructorDeclaration struct {
 	name          string
 	selectorNames []string
+	fieldSorts    []datatypeFieldSort
 	arity         int
+}
+
+type datatypeFieldSort struct {
+	sort  int
+	width int
 }
 
 type dynamicUnaryFunction struct {
@@ -435,6 +448,7 @@ func (executor *executor) declareDatatype(index int, declaration RawCommand) {
 		if len(entry.Values) > 1 {
 			constructorDeclarations[constructorIndex].arity = len(entry.Values) - 1
 			constructorDeclarations[constructorIndex].selectorNames = make([]string, len(entry.Values)-1)
+			constructorDeclarations[constructorIndex].fieldSorts = make([]datatypeFieldSort, len(entry.Values)-1)
 			for fieldIndex, fieldExpression := range entry.Values[1:] {
 				field, ok := fieldExpression.(List)
 				if !ok || len(field.Values) != 2 {
@@ -442,9 +456,9 @@ func (executor *executor) declareDatatype(index int, declaration RawCommand) {
 					return
 				}
 				selectorName, selectorOK := atomText(field.Values[0])
-				fieldSort, sortOK := atomText(field.Values[1])
-				if !selectorOK || !sortOK || fieldSort != name {
-					executor.fail(index, declaration.At, "recursive datatype field must select the enclosing sort "+name)
+				fieldSort, sortOK := parseDatatypeFieldSort(field.Values[1], name)
+				if !selectorOK || !sortOK {
+					executor.fail(index, declaration.At, "datatype field must use Bool, Int, Real, (_ BitVec n), or the enclosing sort "+name)
 					return
 				}
 				if _, exists := seenSelectors[selectorName]; exists {
@@ -461,12 +475,19 @@ func (executor *executor) declareDatatype(index int, declaration RawCommand) {
 				}
 				seenSelectors[selectorName] = struct{}{}
 				constructorDeclarations[constructorIndex].selectorNames[fieldIndex] = selectorName
+				constructorDeclarations[constructorIndex].fieldSorts[fieldIndex] = fieldSort
 			}
 		} else {
 			hasBaseConstructor = true
 		}
 	}
-	if !hasBaseConstructor {
+	recursive := false
+	for _, constructor := range constructorDeclarations {
+		for _, field := range constructor.fieldSorts {
+			recursive = recursive || field.sort == sortDatatypeSelf
+		}
+	}
+	if recursive && !hasBaseConstructor {
 		executor.fail(index, declaration.At, "recursive datatype requires at least one nullary base constructor")
 		return
 	}
@@ -479,6 +500,15 @@ func (executor *executor) declareDatatype(index int, declaration RawCommand) {
 			executor.datatypeTerms[constructor.name] = dynamicTerm{
 				sort: datatype.sortCode, datatypeID: datatype.id, constructorCount: datatype.constructorCount,
 				datatype: smt.DatatypeConstructor(datatype.id, datatype.constructorCount, constructorID, constructor.name),
+			}
+		} else if !allDatatypeFieldsSelf(constructor.fieldSorts, datatype.sortCode) {
+			witness := declareDynamicMixedDatatypeConstructor(datatype, constructorID, constructor)
+			dynamic := dynamicRecursiveDatatypeConstructor{mixedWitness: witness, fieldSorts: constructor.fieldSorts, datatypeID: datatype.id, constructors: datatype.constructorCount, sortCode: datatype.sortCode, arity: constructor.arity}
+			executor.datatypeConstructors[constructor.name] = dynamic
+			for field, selectorName := range constructor.selectorNames {
+				selector := dynamic
+				selector.field = field
+				executor.datatypeSelectors[selectorName] = selector
 			}
 		} else if constructor.arity == 1 {
 			witness := smt.DeclareRecursiveDatatypeConstructor(datatype.id, datatype.constructorCount, constructorID, constructor.name, constructor.selectorNames[0])
@@ -513,6 +543,8 @@ func (executor *executor) declareDatatype(index int, declaration RawCommand) {
 			recognizer.witness = executor.datatypeConstructors[constructor.name].witness
 			recognizer.binaryWitness = executor.datatypeConstructors[constructor.name].binaryWitness
 			recognizer.naryWitness = executor.datatypeConstructors[constructor.name].naryWitness
+			recognizer.mixedWitness = executor.datatypeConstructors[constructor.name].mixedWitness
+			recognizer.mixed = len(executor.datatypeConstructors[constructor.name].fieldSorts) != 0
 			executor.datatypeRecognizers["is-"+constructor.name] = recognizer
 		}
 	}
@@ -713,6 +745,9 @@ func (executor *executor) term(expression SExpr) (dynamicTerm, error) {
 			return dynamicTerm{}, fmt.Errorf("ill-sorted datatype recognizer %s", operator)
 		}
 		if recognizer.recursive {
+			if recognizer.mixed {
+				return dynamicTerm{sort: sortBool, boolean: smt.IsMixedRecursiveDatatypeConstructor(recognizer.mixedWitness, terms[0].datatype)}, nil
+			}
 			if recognizer.arity > 2 {
 				return dynamicTerm{sort: sortBool, boolean: smt.IsNaryRecursiveDatatypeConstructor(recognizer.naryWitness, terms[0].datatype)}, nil
 			}
@@ -727,10 +762,18 @@ func (executor *executor) term(expression SExpr) (dynamicTerm, error) {
 		if int(constructor.arity) != len(terms) {
 			return dynamicTerm{}, fmt.Errorf("ill-sorted datatype constructor %s", operator)
 		}
-		for _, term := range terms {
-			if term.sort != constructor.sortCode {
+		for field, term := range terms {
+			if !datatypeFieldAccepts(constructor.fieldSorts, field, constructor.sortCode, term) {
 				return dynamicTerm{}, fmt.Errorf("ill-sorted datatype constructor %s", operator)
 			}
+		}
+		if len(constructor.fieldSorts) != 0 {
+			arguments, ok := dynamicMixedDatatypeArguments(constructor.fieldSorts, terms)
+			if !ok {
+				return dynamicTerm{}, fmt.Errorf("ill-sorted datatype constructor %s", operator)
+			}
+			return dynamicTerm{sort: constructor.sortCode, datatypeID: constructor.datatypeID, constructorCount: constructor.constructors,
+				datatype: smt.ApplyMixedRecursiveDatatypeConstructor(constructor.mixedWitness, arguments)}, nil
 		}
 		if constructor.arity > 2 {
 			return dynamicTerm{sort: terms[0].sort, datatypeID: terms[0].datatypeID, constructorCount: terms[0].constructorCount,
@@ -746,6 +789,9 @@ func (executor *executor) term(expression SExpr) (dynamicTerm, error) {
 	if selector, found := executor.datatypeSelectors[operator]; found {
 		if len(terms) != 1 || terms[0].sort != selector.sortCode {
 			return dynamicTerm{}, fmt.Errorf("ill-sorted datatype selector %s", operator)
+		}
+		if len(selector.fieldSorts) != 0 {
+			return selectDynamicMixedDatatypeField(selector, terms[0])
 		}
 		selected := terms[0].datatype
 		if selector.arity > 2 {
@@ -813,6 +859,116 @@ func compactDatatypeSelectors(values []string) smt.NaryDatatypeSelectors {
 		result.Append(value)
 	}
 	return result
+}
+
+func parseDatatypeFieldSort(expression SExpr, enclosing string) (datatypeFieldSort, bool) {
+	if name, ok := atomText(expression); ok {
+		switch name {
+		case enclosing:
+			return datatypeFieldSort{sort: sortDatatypeSelf}, true
+		case "Bool":
+			return datatypeFieldSort{sort: sortBool}, true
+		case "Int":
+			return datatypeFieldSort{sort: sortInt}, true
+		case "Real":
+			return datatypeFieldSort{sort: sortReal}, true
+		}
+	}
+	if width, ok := bitVectorSortWidth(expression); ok {
+		return datatypeFieldSort{sort: sortBitVector, width: width}, true
+	}
+	return datatypeFieldSort{}, false
+}
+
+func allDatatypeFieldsSelf(fields []datatypeFieldSort, _ int) bool {
+	for _, field := range fields {
+		if field.sort != sortDatatypeSelf {
+			return false
+		}
+	}
+	return true
+}
+
+func declareDynamicMixedDatatypeConstructor(datatype dynamicDatatype, constructorID int, constructor datatypeConstructorDeclaration) smt.MixedRecursiveDatatypeConstructor {
+	var signature smt.MixedDatatypeSignature = smt.EmptyMixedDatatypeSignature{}
+	for field := len(constructor.fieldSorts) - 1; field >= 0; field-- {
+		sort, name := constructor.fieldSorts[field], constructor.selectorNames[field]
+		switch sort.sort {
+		case sortBool:
+			signature = smt.BoolDatatypeField(name, signature)
+		case sortInt:
+			signature = smt.IntDatatypeField(name, signature)
+		case sortReal:
+			signature = smt.RealDatatypeField(name, signature)
+		case sortBitVector:
+			signature = smt.BitVecDatatypeField(sort.width, name, signature)
+		case sortDatatypeSelf:
+			signature = smt.SelfDatatypeField(name, signature)
+		}
+	}
+	return smt.DeclareMixedRecursiveDatatypeConstructor(datatype.id, datatype.constructorCount, constructorID, constructor.name, signature)
+}
+
+func datatypeFieldAccepts(fields []datatypeFieldSort, field, datatypeSort int, term dynamicTerm) bool {
+	if len(fields) == 0 {
+		return term.sort == datatypeSort
+	}
+	expected := fields[field]
+	switch expected.sort {
+	case sortDatatypeSelf:
+		return term.sort == datatypeSort
+	case sortInt:
+		return term.sort == sortInt || term.sort == sortNumber && term.integer != nil
+	case sortReal:
+		return term.sort == sortReal || term.sort == sortNumber && term.real != nil
+	case sortBitVector:
+		return term.sort == sortBitVector && term.bitWidth == expected.width
+	default:
+		return term.sort == expected.sort
+	}
+}
+
+func dynamicMixedDatatypeArguments(fields []datatypeFieldSort, terms []dynamicTerm) (smt.MixedDatatypeArguments, bool) {
+	var arguments smt.MixedDatatypeArguments = smt.EmptyMixedDatatypeArguments{}
+	for field := len(fields) - 1; field >= 0; field-- {
+		switch fields[field].sort {
+		case sortBool:
+			arguments = smt.BoolDatatypeArgument(terms[field].boolean, arguments)
+		case sortInt:
+			arguments = smt.IntDatatypeArgument(terms[field].integer, arguments)
+		case sortReal:
+			arguments = smt.RealDatatypeArgument(terms[field].real, arguments)
+		case sortBitVector:
+			arguments = smt.BitVecDatatypeArgument(fields[field].width, terms[field].bitVector, arguments)
+		case sortDatatypeSelf:
+			arguments = smt.SelfDatatypeArgument(terms[field].datatype, arguments)
+		default:
+			return nil, false
+		}
+	}
+	return arguments, true
+}
+
+func selectDynamicMixedDatatypeField(selector dynamicRecursiveDatatypeConstructor, target dynamicTerm) (dynamicTerm, error) {
+	cursor := smt.MixedDatatypeFields(selector.mixedWitness)
+	for field := 0; field < selector.field; field++ {
+		cursor = smt.NextMixedDatatypeField(cursor)
+	}
+	selected := selector.fieldSorts[selector.field]
+	switch selected.sort {
+	case sortBool:
+		return dynamicTerm{sort: sortBool, boolean: smt.SelectMixedBoolDatatypeField(cursor, target.datatype)}, nil
+	case sortInt:
+		return dynamicTerm{sort: sortInt, integer: smt.SelectMixedIntDatatypeField(cursor, target.datatype)}, nil
+	case sortReal:
+		return dynamicTerm{sort: sortReal, real: smt.SelectMixedRealDatatypeField(cursor, target.datatype)}, nil
+	case sortBitVector:
+		return dynamicTerm{sort: sortBitVector, bitWidth: selected.width, bitVector: smt.SelectMixedBitVecDatatypeField(selected.width, cursor, target.datatype)}, nil
+	case sortDatatypeSelf:
+		return dynamicTerm{sort: selector.sortCode, datatypeID: target.datatypeID, constructorCount: target.constructorCount, datatype: smt.SelectMixedSelfDatatypeField(cursor, target.datatype)}, nil
+	default:
+		return dynamicTerm{}, fmt.Errorf("unsupported datatype selector sort")
+	}
 }
 
 func compactDatatypeTerms(values []dynamicTerm) smt.NaryDatatypeTerms {

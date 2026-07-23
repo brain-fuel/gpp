@@ -1,6 +1,11 @@
 package smt
 
-import "goforge.dev/goplus/std/vec"
+import (
+	"reflect"
+	"strconv"
+
+	"goforge.dev/goplus/std/vec"
+)
 
 // NaryDatatypeSelectors is the compact erased representation of an indexed
 // selector-name vector. Arity at most four requires no backing allocation.
@@ -175,6 +180,8 @@ type DatatypeValue struct {
 	// Children is populated for arbitrary-arity recursive constructors. Unary
 	// and binary values retain Child/SecondChild for source compatibility.
 	Children *DatatypeChildren
+	// Fields is populated for mixed-sort recursive constructors.
+	Fields *DatatypeFields
 }
 
 // DatatypeChildren keeps the common arity-at-most-four case in one retained
@@ -228,6 +235,22 @@ type datatypeModel struct {
 	children               *[8]DatatypeValue
 	datatypeChildrenCount  int
 	inlineDatatypeChildren [8]DatatypeChildren
+	datatypeFieldsCount    int
+	inlineDatatypeFields   [8]DatatypeFields
+}
+
+func (model *datatypeModel) retainDatatypeFields(count int) *DatatypeFields {
+	if model.datatypeFieldsCount < len(model.inlineDatatypeFields) && count <= len(model.inlineDatatypeFields[0].Inline) {
+		fields := &model.inlineDatatypeFields[model.datatypeFieldsCount]
+		model.datatypeFieldsCount++
+		fields.Count = count
+		return fields
+	}
+	fields := &DatatypeFields{Count: count}
+	if count > len(fields.Inline) {
+		fields.Overflow = make([]DatatypeFieldValue, count)
+	}
+	return fields
 }
 
 func (model *datatypeModel) retainChild(value DatatypeValue) *DatatypeValue {
@@ -376,6 +399,20 @@ func evaluateDatatype(term Term[DatatypeSort], model *datatypeModel) (DatatypeVa
 			return DatatypeValue{}, false
 		}
 		return modelValue.Children.At(value.field)
+	case datatypeMixedSelector[DatatypeSort]:
+		target, ok := value.value.(Term[DatatypeSort])
+		if !ok || value.fieldKind != mixedDatatypeFieldSelf {
+			return DatatypeValue{}, false
+		}
+		modelValue, found := evaluateDatatype(target, model)
+		if !found || modelValue.ConstructorID != value.constructorID {
+			return DatatypeValue{}, false
+		}
+		field, found := modelValue.Fields.At(value.field)
+		if !found || field.Kind != mixedDatatypeFieldSelf || field.Datatype == nil {
+			return DatatypeValue{}, false
+		}
+		return *field.Datatype, true
 	default:
 		return DatatypeValue{}, false
 	}
@@ -411,6 +448,13 @@ func evaluateBoolWithDatatypes(term Term[BoolSort], booleans booleanModel, integ
 		}
 		actual, found := evaluateDatatype(candidate, datatypes)
 		return actual.ConstructorID == value.constructorID && actual.Children.Len() == value.arity, found && actual.DatatypeID == value.datatypeID && actual.ConstructorCount == value.constructorCount
+	case datatypeMixedRecognizer:
+		candidate, ok := value.value.(Term[DatatypeSort])
+		if !ok {
+			return false, false
+		}
+		actual, found := evaluateDatatype(candidate, datatypes)
+		return actual.ConstructorID == value.constructorID && actual.Fields.Len() == value.specs.Len(), found && actual.DatatypeID == value.datatypeID && actual.ConstructorCount == value.constructorCount
 	case Equal:
 		left, leftOK := value.Left.(Term[DatatypeSort])
 		right, rightOK := value.Right.(Term[DatatypeSort])
@@ -463,7 +507,7 @@ func evaluateBoolWithDatatypes(term Term[BoolSort], booleans booleanModel, integ
 }
 
 func equalDatatypeValue(left, right DatatypeValue) bool {
-	if left.DatatypeID != right.DatatypeID || left.ConstructorCount != right.ConstructorCount || left.ConstructorID != right.ConstructorID || (left.Child == nil) != (right.Child == nil) || (left.SecondChild == nil) != (right.SecondChild == nil) || left.Children.Len() != right.Children.Len() {
+	if left.DatatypeID != right.DatatypeID || left.ConstructorCount != right.ConstructorCount || left.ConstructorID != right.ConstructorID || (left.Child == nil) != (right.Child == nil) || (left.SecondChild == nil) != (right.SecondChild == nil) || left.Children.Len() != right.Children.Len() || left.Fields.Len() != right.Fields.Len() {
 		return false
 	}
 	if left.Child != nil && !equalDatatypeValue(*left.Child, *right.Child) {
@@ -479,7 +523,34 @@ func equalDatatypeValue(left, right DatatypeValue) bool {
 			return false
 		}
 	}
+	for index := 0; index < left.Fields.Len(); index++ {
+		leftField, _ := left.Fields.At(index)
+		rightField, _ := right.Fields.At(index)
+		if !equalDatatypeFieldValue(leftField, rightField) {
+			return false
+		}
+	}
 	return true
+}
+
+func equalDatatypeFieldValue(left, right DatatypeFieldValue) bool {
+	if left.Kind != right.Kind || left.Width != right.Width {
+		return false
+	}
+	switch left.Kind {
+	case mixedDatatypeFieldBool:
+		return left.Boolean == right.Boolean
+	case mixedDatatypeFieldInt:
+		return CompareIntegerValue(left.Integer, right.Integer) == 0
+	case mixedDatatypeFieldReal:
+		return CompareRational(left.Real, right.Real) == 0
+	case mixedDatatypeFieldBitVec:
+		return EqualBitVectorValue(left.BitVector, right.BitVector)
+	case mixedDatatypeFieldSelf:
+		return left.Datatype != nil && right.Datatype != nil && equalDatatypeValue(*left.Datatype, *right.Datatype)
+	default:
+		return false
+	}
 }
 
 type datatypeNode struct {
@@ -492,6 +563,9 @@ type datatypeNode struct {
 	second           int
 	field            int
 	children         datatypeNodeChildren
+	mixedSpecs       MixedDatatypeFieldSpecs
+	mixedValues      MixedDatatypeTermValues
+	mixedChildren    datatypeNodeChildren
 }
 
 type datatypeNodeChildren struct {
@@ -531,28 +605,34 @@ type datatypeTagConstraint struct {
 	nary        bool
 	arity       int
 	name        string
+	mixedSpecs  MixedDatatypeFieldSpecs
 }
 
 type datatypeProblem struct {
-	nodes               []datatypeNode
-	parents             []int
-	ranks               []uint8
-	disequalities       []datatypePair
-	tags                []datatypeTagConstraint
-	unsat               bool
-	inlineNodes         [8]datatypeNode
-	inlineParents       [8]int
-	inlineRanks         [8]uint8
-	inlineDisequalities [8]datatypePair
-	inlineTags          [8]datatypeTagConstraint
-	model               datatypeModel
+	nodes                 []datatypeNode
+	parents               []int
+	ranks                 []uint8
+	disequalities         []datatypePair
+	tags                  []datatypeTagConstraint
+	unsat                 bool
+	inlineNodes           [8]datatypeNode
+	inlineParents         [8]int
+	inlineRanks           [8]uint8
+	inlineDisequalities   [8]datatypePair
+	inlineTags            [8]datatypeTagConstraint
+	model                 datatypeModel
+	mixedEqualities       []Term[BoolSort]
+	mixedAssertions       []Term[BoolSort]
+	inlineMixedEqualities [8]Term[BoolSort]
+	inlineMixedAssertions [8]Term[BoolSort]
+	scalarOutcome         checkOutcome
 }
 
 func containsDatatypeTheory(term Term[BoolSort]) bool {
 	switch value := term.(type) {
 	case Equal:
-		return isDatatypeTerm(value.Left) || isDatatypeTerm(value.Right)
-	case datatypeRecognizer, datatypeRecursiveRecognizer, datatypeBinaryRecursiveRecognizer, datatypeNaryRecursiveRecognizer:
+		return isDatatypeTerm(value.Left) || isDatatypeTerm(value.Right) || isMixedDatatypeSelector(value.Left) || isMixedDatatypeSelector(value.Right)
+	case datatypeRecognizer, datatypeRecursiveRecognizer, datatypeBinaryRecursiveRecognizer, datatypeNaryRecursiveRecognizer, datatypeMixedRecognizer:
 		return true
 	case Not:
 		return containsDatatypeTheory(value.Value)
@@ -575,11 +655,59 @@ func containsDatatypeTheory(term Term[BoolSort]) bool {
 
 func isDatatypeTerm(term any) bool {
 	switch term.(type) {
-	case datatypeSymbol[DatatypeSort], datatypeConstructor[DatatypeSort], datatypeRecursiveApplication[DatatypeSort], datatypeRecursiveSelector[DatatypeSort], datatypeBinaryRecursiveApplication[DatatypeSort], datatypeBinaryRecursiveSelector[DatatypeSort], datatypeNaryRecursiveApplication[DatatypeSort], datatypeNaryRecursiveSelector[DatatypeSort]:
+	case datatypeSymbol[DatatypeSort], datatypeConstructor[DatatypeSort], datatypeRecursiveApplication[DatatypeSort], datatypeRecursiveSelector[DatatypeSort], datatypeBinaryRecursiveApplication[DatatypeSort], datatypeBinaryRecursiveSelector[DatatypeSort], datatypeNaryRecursiveApplication[DatatypeSort], datatypeNaryRecursiveSelector[DatatypeSort], datatypeMixedApplication[DatatypeSort], datatypeMixedSelector[DatatypeSort]:
 		return true
 	default:
 		return false
 	}
+}
+
+func isMixedDatatypeSelector(term any) bool {
+	switch term.(type) {
+	case datatypeMixedSelector[BoolSort], datatypeMixedSelector[IntSort], datatypeMixedSelector[RealSort], datatypeMixedSelector[BitVecSort], datatypeMixedSelector[DatatypeSort]:
+		return true
+	default:
+		return false
+	}
+}
+
+func isMixedScalarDatatypeSelector(term any) bool {
+	switch term.(type) {
+	case datatypeMixedSelector[BoolSort], datatypeMixedSelector[IntSort], datatypeMixedSelector[RealSort], datatypeMixedSelector[BitVecSort]:
+		return true
+	default:
+		return false
+	}
+}
+
+func containsMixedDatatypeTheory(term Term[BoolSort]) bool {
+	switch value := term.(type) {
+	case Equal:
+		return isMixedDatatypeSelector(value.Left) || isMixedDatatypeSelector(value.Right) || isMixedDatatypeApplication(value.Left) || isMixedDatatypeApplication(value.Right)
+	case datatypeMixedRecognizer:
+		return true
+	case And:
+		for _, item := range value.Values {
+			if containsMixedDatatypeTheory(item) {
+				return true
+			}
+		}
+	case BooleanConjunction:
+		items, _ := value.values()
+		for _, item := range items {
+			if containsMixedDatatypeTheory(item) {
+				return true
+			}
+		}
+	case Not:
+		return containsMixedDatatypeTheory(value.Value)
+	}
+	return false
+}
+
+func isMixedDatatypeApplication(term any) bool {
+	_, ok := term.(datatypeMixedApplication[DatatypeSort])
+	return ok
 }
 
 func solveDatatypeAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
@@ -589,6 +717,8 @@ func solveDatatypeAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
 	problem.ranks = problem.inlineRanks[:0]
 	problem.disequalities = problem.inlineDisequalities[:0]
 	problem.tags = problem.inlineTags[:0]
+	problem.mixedEqualities = problem.inlineMixedEqualities[:0]
+	problem.mixedAssertions = problem.inlineMixedAssertions[:0]
 	for _, assertion := range assertions {
 		if !problem.boolean(assertion, false) {
 			return checkOutcome{}, false
@@ -629,6 +759,13 @@ func (problem *datatypeProblem) boolean(term Term[BoolSort], negated bool) bool 
 	case Not:
 		return problem.boolean(value.Value, !negated)
 	case Equal:
+		if isMixedScalarDatatypeSelector(value.Left) || isMixedScalarDatatypeSelector(value.Right) {
+			if negated {
+				return false
+			}
+			problem.mixedAssertions = append(problem.mixedAssertions, term)
+			return true
+		}
 		left, leftOK := problem.term(value.Left)
 		right, rightOK := problem.term(value.Right)
 		if !leftOK || !rightOK || !problem.compatible(left, right) {
@@ -692,6 +829,19 @@ func (problem *datatypeProblem) boolean(term Term[BoolSort], negated bool) bool 
 		}
 		problem.tags = append(problem.tags, datatypeTagConstraint{node: candidate, constructor: value.constructorID, negated: negated, recursive: true, nary: true, arity: value.arity, name: value.name})
 		return true
+	case datatypeMixedRecognizer:
+		candidate, ok := problem.term(value.value)
+		if !ok || problem.nodes[candidate].datatypeID != value.datatypeID || problem.nodes[candidate].constructorCount != value.constructorCount || value.constructorID < 0 || value.constructorID >= value.constructorCount || value.specs.Len() == 0 {
+			return false
+		}
+		candidateNode := problem.nodes[candidate]
+		if isDatatypeConstructorNode(candidateNode) {
+			matches := candidateNode.kind == 8 && candidateNode.id == value.constructorID
+			problem.unsat = problem.unsat || matches == negated
+			return true
+		}
+		problem.tags = append(problem.tags, datatypeTagConstraint{node: candidate, constructor: value.constructorID, negated: negated, recursive: true, nary: true, arity: value.specs.Len(), name: value.name, mixedSpecs: value.specs})
+		return true
 	default:
 		return false
 	}
@@ -754,6 +904,35 @@ func (problem *datatypeProblem) term(term any) (int, bool) {
 			return 0, false
 		}
 		return problem.ensure(datatypeNode{datatypeID: value.datatypeID, constructorCount: value.constructorCount, kind: 7, id: value.constructorID, name: value.selectorName, child: target, field: value.field}), true
+	case datatypeMixedApplication[DatatypeSort]:
+		if value.specs.Len() == 0 || value.specs.Len() != value.values.Len() || value.constructorID < 0 || value.constructorID >= value.constructorCount {
+			return 0, false
+		}
+		var selfChildren datatypeNodeChildren
+		for field := 0; field < value.specs.Len(); field++ {
+			spec, argument := value.specs.At(field), value.values.At(field)
+			if spec.Kind != argument.Kind || spec.Width != argument.Width {
+				return 0, false
+			}
+			if spec.Kind != mixedDatatypeFieldSelf {
+				continue
+			}
+			child, ok := problem.term(argument.Term)
+			if !ok || problem.nodes[child].datatypeID != value.datatypeID || problem.nodes[child].constructorCount != value.constructorCount {
+				return 0, false
+			}
+			selfChildren.append(child)
+		}
+		return problem.ensure(datatypeNode{datatypeID: value.datatypeID, constructorCount: value.constructorCount, kind: 8, id: value.constructorID, name: value.name, mixedSpecs: value.specs, mixedValues: value.values, mixedChildren: selfChildren}), true
+	case datatypeMixedSelector[DatatypeSort]:
+		if value.fieldKind != mixedDatatypeFieldSelf {
+			return 0, false
+		}
+		target, ok := problem.term(value.value)
+		if !ok || problem.nodes[target].datatypeID != value.datatypeID || problem.nodes[target].constructorCount != value.constructorCount || value.constructorID < 0 || value.constructorID >= value.constructorCount || value.field < 0 {
+			return 0, false
+		}
+		return problem.ensure(datatypeNode{datatypeID: value.datatypeID, constructorCount: value.constructorCount, kind: 9, id: value.constructorID, name: value.selectorName, child: target, field: value.field}), true
 	default:
 		return 0, false
 	}
@@ -781,6 +960,10 @@ func (problem *datatypeProblem) ensure(node datatypeNode) int {
 			}
 		case 7:
 			samePayload = existing.child == node.child && existing.field == node.field
+		case 8:
+			samePayload = sameMixedDatatypeFields(existing.mixedSpecs, node.mixedSpecs, existing.mixedValues, node.mixedValues)
+		case 9:
+			samePayload = existing.child == node.child && existing.field == node.field
 		}
 		if existing.datatypeID == node.datatypeID && existing.constructorCount == node.constructorCount && existing.kind == node.kind && existing.id == node.id && samePayload {
 			if problem.nodes[index].name == "" {
@@ -794,6 +977,22 @@ func (problem *datatypeProblem) ensure(node datatypeNode) int {
 	problem.parents = append(problem.parents, index)
 	problem.ranks = append(problem.ranks, 0)
 	return index
+}
+
+func sameMixedDatatypeFields(leftSpecs, rightSpecs MixedDatatypeFieldSpecs, leftValues, rightValues MixedDatatypeTermValues) bool {
+	if leftSpecs.Len() != rightSpecs.Len() || leftValues.Len() != rightValues.Len() || leftSpecs.Len() != leftValues.Len() {
+		return false
+	}
+	for index := 0; index < leftSpecs.Len(); index++ {
+		if leftSpecs.At(index) != rightSpecs.At(index) {
+			return false
+		}
+		left, right := leftValues.At(index), rightValues.At(index)
+		if left.Kind != right.Kind || left.Width != right.Width || !reflect.DeepEqual(left.Term, right.Term) {
+			return false
+		}
+	}
+	return true
 }
 
 func (problem *datatypeProblem) compatible(left, right int) bool {
@@ -852,6 +1051,29 @@ func (problem *datatypeProblem) union(left, right int) {
 			}
 		}
 	}
+	if leftNode.kind == 8 && rightNode.kind == 8 {
+		if leftNode.mixedSpecs.Len() != rightNode.mixedSpecs.Len() {
+			problem.unsat = true
+			return
+		}
+		self := 0
+		for field := 0; field < leftNode.mixedSpecs.Len(); field++ {
+			leftSpec, rightSpec := leftNode.mixedSpecs.At(field), rightNode.mixedSpecs.At(field)
+			if leftSpec.Kind != rightSpec.Kind || leftSpec.Width != rightSpec.Width {
+				problem.unsat = true
+				return
+			}
+			if leftSpec.Kind == mixedDatatypeFieldSelf {
+				problem.union(leftNode.mixedChildren.at(self), rightNode.mixedChildren.at(self))
+				self++
+				if problem.unsat {
+					return
+				}
+				continue
+			}
+			problem.mixedEqualities = append(problem.mixedEqualities, Equal{Left: leftNode.mixedValues.At(field).Term, Right: rightNode.mixedValues.At(field).Term})
+		}
+	}
 	if problem.ranks[left] < problem.ranks[right] {
 		left, right = right, left
 	}
@@ -862,7 +1084,7 @@ func (problem *datatypeProblem) union(left, right int) {
 }
 
 func isDatatypeConstructorNode(node datatypeNode) bool {
-	return node.kind == 1 || node.kind == 2 || node.kind == 4 || node.kind == 6
+	return node.kind == 1 || node.kind == 2 || node.kind == 4 || node.kind == 6 || node.kind == 8
 }
 
 func (problem *datatypeProblem) solve() (checkOutcome, bool) {
@@ -872,7 +1094,7 @@ func (problem *datatypeProblem) solve() (checkOutcome, bool) {
 	for {
 		changed := false
 		for selector, selectorNode := range problem.nodes {
-			if selectorNode.kind != 3 && selectorNode.kind != 5 && selectorNode.kind != 7 {
+			if selectorNode.kind != 3 && selectorNode.kind != 5 && selectorNode.kind != 7 && selectorNode.kind != 9 {
 				continue
 			}
 			targetRoot := problem.find(selectorNode.child)
@@ -887,6 +1109,8 @@ func (problem *datatypeProblem) solve() (checkOutcome, bool) {
 					}
 				} else if selectorNode.kind == 7 && applicationNode.kind == 6 && selectorNode.field < applicationNode.children.len() {
 					selected = applicationNode.children.at(selectorNode.field)
+				} else if selectorNode.kind == 9 && applicationNode.kind == 8 {
+					selected, _ = applicationNode.mixedSelfChild(selectorNode.field)
 				}
 				if selected >= 0 && applicationNode.id == selectorNode.id && problem.find(application) == targetRoot && problem.find(selector) != problem.find(selected) {
 					problem.union(selector, selected)
@@ -896,7 +1120,7 @@ func (problem *datatypeProblem) solve() (checkOutcome, bool) {
 			}
 		}
 		for left := 0; left < len(problem.nodes); left++ {
-			if problem.nodes[left].kind != 2 && problem.nodes[left].kind != 4 && problem.nodes[left].kind != 6 {
+			if problem.nodes[left].kind != 2 && problem.nodes[left].kind != 4 && problem.nodes[left].kind != 6 && problem.nodes[left].kind != 8 {
 				continue
 			}
 			for right := left + 1; right < len(problem.nodes); right++ {
@@ -913,6 +1137,16 @@ func (problem *datatypeProblem) solve() (checkOutcome, bool) {
 							}
 						}
 					}
+				} else if problem.nodes[left].kind == 8 {
+					sameChildren = sameMixedDatatypeFields(problem.nodes[left].mixedSpecs, problem.nodes[right].mixedSpecs, problem.nodes[left].mixedValues, problem.nodes[right].mixedValues)
+					if sameChildren {
+						for field := 0; field < problem.nodes[left].mixedChildren.len(); field++ {
+							if problem.find(problem.nodes[left].mixedChildren.at(field)) != problem.find(problem.nodes[right].mixedChildren.at(field)) {
+								sameChildren = false
+								break
+							}
+						}
+					}
 				}
 				if problem.nodes[right].kind == problem.nodes[left].kind && problem.nodes[left].datatypeID == problem.nodes[right].datatypeID && problem.nodes[left].constructorCount == problem.nodes[right].constructorCount && problem.nodes[left].id == problem.nodes[right].id && sameChildren && problem.find(left) != problem.find(right) {
 					problem.union(left, right)
@@ -924,6 +1158,7 @@ func (problem *datatypeProblem) solve() (checkOutcome, bool) {
 			break
 		}
 	}
+	problem.propagateMixedConstructorFields()
 	if problem.unsat || problem.hasRecursiveCycle() {
 		return checkOutcome{status: checkUnsat}, true
 	}
@@ -931,6 +1166,11 @@ func (problem *datatypeProblem) solve() (checkOutcome, bool) {
 		if problem.find(pair.left) == problem.find(pair.right) {
 			return checkOutcome{status: checkUnsat}, true
 		}
+	}
+	if outcome, ok := problem.solveMixedScalarConstraints(); !ok {
+		return checkOutcome{status: checkUnknown, reason: UnsupportedTheory{Name: "mixed datatype scalar exchange"}}, true
+	} else if outcome.status == checkUnsat || outcome.status == checkUnknown {
+		return outcome, true
 	}
 	var inlineAssignment [8]int
 	var assignment []int
@@ -967,7 +1207,7 @@ func (problem *datatypeProblem) solve() (checkOutcome, bool) {
 	}
 	for index := range problem.nodes {
 		root := problem.find(index)
-		if root == index && (problem.nodes[index].kind == 0 || problem.nodes[index].kind == 3 || problem.nodes[index].kind == 5 || problem.nodes[index].kind == 7) {
+		if root == index && (problem.nodes[index].kind == 0 || problem.nodes[index].kind == 3 || problem.nodes[index].kind == 5 || problem.nodes[index].kind == 7 || problem.nodes[index].kind == 9) {
 			roots = append(roots, root)
 		}
 	}
@@ -992,7 +1232,226 @@ func (problem *datatypeProblem) solve() (checkOutcome, bool) {
 		}
 		model.set(node.datatypeID, node.id, value)
 	}
-	return checkOutcome{status: checkSat, datatypes: model}, true
+	return checkOutcome{status: checkSat, booleans: problem.scalarOutcome.booleans, integers: problem.scalarOutcome.integers, reals: problem.scalarOutcome.reals, bitVectors: problem.scalarOutcome.bitVectors, datatypes: model}, true
+}
+
+func (problem *datatypeProblem) propagateMixedConstructorFields() {
+	for left := 0; left < len(problem.nodes); left++ {
+		leftNode := problem.nodes[left]
+		if leftNode.kind != 8 {
+			continue
+		}
+		for right := left + 1; right < len(problem.nodes); right++ {
+			rightNode := problem.nodes[right]
+			if rightNode.kind != 8 || problem.find(left) != problem.find(right) {
+				continue
+			}
+			if leftNode.id != rightNode.id || leftNode.mixedSpecs.Len() != rightNode.mixedSpecs.Len() {
+				problem.unsat = true
+				return
+			}
+			leftSelf, rightSelf := 0, 0
+			for field := 0; field < leftNode.mixedSpecs.Len(); field++ {
+				leftSpec, rightSpec := leftNode.mixedSpecs.At(field), rightNode.mixedSpecs.At(field)
+				if leftSpec.Kind != rightSpec.Kind || leftSpec.Width != rightSpec.Width {
+					problem.unsat = true
+					return
+				}
+				if leftSpec.Kind == mixedDatatypeFieldSelf {
+					problem.union(leftNode.mixedChildren.at(leftSelf), rightNode.mixedChildren.at(rightSelf))
+					leftSelf++
+					rightSelf++
+					continue
+				}
+				problem.mixedEqualities = append(problem.mixedEqualities, Equal{Left: leftNode.mixedValues.At(field).Term, Right: rightNode.mixedValues.At(field).Term})
+			}
+		}
+	}
+}
+
+func (problem *datatypeProblem) solveMixedScalarConstraints() (checkOutcome, bool) {
+	assertions := problem.mixedEqualities[:0]
+	for _, assertion := range problem.mixedEqualities {
+		if !mixedScalarTautology(assertion) {
+			assertions = append(assertions, assertion)
+		}
+	}
+	for _, assertion := range problem.mixedAssertions {
+		rewritten, ok := problem.rewriteMixedScalarAssertion(assertion)
+		if !ok {
+			return checkOutcome{}, false
+		}
+		if !mixedScalarTautology(rewritten) {
+			assertions = append(assertions, rewritten)
+		}
+	}
+	// Retain scalar symbols that occur only as constructor fields so exact
+	// mixed model extraction receives the same total model as Z3.
+	for _, node := range problem.nodes {
+		if node.kind != 8 {
+			continue
+		}
+		for field := 0; field < node.mixedSpecs.Len(); field++ {
+			if node.mixedSpecs.At(field).Kind == mixedDatatypeFieldSelf {
+				continue
+			}
+			term := node.mixedValues.At(field).Term
+			if mixedScalarTermNeedsModel(node.mixedSpecs.At(field), term) {
+				assertions = append(assertions, Equal{Left: term, Right: term})
+			}
+		}
+	}
+	if len(assertions) == 0 {
+		problem.scalarOutcome = checkOutcome{status: checkSat}
+		return problem.scalarOutcome, true
+	}
+	var groups [4][]Term[BoolSort]
+	for _, assertion := range assertions {
+		group := 0
+		if containsIntegerTheory(assertion) {
+			group = 1
+		}
+		if containsRealTheory(assertion) {
+			group = 2
+		}
+		if containsBitVectorTheory(assertion) {
+			group = 3
+		}
+		groups[group] = append(groups[group], assertion)
+	}
+	combined := checkOutcome{status: checkSat}
+	for _, group := range groups {
+		if len(group) == 0 {
+			continue
+		}
+		inner := engine{assertions: group}
+		outcome := inner.solveAdditional(nil)
+		if outcome.status != checkSat {
+			problem.scalarOutcome = outcome
+			return outcome, true
+		}
+		combined.booleans.merge(outcome.booleans)
+		combined.integers.merge(outcome.integers)
+		combined.reals.merge(outcome.reals)
+		combined.bitVectors.merge(outcome.bitVectors)
+	}
+	problem.scalarOutcome = combined
+	return combined, true
+}
+
+func mixedScalarTautology(assertion Term[BoolSort]) bool {
+	equality, ok := assertion.(Equal)
+	return ok && reflect.DeepEqual(equality.Left, equality.Right)
+}
+
+func mixedScalarTermNeedsModel(spec MixedDatatypeFieldSpec, term any) bool {
+	switch spec.Kind {
+	case mixedDatatypeFieldBool:
+		_, ok := evaluateBool(term.(Term[BoolSort]), booleanModel{}, integerModel{}, rationalModel{})
+		return !ok
+	case mixedDatatypeFieldInt:
+		_, ok := evaluateIntegerWithBitVectors(term.(Term[IntSort]), booleanModel{}, integerModel{}, rationalModel{}, bitVectorModel{})
+		return !ok
+	case mixedDatatypeFieldReal:
+		_, ok := evaluateReal(term.(Term[RealSort]), booleanModel{}, integerModel{}, rationalModel{})
+		return !ok
+	case mixedDatatypeFieldBitVec:
+		_, ok := evaluateBitVector(term, bitVectorModel{}, integerModel{})
+		return !ok
+	default:
+		return false
+	}
+}
+
+func (problem *datatypeProblem) rewriteMixedScalarAssertion(assertion Term[BoolSort]) (Term[BoolSort], bool) {
+	switch value := assertion.(type) {
+	case Equal:
+		left, leftOK := problem.rewriteMixedScalarTerm(value.Left)
+		right, rightOK := problem.rewriteMixedScalarTerm(value.Right)
+		if !leftOK || !rightOK {
+			return nil, false
+		}
+		return Equal{Left: left, Right: right}, true
+	default:
+		return nil, false
+	}
+}
+
+func (problem *datatypeProblem) rewriteMixedScalarTerm(term any) (any, bool) {
+	switch value := term.(type) {
+	case datatypeMixedSelector[BoolSort]:
+		return problem.mixedSelectedScalar(value.datatypeID, value.constructorCount, value.constructorID, value.field, value.fieldKind, value.width, value.value)
+	case datatypeMixedSelector[IntSort]:
+		return problem.mixedSelectedScalar(value.datatypeID, value.constructorCount, value.constructorID, value.field, value.fieldKind, value.width, value.value)
+	case datatypeMixedSelector[RealSort]:
+		return problem.mixedSelectedScalar(value.datatypeID, value.constructorCount, value.constructorID, value.field, value.fieldKind, value.width, value.value)
+	case datatypeMixedSelector[BitVecSort]:
+		return problem.mixedSelectedScalar(value.datatypeID, value.constructorCount, value.constructorID, value.field, value.fieldKind, value.width, value.value)
+	default:
+		return term, true
+	}
+}
+
+func (problem *datatypeProblem) mixedSelectedScalar(datatypeID, constructorCount, constructorID, field, kind, width int, target any) (any, bool) {
+	node, ok := problem.term(target)
+	if !ok {
+		return nil, false
+	}
+	root := problem.find(node)
+	for index, application := range problem.nodes {
+		if application.kind != 8 || application.datatypeID != datatypeID || application.constructorCount != constructorCount || application.id != constructorID || problem.find(index) != root || field < 0 || field >= application.mixedSpecs.Len() {
+			continue
+		}
+		spec := application.mixedSpecs.At(field)
+		if spec.Kind != kind || spec.Width != width || kind == mixedDatatypeFieldSelf {
+			return nil, false
+		}
+		return application.mixedValues.At(field).Term, true
+	}
+	for _, tag := range problem.tags {
+		if tag.negated || tag.constructor != constructorID || tag.mixedSpecs.Len() == 0 || problem.find(tag.node) != root || field < 0 || field >= tag.mixedSpecs.Len() {
+			continue
+		}
+		spec := tag.mixedSpecs.At(field)
+		if spec.Kind != kind || spec.Width != width || kind == mixedDatatypeFieldSelf {
+			return nil, false
+		}
+		return mixedSyntheticScalar(root, field, spec), true
+	}
+	return nil, false
+}
+
+func mixedSyntheticScalar(root, field int, spec MixedDatatypeFieldSpec) any {
+	id := -int(^uint(0)>>1) + root*1024 + field
+	name := "@datatype-field-" + strconv.Itoa(root) + "-" + strconv.Itoa(field)
+	switch spec.Kind {
+	case mixedDatatypeFieldBool:
+		return BoolSymbol{ID: id, Name: name}
+	case mixedDatatypeFieldInt:
+		return IntSymbol{ID: id, Name: name}
+	case mixedDatatypeFieldReal:
+		return RealSymbol{ID: id, Name: name}
+	case mixedDatatypeFieldBitVec:
+		return BitVecConst(spec.Width, id, name)
+	default:
+		return nil
+	}
+}
+
+func (node datatypeNode) mixedSelfChild(field int) (int, bool) {
+	if field < 0 || field >= node.mixedSpecs.Len() || node.mixedSpecs.At(field).Kind != mixedDatatypeFieldSelf {
+		return -1, false
+	}
+	self := 0
+	for index := 0; index < field; index++ {
+		if node.mixedSpecs.At(index).Kind == mixedDatatypeFieldSelf {
+			self++
+		}
+	}
+	if self >= node.mixedChildren.len() {
+		return -1, false
+	}
+	return node.mixedChildren.at(self), true
 }
 
 func (problem *datatypeProblem) valueForRoot(root int, assignment []int, visiting []bool, model *datatypeModel) (DatatypeValue, bool) {
@@ -1003,7 +1462,7 @@ func (problem *datatypeProblem) valueForRoot(root int, assignment []int, visitin
 	visiting[root] = true
 	defer func() { visiting[root] = false }()
 	for index, node := range problem.nodes {
-		if node.kind != 2 && node.kind != 4 && node.kind != 6 || problem.find(index) != root {
+		if node.kind != 2 && node.kind != 4 && node.kind != 6 && node.kind != 8 || problem.find(index) != root {
 			continue
 		}
 		if node.kind == 6 {
@@ -1017,6 +1476,37 @@ func (problem *datatypeProblem) valueForRoot(root int, assignment []int, visitin
 				children.set(field, child)
 			}
 			return DatatypeValue{DatatypeID: node.datatypeID, ConstructorCount: node.constructorCount, ConstructorID: node.id, ConstructorName: node.name, Children: children}, true
+		}
+		if node.kind == 8 {
+			fields := model.retainDatatypeFields(node.mixedSpecs.Len())
+			self := 0
+			for field := 0; field < node.mixedSpecs.Len(); field++ {
+				spec, argument := node.mixedSpecs.At(field), node.mixedValues.At(field)
+				modelField := DatatypeFieldValue{Kind: spec.Kind, Width: spec.Width}
+				var ok bool
+				switch spec.Kind {
+				case mixedDatatypeFieldBool:
+					modelField.Boolean, ok = evaluateBool(argument.Term.(Term[BoolSort]), problem.scalarOutcome.booleans, problem.scalarOutcome.integers, problem.scalarOutcome.reals)
+				case mixedDatatypeFieldInt:
+					modelField.Integer, ok = evaluateIntegerWithBitVectors(argument.Term.(Term[IntSort]), problem.scalarOutcome.booleans, problem.scalarOutcome.integers, problem.scalarOutcome.reals, problem.scalarOutcome.bitVectors)
+				case mixedDatatypeFieldReal:
+					modelField.Real, ok = evaluateReal(argument.Term.(Term[RealSort]), problem.scalarOutcome.booleans, problem.scalarOutcome.integers, problem.scalarOutcome.reals)
+				case mixedDatatypeFieldBitVec:
+					modelField.BitVector, ok = evaluateBitVector(argument.Term, problem.scalarOutcome.bitVectors, problem.scalarOutcome.integers)
+				case mixedDatatypeFieldSelf:
+					child, childOK := problem.valueForRoot(problem.find(node.mixedChildren.at(self)), assignment, visiting, model)
+					self++
+					if childOK {
+						modelField.Datatype = model.retainChild(child)
+					}
+					ok = childOK
+				}
+				if !ok {
+					return DatatypeValue{}, false
+				}
+				fields.set(field, modelField)
+			}
+			return DatatypeValue{DatatypeID: node.datatypeID, ConstructorCount: node.constructorCount, ConstructorID: node.id, ConstructorName: node.name, Fields: fields}, true
 		}
 		first, ok := problem.valueForRoot(problem.find(node.child), assignment, visiting, model)
 		if !ok {
@@ -1038,6 +1528,45 @@ func (problem *datatypeProblem) valueForRoot(root int, assignment []int, visitin
 		return DatatypeValue{}, false
 	}
 	value := DatatypeValue{DatatypeID: node.datatypeID, ConstructorCount: node.constructorCount, ConstructorID: constructorID, ConstructorName: problem.constructorName(node.datatypeID, node.constructorCount, constructorID)}
+	if specs, mixed := problem.mixedRecursiveConstructorSpecs(root, constructorID); mixed {
+		var child DatatypeValue
+		if problem.mixedSpecsHaveSelf(specs) {
+			base := problem.baseConstructor(node.datatypeID, node.constructorCount)
+			if base < 0 {
+				return DatatypeValue{}, false
+			}
+			child = DatatypeValue{DatatypeID: node.datatypeID, ConstructorCount: node.constructorCount, ConstructorID: base, ConstructorName: problem.constructorName(node.datatypeID, node.constructorCount, base)}
+		}
+		fields := model.retainDatatypeFields(specs.Len())
+		for field := 0; field < specs.Len(); field++ {
+			spec := specs.At(field)
+			modelField := DatatypeFieldValue{Kind: spec.Kind, Width: spec.Width}
+			synthetic := mixedSyntheticScalar(root, field, spec)
+			switch spec.Kind {
+			case mixedDatatypeFieldBool:
+				modelField.Boolean, _ = evaluateBool(synthetic.(Term[BoolSort]), problem.scalarOutcome.booleans, problem.scalarOutcome.integers, problem.scalarOutcome.reals)
+			case mixedDatatypeFieldInt:
+				if evaluated, ok := evaluateIntegerWithBitVectors(synthetic.(Term[IntSort]), problem.scalarOutcome.booleans, problem.scalarOutcome.integers, problem.scalarOutcome.reals, problem.scalarOutcome.bitVectors); ok {
+					modelField.Integer = evaluated
+				} else {
+					modelField.Integer = NewIntegerValue(0)
+				}
+			case mixedDatatypeFieldReal:
+				modelField.Real, _ = evaluateReal(synthetic.(Term[RealSort]), problem.scalarOutcome.booleans, problem.scalarOutcome.integers, problem.scalarOutcome.reals)
+			case mixedDatatypeFieldBitVec:
+				if evaluated, ok := evaluateBitVector(synthetic, problem.scalarOutcome.bitVectors, problem.scalarOutcome.integers); ok {
+					modelField.BitVector = evaluated
+				} else {
+					modelField.BitVector = NewBitVectorUint64(spec.Width, 0)
+				}
+			case mixedDatatypeFieldSelf:
+				modelField.Datatype = model.retainChild(child)
+			}
+			fields.set(field, modelField)
+		}
+		value.Fields = fields
+		return value, true
+	}
 	if arity := problem.recursiveConstructorArity(root, constructorID); arity > 0 {
 		base := problem.baseConstructor(node.datatypeID, node.constructorCount)
 		if base < 0 {
@@ -1058,6 +1587,30 @@ func (problem *datatypeProblem) valueForRoot(root int, assignment []int, visitin
 		}
 	}
 	return value, true
+}
+
+func (problem *datatypeProblem) mixedSpecsHaveSelf(specs MixedDatatypeFieldSpecs) bool {
+	for field := 0; field < specs.Len(); field++ {
+		if specs.At(field).Kind == mixedDatatypeFieldSelf {
+			return true
+		}
+	}
+	return false
+}
+
+func (problem *datatypeProblem) mixedRecursiveConstructorSpecs(root, constructor int) (MixedDatatypeFieldSpecs, bool) {
+	node := problem.nodes[root]
+	for _, candidate := range problem.nodes {
+		if candidate.kind == 8 && candidate.datatypeID == node.datatypeID && candidate.constructorCount == node.constructorCount && candidate.id == constructor {
+			return candidate.mixedSpecs, true
+		}
+	}
+	for _, tag := range problem.tags {
+		if tag.constructor == constructor && tag.mixedSpecs.Len() > 0 && problem.nodes[tag.node].datatypeID == node.datatypeID && problem.nodes[tag.node].constructorCount == node.constructorCount {
+			return tag.mixedSpecs, true
+		}
+	}
+	return MixedDatatypeFieldSpecs{}, false
 }
 
 func (problem *datatypeProblem) hasRecursiveCycle() bool {
@@ -1087,7 +1640,7 @@ func (problem *datatypeProblem) recursiveCycleFrom(root int, state []uint8) bool
 	}
 	state[root] = 1
 	for index, node := range problem.nodes {
-		if problem.find(index) != root || node.kind != 2 && node.kind != 4 && node.kind != 6 {
+		if problem.find(index) != root || node.kind != 2 && node.kind != 4 && node.kind != 6 && node.kind != 8 {
 			continue
 		}
 		if node.kind == 2 || node.kind == 4 {
@@ -1100,6 +1653,12 @@ func (problem *datatypeProblem) recursiveCycleFrom(root int, state []uint8) bool
 		} else if node.kind == 6 {
 			for field := 0; field < node.children.len(); field++ {
 				if problem.recursiveCycleFrom(node.children.at(field), state) {
+					return true
+				}
+			}
+		} else if node.kind == 8 {
+			for field := 0; field < node.mixedChildren.len(); field++ {
+				if problem.recursiveCycleFrom(node.mixedChildren.at(field), state) {
 					return true
 				}
 			}
@@ -1154,9 +1713,12 @@ func (problem *datatypeProblem) recursiveConstructor(root, constructor int) bool
 func (problem *datatypeProblem) recursiveConstructorArity(root, constructor int) int {
 	node := problem.nodes[root]
 	for _, candidate := range problem.nodes {
-		if (candidate.kind == 2 || candidate.kind == 4 || candidate.kind == 6) && candidate.datatypeID == node.datatypeID && candidate.constructorCount == node.constructorCount && candidate.id == constructor {
+		if (candidate.kind == 2 || candidate.kind == 4 || candidate.kind == 6 || candidate.kind == 8) && candidate.datatypeID == node.datatypeID && candidate.constructorCount == node.constructorCount && candidate.id == constructor {
 			if candidate.kind == 6 {
 				return candidate.children.len()
+			}
+			if candidate.kind == 8 {
+				return candidate.mixedChildren.len()
 			}
 			if candidate.kind == 4 {
 				return 2

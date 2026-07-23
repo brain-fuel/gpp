@@ -274,7 +274,8 @@ func EnumsFromPackageMarkers(pkgPath string, files map[string][]byte, extern Ext
 	// Index domains mirror gen's rule: a zero-tparam enum whose variant
 	// parameters are all index-sorted (nat or another domain), with no
 	// variant tparams or results — computed by fixpoint from the raw
-	// variant markers before binder partition.
+	// variant markers before binder partition. A field may recursively carry
+	// its own domain, enabling strictly-positive type-level lists.
 	type rawVariant struct {
 		enum string
 		m    directive.VariantMarker
@@ -311,7 +312,7 @@ func EnumsFromPackageMarkers(pkgPath string, files map[string][]byte, extern Ext
 					break
 				}
 				for _, p := range parseParamList(rv.m.Params) {
-					if p.Type != "nat" && !domains[p.Type] {
+					if p.Type != "nat" && p.Type != name && !domains[p.Type] {
 						okDomain = false
 					}
 				}

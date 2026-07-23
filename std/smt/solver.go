@@ -209,6 +209,19 @@ func (m booleanModel) lookup(id int) (bool, bool) {
 	return value, ok
 }
 
+func (m *booleanModel) merge(other booleanModel) {
+	for index := 0; index < other.count; index++ {
+		entry := other.inline[index]
+		m.set(entry.id, entry.value)
+	}
+	for id, value := range other.overflow {
+		m.set(id, value)
+	}
+	for id, value := range other.external {
+		m.set(id, value)
+	}
+}
+
 func newEngine() *engine { return &engine{} }
 
 func (e *engine) asserted(formula Term[BoolSort]) *engine {
@@ -292,7 +305,11 @@ func (e *engine) solveAdditional(assumptions []Term[BoolSort]) checkOutcome {
 		sharedRealEUF = sharedRealEUF || shared
 	}
 	if datatypeTheory {
-		if arrayTheory || bitVectorTheory || integerTheory || eufTheory || realTheory {
+		mixedDatatypeTheory := false
+		for _, assertion := range allAssertions {
+			mixedDatatypeTheory = mixedDatatypeTheory || containsMixedDatatypeTheory(assertion)
+		}
+		if !mixedDatatypeTheory && (arrayTheory || bitVectorTheory || integerTheory || eufTheory || realTheory) {
 			return checkOutcome{status: checkUnknown, reason: UnsupportedTheory{Name: "datatype combination with another theory"}}
 		}
 		if outcome, recognized := solveDatatypeAssertions(allAssertions); recognized {

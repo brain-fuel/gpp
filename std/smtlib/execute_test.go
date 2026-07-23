@@ -379,6 +379,75 @@ func TestExecuteNaryRecursiveDatatypeAcyclicity(t *testing.T) {
 	}
 }
 
+func TestExecuteMixedSortRecursiveDatatype(t *testing.T) {
+	script := `(set-logic ALL)
+(declare-datatype Tree ((leaf) (node (flag Bool) (payload Int) (weight Real) (bits (_ BitVec 8)) (next Tree))))
+(declare-const x Tree)
+(assert (= x (node true 42 (/ 3.0 2.0) #xa5 leaf)))
+(assert (= (payload x) 42))
+(assert (= (next x) leaf))
+(assert (is-node x))
+(check-sat)
+(get-value (x (flag x) (payload x) (weight x) (bits x) (next x)))`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("result=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[7].(Satisfiable); !ok {
+		t.Fatalf("check=%T responses=%#v", result.Responses[7], result.Responses)
+	}
+	values, ok := result.Responses[8].(ValuesAvailable)
+	if !ok || len(values.Values) != 6 {
+		t.Fatalf("values=%#v", result.Responses[8])
+	}
+	x, xOK := values.Values[0].(DatatypeValue)
+	if !xOK || x.Value.ConstructorName != "node" || x.Value.Fields.Len() != 5 {
+		t.Fatalf("x=%#v", values.Values[0])
+	}
+	payload, _ := x.Value.Fields.At(1)
+	weight, _ := x.Value.Fields.At(2)
+	bits, _ := x.Value.Fields.At(3)
+	next, _ := x.Value.Fields.At(4)
+	if smt.CompareIntegerValue(payload.Integer, smt.NewIntegerValue(42)) != 0 || smt.CompareRational(weight.Real, smt.NewRational(3, 2)) != 0 || !smt.EqualBitVectorValue(bits.BitVector, smt.NewBitVectorUint64(8, 0xa5)) || next.Datatype == nil || next.Datatype.ConstructorName != "leaf" {
+		t.Fatalf("fields=%+v", x.Value.Fields)
+	}
+}
+
+func TestExecuteMixedSortDatatypeInjectivity(t *testing.T) {
+	script := `(declare-datatype Box ((box (payload Int))))
+(assert (= (box 1) (box 2)))
+(check-sat)`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("result=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[2].(Unsatisfiable); !ok {
+		t.Fatalf("check=%T responses=%#v", result.Responses[2], result.Responses)
+	}
+}
+
+func TestExecuteMixedSortRecognizerSelectorModel(t *testing.T) {
+	script := `(declare-datatype Box ((box (payload Int))))
+(declare-const x Box)
+(assert (is-box x))
+(assert (= (payload x) 7))
+(check-sat)
+(get-value (x))`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("result=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[4].(Satisfiable); !ok {
+		t.Fatalf("check=%T responses=%#v", result.Responses[4], result.Responses)
+	}
+	values := result.Responses[5].(ValuesAvailable)
+	x := values.Values[0].(DatatypeValue)
+	payload, payloadOK := x.Value.Fields.At(0)
+	if !payloadOK || smt.CompareIntegerValue(payload.Integer, smt.NewIntegerValue(7)) != 0 {
+		t.Fatalf("recognizer-only mixed model=%+v", x.Value)
+	}
+}
+
 func TestExecuteAssumptionCore(t *testing.T) {
 	script := `(declare-const a Bool)
 (declare-const b Bool)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/parser"
+	"go/scanner"
 	"go/token"
 	"strconv"
 	"strings"
@@ -35,7 +36,15 @@ func LowerTailCalls(filename string, src []byte) ([]byte, []TailError) {
 	// panic from a shadowing user symbol in the fallthrough proof.
 	file, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
 	if err != nil {
-		return src, []TailError{{Msg: fmt.Sprintf("internal error: tail-call input does not parse: %v", err)}}
+		message := fmt.Sprintf("internal error: tail-call input does not parse: %v", err)
+		if errors, ok := err.(scanner.ErrorList); ok && len(errors) > 0 {
+			lines := bytes.Split(src, []byte("\n"))
+			line := errors[0].Pos.Line
+			if line > 0 && line <= len(lines) {
+				message += fmt.Sprintf("; rewritten line %d: %s", line, strings.TrimSpace(string(lines[line-1])))
+			}
+		}
+		return src, []TailError{{Msg: message}}
 	}
 	var edits []Edit
 	var errs []TailError

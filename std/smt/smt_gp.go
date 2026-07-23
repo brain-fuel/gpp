@@ -6,6 +6,8 @@
 // any one solver's compatibility API.
 package smt
 
+import "iter"
+
 import "goforge.dev/goplus/std/vec"
 
 type BoolSort struct{}
@@ -82,6 +84,347 @@ type naryRecursiveDatatypeConstructorValue struct {
 }
 
 func (naryRecursiveDatatypeConstructorValue) isNaryRecursiveDatatypeConstructor() {}
+
+// DatatypeFieldSort is the first-order universe of field sorts supported by
+// the native mixed-datatype kernel. DatatypeFieldList is a recursive index
+// domain, so a signature is a genuine type-level heterogeneous list.
+//
+//goplus:enum DatatypeFieldSort
+type DatatypeFieldSort interface{ isDatatypeFieldSort() }
+
+//goplus:variant (DatatypeFieldSort) BoolDatatypeFieldSort()
+type BoolDatatypeFieldSort struct{}
+
+func (BoolDatatypeFieldSort) isDatatypeFieldSort() {}
+
+//goplus:variant (DatatypeFieldSort) IntDatatypeFieldSort()
+type IntDatatypeFieldSort struct{}
+
+func (IntDatatypeFieldSort) isDatatypeFieldSort() {}
+
+//goplus:variant (DatatypeFieldSort) RealDatatypeFieldSort()
+type RealDatatypeFieldSort struct{}
+
+func (RealDatatypeFieldSort) isDatatypeFieldSort() {}
+
+//goplus:variant (DatatypeFieldSort) BitVecDatatypeFieldSort(Width nat)
+type BitVecDatatypeFieldSort struct {
+	Width int
+}
+
+func (BitVecDatatypeFieldSort) isDatatypeFieldSort() {}
+
+//goplus:variant (DatatypeFieldSort) SelfDatatypeFieldSort()
+type SelfDatatypeFieldSort struct{}
+
+func (SelfDatatypeFieldSort) isDatatypeFieldSort() {}
+
+// DatatypeFieldSortCases selects one handler per DatatypeFieldSort variant for DatatypeFieldSortFold.
+type DatatypeFieldSortCases[R any] struct {
+	BoolDatatypeFieldSort   func() R
+	IntDatatypeFieldSort    func() R
+	RealDatatypeFieldSort   func() R
+	BitVecDatatypeFieldSort func(Width int) R
+	SelfDatatypeFieldSort   func() R
+}
+
+// DatatypeFieldSortFold reduces DatatypeFieldSort by one-level case analysis.
+func DatatypeFieldSortFold[R any](d DatatypeFieldSort, cs DatatypeFieldSortCases[R]) R {
+	switch m := any(d).(type) {
+	case BoolDatatypeFieldSort:
+		return cs.BoolDatatypeFieldSort()
+	case IntDatatypeFieldSort:
+		return cs.IntDatatypeFieldSort()
+	case RealDatatypeFieldSort:
+		return cs.RealDatatypeFieldSort()
+	case BitVecDatatypeFieldSort:
+		return cs.BitVecDatatypeFieldSort(m.Width)
+	case SelfDatatypeFieldSort:
+		return cs.SelfDatatypeFieldSort()
+	default:
+		panic("goplus: impossible enum value in DatatypeFieldSortFold")
+	}
+}
+
+// DatatypeFieldSortEqOverrides carries optional per-variant hooks for DatatypeFieldSortEqualWith.
+// A hook returning handled=false falls through to the derived comparison.
+type DatatypeFieldSortEqOverrides struct {
+	BoolDatatypeFieldSort   func(x, y BoolDatatypeFieldSort) (eq, handled bool)
+	IntDatatypeFieldSort    func(x, y IntDatatypeFieldSort) (eq, handled bool)
+	RealDatatypeFieldSort   func(x, y RealDatatypeFieldSort) (eq, handled bool)
+	BitVecDatatypeFieldSort func(x, y BitVecDatatypeFieldSort) (eq, handled bool)
+	SelfDatatypeFieldSort   func(x, y SelfDatatypeFieldSort) (eq, handled bool)
+}
+
+// DatatypeFieldSortEqualWith reports structural equality of a and b under ov.
+func DatatypeFieldSortEqualWith(a, b DatatypeFieldSort, ov DatatypeFieldSortEqOverrides) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	switch x := any(a).(type) {
+	case BoolDatatypeFieldSort:
+		y, ok := any(b).(BoolDatatypeFieldSort)
+		if !ok {
+			return false
+		}
+		if ov.BoolDatatypeFieldSort != nil {
+			if eq, handled := ov.BoolDatatypeFieldSort(x, y); handled {
+				return eq
+			}
+		}
+		_ = y
+		return true
+	case IntDatatypeFieldSort:
+		y, ok := any(b).(IntDatatypeFieldSort)
+		if !ok {
+			return false
+		}
+		if ov.IntDatatypeFieldSort != nil {
+			if eq, handled := ov.IntDatatypeFieldSort(x, y); handled {
+				return eq
+			}
+		}
+		_ = y
+		return true
+	case RealDatatypeFieldSort:
+		y, ok := any(b).(RealDatatypeFieldSort)
+		if !ok {
+			return false
+		}
+		if ov.RealDatatypeFieldSort != nil {
+			if eq, handled := ov.RealDatatypeFieldSort(x, y); handled {
+				return eq
+			}
+		}
+		_ = y
+		return true
+	case BitVecDatatypeFieldSort:
+		y, ok := any(b).(BitVecDatatypeFieldSort)
+		if !ok {
+			return false
+		}
+		if ov.BitVecDatatypeFieldSort != nil {
+			if eq, handled := ov.BitVecDatatypeFieldSort(x, y); handled {
+				return eq
+			}
+		}
+		if x.Width != y.Width {
+			return false
+		}
+		return true
+	case SelfDatatypeFieldSort:
+		y, ok := any(b).(SelfDatatypeFieldSort)
+		if !ok {
+			return false
+		}
+		if ov.SelfDatatypeFieldSort != nil {
+			if eq, handled := ov.SelfDatatypeFieldSort(x, y); handled {
+				return eq
+			}
+		}
+		_ = y
+		return true
+	}
+	return false
+}
+
+// DatatypeFieldSortEqual reports structural equality of a and b.
+func DatatypeFieldSortEqual(a, b DatatypeFieldSort) bool {
+	return DatatypeFieldSortEqualWith(a, b, DatatypeFieldSortEqOverrides{})
+}
+
+//goplus:enum DatatypeFieldList
+type DatatypeFieldList interface{ isDatatypeFieldList() }
+
+//goplus:variant (DatatypeFieldList) NoDatatypeFields()
+type NoDatatypeFields struct{}
+
+func (NoDatatypeFields) isDatatypeFieldList() {}
+
+//goplus:variant (DatatypeFieldList) DatatypeFieldCons(Head DatatypeFieldSort, Tail DatatypeFieldList)
+type DatatypeFieldCons struct {
+	Head DatatypeFieldSort
+	Tail DatatypeFieldList
+}
+
+func (DatatypeFieldCons) isDatatypeFieldList() {}
+
+// DatatypeFieldListCases selects one handler per DatatypeFieldList variant for DatatypeFieldListFold.
+type DatatypeFieldListCases[R any] struct {
+	NoDatatypeFields  func() R
+	DatatypeFieldCons func(Head DatatypeFieldSort, Tail DatatypeFieldList) R
+}
+
+// DatatypeFieldListFold reduces DatatypeFieldList by one-level case analysis.
+func DatatypeFieldListFold[R any](d DatatypeFieldList, cs DatatypeFieldListCases[R]) R {
+	switch m := any(d).(type) {
+	case NoDatatypeFields:
+		return cs.NoDatatypeFields()
+	case DatatypeFieldCons:
+		return cs.DatatypeFieldCons(m.Head, m.Tail)
+	default:
+		panic("goplus: impossible enum value in DatatypeFieldListFold")
+	}
+}
+
+// DatatypeFieldListChildren lists the direct DatatypeFieldList subterms of d.
+func DatatypeFieldListChildren(d DatatypeFieldList) []DatatypeFieldList {
+	var out []DatatypeFieldList
+	switch m := any(d).(type) {
+	case DatatypeFieldCons:
+		if m.Tail != nil {
+			out = append(out, m.Tail)
+		}
+	}
+	return out
+}
+
+// DatatypeFieldListUniverse yields d and all transitive DatatypeFieldList subterms, preorder.
+func DatatypeFieldListUniverse(d DatatypeFieldList) iter.Seq[DatatypeFieldList] {
+	return func(yield func(DatatypeFieldList) bool) {
+		var walk func(DatatypeFieldList) bool
+		walk = func(cur DatatypeFieldList) bool {
+			if !yield(cur) {
+				return false
+			}
+			for _, c := range DatatypeFieldListChildren(cur) {
+				if !walk(c) {
+					return false
+				}
+			}
+			return true
+		}
+		walk(d)
+	}
+}
+
+// DatatypeFieldListTransform rewrites d bottom-up: children first, then f at each node.
+func DatatypeFieldListTransform(d DatatypeFieldList, f func(DatatypeFieldList) DatatypeFieldList) DatatypeFieldList {
+	switch m := any(d).(type) {
+	case DatatypeFieldCons:
+		if m.Tail != nil {
+			m.Tail = DatatypeFieldListTransform(m.Tail, f)
+		}
+		return f(m)
+	}
+	return f(d)
+}
+
+// DatatypeFieldListEqOverrides carries optional per-variant hooks for DatatypeFieldListEqualWith.
+// A hook returning handled=false falls through to the derived comparison.
+type DatatypeFieldListEqOverrides struct {
+	NoDatatypeFields  func(x, y NoDatatypeFields) (eq, handled bool)
+	DatatypeFieldCons func(x, y DatatypeFieldCons) (eq, handled bool)
+}
+
+// DatatypeFieldListEqualWith reports structural equality of a and b under ov.
+func DatatypeFieldListEqualWith(a, b DatatypeFieldList, ov DatatypeFieldListEqOverrides) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	switch x := any(a).(type) {
+	case NoDatatypeFields:
+		y, ok := any(b).(NoDatatypeFields)
+		if !ok {
+			return false
+		}
+		if ov.NoDatatypeFields != nil {
+			if eq, handled := ov.NoDatatypeFields(x, y); handled {
+				return eq
+			}
+		}
+		_ = y
+		return true
+	case DatatypeFieldCons:
+		y, ok := any(b).(DatatypeFieldCons)
+		if !ok {
+			return false
+		}
+		if ov.DatatypeFieldCons != nil {
+			if eq, handled := ov.DatatypeFieldCons(x, y); handled {
+				return eq
+			}
+		}
+		if !DatatypeFieldSortEqual(x.Head, y.Head) {
+			return false
+		}
+		if !DatatypeFieldListEqualWith(x.Tail, y.Tail, ov) {
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+// DatatypeFieldListEqual reports structural equality of a and b.
+func DatatypeFieldListEqual(a, b DatatypeFieldList) bool {
+	return DatatypeFieldListEqualWith(a, b, DatatypeFieldListEqOverrides{})
+}
+
+//goplus:enum MixedDatatypeSignature[fields DatatypeFieldList]
+//goplus:derive off
+type MixedDatatypeSignature interface{ isMixedDatatypeSignature() }
+
+//goplus:variant (MixedDatatypeSignature) EmptyMixedDatatypeSignature() MixedDatatypeSignature[NoDatatypeFields]
+type EmptyMixedDatatypeSignature struct{}
+
+func (EmptyMixedDatatypeSignature) isMixedDatatypeSignature() {}
+
+//goplus:variant (MixedDatatypeSignature) mixedDatatypeSignatureValue(Specs MixedDatatypeFieldSpecs) MixedDatatypeSignature[fields]
+type mixedDatatypeSignatureValue struct {
+	specs MixedDatatypeFieldSpecs
+}
+
+func (mixedDatatypeSignatureValue) isMixedDatatypeSignature() {}
+
+//goplus:enum MixedDatatypeArguments[d nat, n nat, fields DatatypeFieldList]
+//goplus:derive off
+type MixedDatatypeArguments interface{ isMixedDatatypeArguments() }
+
+//goplus:variant (MixedDatatypeArguments) EmptyMixedDatatypeArguments() MixedDatatypeArguments[d, n, NoDatatypeFields]
+type EmptyMixedDatatypeArguments struct{}
+
+func (EmptyMixedDatatypeArguments) isMixedDatatypeArguments() {}
+
+//goplus:variant (MixedDatatypeArguments) mixedDatatypeArgumentsValue(Values MixedDatatypeTermValues) MixedDatatypeArguments[d, n, fields]
+type mixedDatatypeArgumentsValue struct {
+	values MixedDatatypeTermValues
+}
+
+func (mixedDatatypeArgumentsValue) isMixedDatatypeArguments() {}
+
+//goplus:enum MixedRecursiveDatatypeConstructor[d nat, n nat, c nat, fields DatatypeFieldList]
+//goplus:derive off
+//goplus:repr transparent
+type MixedRecursiveDatatypeConstructor = mixedRecursiveDatatypeConstructorValue
+
+//goplus:variant (MixedRecursiveDatatypeConstructor) mixedRecursiveDatatypeConstructorValue(DatatypeID int, ConstructorCount int, ConstructorID int, Name string, Specs MixedDatatypeFieldSpecs) MixedRecursiveDatatypeConstructor[d, n, c, fields]
+type mixedRecursiveDatatypeConstructorValue struct {
+	datatypeID       int
+	constructorCount int
+	constructorID    int
+	name             string
+	specs            MixedDatatypeFieldSpecs
+}
+
+func (mixedRecursiveDatatypeConstructorValue) isMixedRecursiveDatatypeConstructor() {}
+
+// MixedDatatypeCursor is a typed cursor into a constructor signature. Moving
+// to the tail changes its list index; selecting the head therefore returns the
+// statically correct SMT sort without an untyped field-number API.
+//
+//goplus:enum MixedDatatypeCursor[d nat, n nat, c nat, fields DatatypeFieldList]
+//goplus:derive off
+//goplus:repr transparent
+type MixedDatatypeCursor = mixedDatatypeCursorValue
+
+//goplus:variant (MixedDatatypeCursor) mixedDatatypeCursorValue(Declaration MixedRecursiveDatatypeConstructor[d, n, c, fields], Offset int) MixedDatatypeCursor[d, n, c, fields]
+type mixedDatatypeCursorValue struct {
+	declaration MixedRecursiveDatatypeConstructor
+	offset      int
+}
+
+func (mixedDatatypeCursorValue) isMixedDatatypeCursor() {}
 
 //goplus:enum BinaryDatatypeField
 type BinaryDatatypeField interface{ isBinaryDatatypeField() }
@@ -1016,6 +1359,44 @@ type datatypeNaryRecursiveRecognizer struct {
 
 func (datatypeNaryRecursiveRecognizer) isTerm(BoolSort) {}
 
+//goplus:variant (Term[S]) datatypeMixedApplication(DatatypeID int, ConstructorCount int, ConstructorID int, Name string, Specs MixedDatatypeFieldSpecs, Values MixedDatatypeTermValues) Term[S]
+type datatypeMixedApplication[S any] struct {
+	datatypeID       int
+	constructorCount int
+	constructorID    int
+	name             string
+	specs            MixedDatatypeFieldSpecs
+	values           MixedDatatypeTermValues
+}
+
+func (datatypeMixedApplication[S]) isTerm(S) {}
+
+//goplus:variant (Term[S]) datatypeMixedSelector(DatatypeID int, ConstructorCount int, ConstructorID int, Field int, FieldKind int, Width int, SelectorName string, Value any) Term[S]
+type datatypeMixedSelector[S any] struct {
+	datatypeID       int
+	constructorCount int
+	constructorID    int
+	field            int
+	fieldKind        int
+	width            int
+	selectorName     string
+	value            any
+}
+
+func (datatypeMixedSelector[S]) isTerm(S) {}
+
+//goplus:variant (Term[S]) datatypeMixedRecognizer(DatatypeID int, ConstructorCount int, ConstructorID int, Name string, Specs MixedDatatypeFieldSpecs, Value any) Term[BoolSort]
+type datatypeMixedRecognizer struct {
+	datatypeID       int
+	constructorCount int
+	constructorID    int
+	name             string
+	specs            MixedDatatypeFieldSpecs
+	value            any
+}
+
+func (datatypeMixedRecognizer) isTerm(BoolSort) {}
+
 // TermCases selects one handler per Term variant for TermFold.
 type TermCases[S any, R any] struct {
 	Bool                               func(Value bool) R
@@ -1107,6 +1488,9 @@ type TermCases[S any, R any] struct {
 	datatypeNaryRecursiveApplication   func(DatatypeID int, ConstructorCount int, ConstructorID int, Arity int, Name string, SelectorNames NaryDatatypeSelectors, Values NaryDatatypeTerms) R
 	datatypeNaryRecursiveSelector      func(DatatypeID int, ConstructorCount int, ConstructorID int, Arity int, Field int, SelectorName string, Value any) R
 	datatypeNaryRecursiveRecognizer    func(DatatypeID int, ConstructorCount int, ConstructorID int, Arity int, Name string, Value any) R
+	datatypeMixedApplication           func(DatatypeID int, ConstructorCount int, ConstructorID int, Name string, Specs MixedDatatypeFieldSpecs, Values MixedDatatypeTermValues) R
+	datatypeMixedSelector              func(DatatypeID int, ConstructorCount int, ConstructorID int, Field int, FieldKind int, Width int, SelectorName string, Value any) R
+	datatypeMixedRecognizer            func(DatatypeID int, ConstructorCount int, ConstructorID int, Name string, Specs MixedDatatypeFieldSpecs, Value any) R
 }
 
 // TermFold reduces Term[S] by one-level case analysis.
@@ -1290,6 +1674,12 @@ func TermFold[S any, R any](t Term[S], cs TermCases[S, R]) R {
 		return cs.datatypeNaryRecursiveSelector(m.datatypeID, m.constructorCount, m.constructorID, m.arity, m.field, m.selectorName, m.value)
 	case datatypeNaryRecursiveRecognizer:
 		return cs.datatypeNaryRecursiveRecognizer(m.datatypeID, m.constructorCount, m.constructorID, m.arity, m.name, m.value)
+	case datatypeMixedApplication[S]:
+		return cs.datatypeMixedApplication(m.datatypeID, m.constructorCount, m.constructorID, m.name, m.specs, m.values)
+	case datatypeMixedSelector[S]:
+		return cs.datatypeMixedSelector(m.datatypeID, m.constructorCount, m.constructorID, m.field, m.fieldKind, m.width, m.selectorName, m.value)
+	case datatypeMixedRecognizer:
+		return cs.datatypeMixedRecognizer(m.datatypeID, m.constructorCount, m.constructorID, m.name, m.specs, m.value)
 	default:
 		panic("goplus: impossible enum value in TermFold")
 	}
@@ -1939,14 +2329,270 @@ func datatypeFieldIndex(field vec.Fin) int {
 	}
 }
 
+//goplus:dep BoolDatatypeField(name string, 0 tail DatatypeFieldList, rest MixedDatatypeSignature[tail]) MixedDatatypeSignature[DatatypeFieldCons(BoolDatatypeFieldSort, tail)]
+func BoolDatatypeField(name string, rest MixedDatatypeSignature) MixedDatatypeSignature {
+	switch __gp_m11 := any(rest).(type) {
+	case EmptyMixedDatatypeSignature:
+		return mixedDatatypeSignatureValue{specs: prependMixedDatatypeFieldSpec(mixedDatatypeFieldBool, 0, name, MixedDatatypeFieldSpecs{})}
+	case mixedDatatypeSignatureValue:
+		specs := __gp_m11.specs
+		return mixedDatatypeSignatureValue{specs: prependMixedDatatypeFieldSpec(mixedDatatypeFieldBool, 0, name, specs)}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
+//goplus:dep IntDatatypeField(name string, 0 tail DatatypeFieldList, rest MixedDatatypeSignature[tail]) MixedDatatypeSignature[DatatypeFieldCons(IntDatatypeFieldSort, tail)]
+func IntDatatypeField(name string, rest MixedDatatypeSignature) MixedDatatypeSignature {
+	switch __gp_m12 := any(rest).(type) {
+	case EmptyMixedDatatypeSignature:
+		return mixedDatatypeSignatureValue{specs: prependMixedDatatypeFieldSpec(mixedDatatypeFieldInt, 0, name, MixedDatatypeFieldSpecs{})}
+	case mixedDatatypeSignatureValue:
+		specs := __gp_m12.specs
+		return mixedDatatypeSignatureValue{specs: prependMixedDatatypeFieldSpec(mixedDatatypeFieldInt, 0, name, specs)}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
+//goplus:dep RealDatatypeField(name string, 0 tail DatatypeFieldList, rest MixedDatatypeSignature[tail]) MixedDatatypeSignature[DatatypeFieldCons(RealDatatypeFieldSort, tail)]
+func RealDatatypeField(name string, rest MixedDatatypeSignature) MixedDatatypeSignature {
+	switch __gp_m13 := any(rest).(type) {
+	case EmptyMixedDatatypeSignature:
+		return mixedDatatypeSignatureValue{specs: prependMixedDatatypeFieldSpec(mixedDatatypeFieldReal, 0, name, MixedDatatypeFieldSpecs{})}
+	case mixedDatatypeSignatureValue:
+		specs := __gp_m13.specs
+		return mixedDatatypeSignatureValue{specs: prependMixedDatatypeFieldSpec(mixedDatatypeFieldReal, 0, name, specs)}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
+//goplus:dep BitVecDatatypeField(width nat, name string, 0 tail DatatypeFieldList, rest MixedDatatypeSignature[tail]) MixedDatatypeSignature[DatatypeFieldCons(BitVecDatatypeFieldSort(width), tail)]
+func BitVecDatatypeField(width int, name string, rest MixedDatatypeSignature) MixedDatatypeSignature {
+	if width <= 0 {
+		panic("smt: mixed datatype bit-vector field width must be positive")
+	}
+	switch __gp_m14 := any(rest).(type) {
+	case EmptyMixedDatatypeSignature:
+		return mixedDatatypeSignatureValue{specs: prependMixedDatatypeFieldSpec(mixedDatatypeFieldBitVec, int(width), name, MixedDatatypeFieldSpecs{})}
+	case mixedDatatypeSignatureValue:
+		specs := __gp_m14.specs
+		return mixedDatatypeSignatureValue{specs: prependMixedDatatypeFieldSpec(mixedDatatypeFieldBitVec, int(width), name, specs)}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
+//goplus:dep SelfDatatypeField(name string, 0 tail DatatypeFieldList, rest MixedDatatypeSignature[tail]) MixedDatatypeSignature[DatatypeFieldCons(SelfDatatypeFieldSort, tail)]
+func SelfDatatypeField(name string, rest MixedDatatypeSignature) MixedDatatypeSignature {
+	switch __gp_m15 := any(rest).(type) {
+	case EmptyMixedDatatypeSignature:
+		return mixedDatatypeSignatureValue{specs: prependMixedDatatypeFieldSpec(mixedDatatypeFieldSelf, 0, name, MixedDatatypeFieldSpecs{})}
+	case mixedDatatypeSignatureValue:
+		specs := __gp_m15.specs
+		return mixedDatatypeSignatureValue{specs: prependMixedDatatypeFieldSpec(mixedDatatypeFieldSelf, 0, name, specs)}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
+//goplus:dep BoolDatatypeArgument(0 datatype nat, 0 constructors nat, 0 tail DatatypeFieldList, value Term[BoolSort], rest MixedDatatypeArguments[datatype, constructors, tail]) MixedDatatypeArguments[datatype, constructors, DatatypeFieldCons(BoolDatatypeFieldSort, tail)]
+func BoolDatatypeArgument(value Term[BoolSort], rest MixedDatatypeArguments) MixedDatatypeArguments {
+	switch __gp_m16 := any(rest).(type) {
+	case EmptyMixedDatatypeArguments:
+		return mixedDatatypeArgumentsValue{values: prependMixedDatatypeTerm(mixedDatatypeFieldBool, 0, value, MixedDatatypeTermValues{})}
+	case mixedDatatypeArgumentsValue:
+		values := __gp_m16.values
+		return mixedDatatypeArgumentsValue{values: prependMixedDatatypeTerm(mixedDatatypeFieldBool, 0, value, values)}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
+//goplus:dep IntDatatypeArgument(0 datatype nat, 0 constructors nat, 0 tail DatatypeFieldList, value Term[IntSort], rest MixedDatatypeArguments[datatype, constructors, tail]) MixedDatatypeArguments[datatype, constructors, DatatypeFieldCons(IntDatatypeFieldSort, tail)]
+func IntDatatypeArgument(value Term[IntSort], rest MixedDatatypeArguments) MixedDatatypeArguments {
+	switch __gp_m17 := any(rest).(type) {
+	case EmptyMixedDatatypeArguments:
+		return mixedDatatypeArgumentsValue{values: prependMixedDatatypeTerm(mixedDatatypeFieldInt, 0, value, MixedDatatypeTermValues{})}
+	case mixedDatatypeArgumentsValue:
+		values := __gp_m17.values
+		return mixedDatatypeArgumentsValue{values: prependMixedDatatypeTerm(mixedDatatypeFieldInt, 0, value, values)}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
+//goplus:dep RealDatatypeArgument(0 datatype nat, 0 constructors nat, 0 tail DatatypeFieldList, value Term[RealSort], rest MixedDatatypeArguments[datatype, constructors, tail]) MixedDatatypeArguments[datatype, constructors, DatatypeFieldCons(RealDatatypeFieldSort, tail)]
+func RealDatatypeArgument(value Term[RealSort], rest MixedDatatypeArguments) MixedDatatypeArguments {
+	switch __gp_m18 := any(rest).(type) {
+	case EmptyMixedDatatypeArguments:
+		return mixedDatatypeArgumentsValue{values: prependMixedDatatypeTerm(mixedDatatypeFieldReal, 0, value, MixedDatatypeTermValues{})}
+	case mixedDatatypeArgumentsValue:
+		values := __gp_m18.values
+		return mixedDatatypeArgumentsValue{values: prependMixedDatatypeTerm(mixedDatatypeFieldReal, 0, value, values)}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
+//goplus:dep BitVecDatatypeArgument(width nat, 0 datatype nat, 0 constructors nat, 0 tail DatatypeFieldList, value Term[BitVecSort[width]], rest MixedDatatypeArguments[datatype, constructors, tail]) MixedDatatypeArguments[datatype, constructors, DatatypeFieldCons(BitVecDatatypeFieldSort(width), tail)]
+func BitVecDatatypeArgument(width int, value Term[BitVecSort], rest MixedDatatypeArguments) MixedDatatypeArguments {
+	switch __gp_m19 := any(rest).(type) {
+	case EmptyMixedDatatypeArguments:
+		return mixedDatatypeArgumentsValue{values: prependMixedDatatypeTerm(mixedDatatypeFieldBitVec, int(width), value, MixedDatatypeTermValues{})}
+	case mixedDatatypeArgumentsValue:
+		values := __gp_m19.values
+		return mixedDatatypeArgumentsValue{values: prependMixedDatatypeTerm(mixedDatatypeFieldBitVec, int(width), value, values)}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
+//goplus:dep SelfDatatypeArgument(0 datatype nat, 0 constructors nat, 0 tail DatatypeFieldList, value Term[DatatypeSort[datatype, constructors]], rest MixedDatatypeArguments[datatype, constructors, tail]) MixedDatatypeArguments[datatype, constructors, DatatypeFieldCons(SelfDatatypeFieldSort, tail)]
+func SelfDatatypeArgument(value Term[DatatypeSort], rest MixedDatatypeArguments) MixedDatatypeArguments {
+	switch __gp_m20 := any(rest).(type) {
+	case EmptyMixedDatatypeArguments:
+		return mixedDatatypeArgumentsValue{values: prependMixedDatatypeTerm(mixedDatatypeFieldSelf, 0, value, MixedDatatypeTermValues{})}
+	case mixedDatatypeArgumentsValue:
+		values := __gp_m20.values
+		return mixedDatatypeArgumentsValue{values: prependMixedDatatypeTerm(mixedDatatypeFieldSelf, 0, value, values)}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
+//goplus:dep DeclareMixedRecursiveDatatypeConstructor(datatype nat, constructors nat, constructor nat, 0 fields DatatypeFieldList, name string, signature MixedDatatypeSignature[fields]) MixedRecursiveDatatypeConstructor[datatype, constructors, constructor, fields]
+func DeclareMixedRecursiveDatatypeConstructor(datatype int, constructors int, constructor int, name string, signature MixedDatatypeSignature) MixedRecursiveDatatypeConstructor {
+	if constructors < 1 || constructor >= constructors {
+		panic("smt: mixed datatype constructor is outside its declaration")
+	}
+	switch __gp_m21 := any(signature).(type) {
+	case EmptyMixedDatatypeSignature:
+		panic("smt: mixed recursive constructor requires at least one field")
+	case mixedDatatypeSignatureValue:
+		specs := __gp_m21.specs
+		validateMixedDatatypeFieldSpecs(specs)
+		return mixedRecursiveDatatypeConstructorValue{datatypeID: int(datatype), constructorCount: int(constructors), constructorID: int(constructor), name: name, specs: specs}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
+//goplus:dep ApplyMixedRecursiveDatatypeConstructor(0 datatype nat, 0 constructors nat, 0 constructor nat, 0 fields DatatypeFieldList, declaration MixedRecursiveDatatypeConstructor[datatype, constructors, constructor, fields], arguments MixedDatatypeArguments[datatype, constructors, fields]) Term[DatatypeSort[datatype, constructors]]
+func ApplyMixedRecursiveDatatypeConstructor(declaration MixedRecursiveDatatypeConstructor, arguments MixedDatatypeArguments) Term[DatatypeSort] {
+	switch __gp_m22 := any(declaration).(type) {
+	case mixedRecursiveDatatypeConstructorValue:
+		datatypeID := __gp_m22.datatypeID
+		constructorCount := __gp_m22.constructorCount
+		constructorID := __gp_m22.constructorID
+		name := __gp_m22.name
+		specs := __gp_m22.specs
+		switch __gp_m23 := any(arguments).(type) {
+		case EmptyMixedDatatypeArguments:
+			panic("smt: mixed recursive constructor requires at least one field")
+		case mixedDatatypeArgumentsValue:
+			values := __gp_m23.values
+			validateMixedDatatypeArguments(specs, values)
+			return datatypeMixedApplication[DatatypeSort]{datatypeID: datatypeID, constructorCount: constructorCount, constructorID: constructorID, name: name, specs: specs, values: values}
+		default:
+			panic("goplus: impossible enum value in match")
+		}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
+//goplus:dep MixedDatatypeFields(0 datatype nat, 0 constructors nat, 0 constructor nat, 0 fields DatatypeFieldList, declaration MixedRecursiveDatatypeConstructor[datatype, constructors, constructor, fields]) MixedDatatypeCursor[datatype, constructors, constructor, fields]
+func MixedDatatypeFields(declaration MixedRecursiveDatatypeConstructor) MixedDatatypeCursor {
+	return mixedDatatypeCursorValue{declaration: declaration, offset: 0}
+}
+
+//goplus:dep NextMixedDatatypeField(0 datatype nat, 0 constructors nat, 0 constructor nat, 0 head DatatypeFieldSort, 0 tail DatatypeFieldList, cursor MixedDatatypeCursor[datatype, constructors, constructor, DatatypeFieldCons(head, tail)]) MixedDatatypeCursor[datatype, constructors, constructor, tail]
+func NextMixedDatatypeField(cursor MixedDatatypeCursor) MixedDatatypeCursor {
+	switch __gp_m24 := any(cursor).(type) {
+	case mixedDatatypeCursorValue:
+		declaration := __gp_m24.declaration
+		offset := __gp_m24.offset
+		return mixedDatatypeCursorValue{declaration: declaration, offset: offset + 1}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
+//goplus:dep SelectMixedBoolDatatypeField(0 datatype nat, 0 constructors nat, 0 constructor nat, 0 tail DatatypeFieldList, cursor MixedDatatypeCursor[datatype, constructors, constructor, DatatypeFieldCons(BoolDatatypeFieldSort, tail)], value Term[DatatypeSort[datatype, constructors]]) Term[BoolSort]
+func SelectMixedBoolDatatypeField(cursor MixedDatatypeCursor, value Term[DatatypeSort]) Term[BoolSort] {
+	return selectMixedDatatypeField[BoolSort](mixedDatatypeFieldBool, 0, cursor, value)
+}
+
+//goplus:dep SelectMixedIntDatatypeField(0 datatype nat, 0 constructors nat, 0 constructor nat, 0 tail DatatypeFieldList, cursor MixedDatatypeCursor[datatype, constructors, constructor, DatatypeFieldCons(IntDatatypeFieldSort, tail)], value Term[DatatypeSort[datatype, constructors]]) Term[IntSort]
+func SelectMixedIntDatatypeField(cursor MixedDatatypeCursor, value Term[DatatypeSort]) Term[IntSort] {
+	return selectMixedDatatypeField[IntSort](mixedDatatypeFieldInt, 0, cursor, value)
+}
+
+//goplus:dep SelectMixedRealDatatypeField(0 datatype nat, 0 constructors nat, 0 constructor nat, 0 tail DatatypeFieldList, cursor MixedDatatypeCursor[datatype, constructors, constructor, DatatypeFieldCons(RealDatatypeFieldSort, tail)], value Term[DatatypeSort[datatype, constructors]]) Term[RealSort]
+func SelectMixedRealDatatypeField(cursor MixedDatatypeCursor, value Term[DatatypeSort]) Term[RealSort] {
+	return selectMixedDatatypeField[RealSort](mixedDatatypeFieldReal, 0, cursor, value)
+}
+
+//goplus:dep SelectMixedBitVecDatatypeField(width nat, 0 datatype nat, 0 constructors nat, 0 constructor nat, 0 tail DatatypeFieldList, cursor MixedDatatypeCursor[datatype, constructors, constructor, DatatypeFieldCons(BitVecDatatypeFieldSort(width), tail)], value Term[DatatypeSort[datatype, constructors]]) Term[BitVecSort[width]]
+func SelectMixedBitVecDatatypeField(width int, cursor MixedDatatypeCursor, value Term[DatatypeSort]) Term[BitVecSort] {
+	return selectMixedDatatypeField[BitVecSort](mixedDatatypeFieldBitVec, int(width), cursor, value)
+}
+
+//goplus:dep SelectMixedSelfDatatypeField(0 datatype nat, 0 constructors nat, 0 constructor nat, 0 tail DatatypeFieldList, cursor MixedDatatypeCursor[datatype, constructors, constructor, DatatypeFieldCons(SelfDatatypeFieldSort, tail)], value Term[DatatypeSort[datatype, constructors]]) Term[DatatypeSort[datatype, constructors]]
+func SelectMixedSelfDatatypeField(cursor MixedDatatypeCursor, value Term[DatatypeSort]) Term[DatatypeSort] {
+	return selectMixedDatatypeField[DatatypeSort](mixedDatatypeFieldSelf, 0, cursor, value)
+}
+
+//goplus:dep selectMixedDatatypeField[S any](kind int, width int, 0 datatype nat, 0 constructors nat, 0 constructor nat, 0 fields DatatypeFieldList, cursor MixedDatatypeCursor[datatype, constructors, constructor, fields], value Term[DatatypeSort[datatype, constructors]]) Term[S]
+func selectMixedDatatypeField[S any](kind int, width int, cursor MixedDatatypeCursor, value Term[DatatypeSort]) Term[S] {
+	switch __gp_m25 := any(cursor).(type) {
+	case mixedDatatypeCursorValue:
+		declaration := __gp_m25.declaration
+		offset := __gp_m25.offset
+		switch __gp_m26 := any(declaration).(type) {
+		case mixedRecursiveDatatypeConstructorValue:
+			datatypeID := __gp_m26.datatypeID
+			constructorCount := __gp_m26.constructorCount
+			constructorID := __gp_m26.constructorID
+			specs := __gp_m26.specs
+			spec := specs.At(offset)
+			if spec.Kind != kind || spec.Width != width {
+				panic("smt: erased mixed datatype cursor sort mismatch")
+			}
+			return datatypeMixedSelector[S]{datatypeID: datatypeID, constructorCount: constructorCount, constructorID: constructorID, field: offset, fieldKind: kind, width: width, selectorName: spec.Name, value: value}
+		default:
+			panic("goplus: impossible enum value in match")
+		}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
+//goplus:dep IsMixedRecursiveDatatypeConstructor(0 datatype nat, 0 constructors nat, 0 constructor nat, 0 fields DatatypeFieldList, declaration MixedRecursiveDatatypeConstructor[datatype, constructors, constructor, fields], value Term[DatatypeSort[datatype, constructors]]) Term[BoolSort]
+func IsMixedRecursiveDatatypeConstructor(declaration MixedRecursiveDatatypeConstructor, value Term[DatatypeSort]) Term[BoolSort] {
+	switch __gp_m27 := any(declaration).(type) {
+	case mixedRecursiveDatatypeConstructorValue:
+		datatypeID := __gp_m27.datatypeID
+		constructorCount := __gp_m27.constructorCount
+		constructorID := __gp_m27.constructorID
+		name := __gp_m27.name
+		specs := __gp_m27.specs
+		return datatypeMixedRecognizer{datatypeID: datatypeID, constructorCount: constructorCount, constructorID: constructorID, name: name, specs: specs, value: value}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
 func IntegerVariableID(term Term[IntSort]) (int, bool) {
-	switch __gp_m11 := any(term).(type) {
+	switch __gp_m28 := any(term).(type) {
 	case IntSymbol:
-		id := __gp_m11.ID
+		id := __gp_m28.ID
 
 		return id, true
 	case integerVariable[IntSort]:
-		id := __gp_m11.iD
+		id := __gp_m28.iD
 
 		return id, true
 	default:
@@ -2043,11 +2689,11 @@ func ApplyBitVecUnary(function SortedUnaryFunction[BitVecSort, BitVecSort], argu
 }
 
 func BitVecUnaryFunctionInfo[D any, R any](function SortedUnaryFunction[D, R]) (int, int, int) {
-	switch __gp_m12 := any(function).(type) {
+	switch __gp_m29 := any(function).(type) {
 	case sortedUnaryFunctionValue[D, R]:
-		domain := __gp_m12.domainKind
-		rangeKind := __gp_m12.rangeKind
-		id := __gp_m12.iD
+		domain := __gp_m29.domainKind
+		rangeKind := __gp_m29.rangeKind
+		id := __gp_m29.iD
 		return domain, rangeKind, id
 	default:
 		panic("goplus: impossible enum value in match")
@@ -2283,11 +2929,11 @@ func IntToBitVec(width int, value Term[IntSort]) Term[BitVecSort] {
 
 //goplus:dep Assert(assertion nat, 0 c nat, 0 d nat, solver Solver[c, d], formula Term[BoolSort]) Solver[ContextID(c, assertion), d]
 func Assert(assertion int, solver Solver, formula Term[BoolSort]) Solver {
-	switch __gp_m13 := any(solver).(type) {
+	switch __gp_m30 := any(solver).(type) {
 	case solverValue:
-		context := __gp_m13.contextID
-		depth := __gp_m13.depth
-		state := __gp_m13.state
+		context := __gp_m30.contextID
+		depth := __gp_m30.depth
+		state := __gp_m30.state
 
 		if assertion < 0 {
 			panic("smt: negative assertion identity")
@@ -2301,11 +2947,11 @@ func Assert(assertion int, solver Solver, formula Term[BoolSort]) Solver {
 
 //goplus:dep Push(0 c nat, 0 d nat, solver Solver[c, d]) Pushed[c, d]
 func Push(solver Solver) Pushed {
-	switch __gp_m14 := any(solver).(type) {
+	switch __gp_m31 := any(solver).(type) {
 	case solverValue:
-		context := __gp_m14.contextID
-		depth := __gp_m14.depth
-		state := __gp_m14.state
+		context := __gp_m31.contextID
+		depth := __gp_m31.depth
+		state := __gp_m31.state
 
 		return PushResult{Current: solverValue{contextID: context, depth: depth + 1, state: state}, Previous: checkpointValue{contextID: context, depth: depth, state: state}}
 	default:
@@ -2315,9 +2961,9 @@ func Push(solver Solver) Pushed {
 
 //goplus:dep Current(0 c nat, 0 d nat, pushed Pushed[c, d]) Solver[c, d+1]
 func Current(pushed Pushed) Solver {
-	switch __gp_m15 := any(pushed).(type) {
+	switch __gp_m32 := any(pushed).(type) {
 	case PushResult:
-		current := __gp_m15.Current
+		current := __gp_m32.Current
 		return current
 	default:
 		panic("goplus: impossible enum value in match")
@@ -2326,9 +2972,9 @@ func Current(pushed Pushed) Solver {
 
 //goplus:dep Previous(0 c nat, 0 d nat, pushed Pushed[c, d]) Checkpoint[c, d]
 func Previous(pushed Pushed) Checkpoint {
-	switch __gp_m16 := any(pushed).(type) {
+	switch __gp_m33 := any(pushed).(type) {
 	case PushResult:
-		previous := __gp_m16.Previous
+		previous := __gp_m33.Previous
 		return previous
 	default:
 		panic("goplus: impossible enum value in match")
@@ -2337,15 +2983,15 @@ func Previous(pushed Pushed) Checkpoint {
 
 //goplus:dep Restore(0 current nat, 0 parent nat, 0 d nat, solver Solver[current, d+1], checkpoint Checkpoint[parent, d]) Solver[parent, d]
 func Restore(solver Solver, checkpoint Checkpoint) Solver {
-	switch __gp_m17 := any(solver).(type) {
+	switch __gp_m34 := any(solver).(type) {
 	case solverValue:
-		depth := __gp_m17.depth
+		depth := __gp_m34.depth
 
-		switch __gp_m18 := any(checkpoint).(type) {
+		switch __gp_m35 := any(checkpoint).(type) {
 		case checkpointValue:
-			context := __gp_m18.contextID
-			previousDepth := __gp_m18.depth
-			state := __gp_m18.state
+			context := __gp_m35.contextID
+			previousDepth := __gp_m35.depth
+			state := __gp_m35.state
 
 			if depth != previousDepth+1 {
 				panic("smt: checkpoint depth mismatch")
@@ -2361,11 +3007,11 @@ func Restore(solver Solver, checkpoint Checkpoint) Solver {
 
 //goplus:dep Check(0 c nat, 0 d nat, solver Solver[c, d]) CheckResult[c]
 func Check(solver Solver) CheckResult {
-	switch __gp_m19 := any(solver).(type) {
+	switch __gp_m36 := any(solver).(type) {
 	case solverValue:
-		context := __gp_m19.contextID
-		depth := __gp_m19.depth
-		state := __gp_m19.state
+		context := __gp_m36.contextID
+		depth := __gp_m36.depth
+		state := __gp_m36.state
 
 		if depth < 0 {
 			panic("smt: invalid depth")
@@ -2381,11 +3027,11 @@ func Check(solver Solver) CheckResult {
 //
 //goplus:dep CheckAssuming(0 c nat, 0 d nat, solver Solver[c, d], assumptions ...Term[BoolSort]) AssumptionCheckResult[c]
 func CheckAssuming(solver Solver, assumptions ...Term[BoolSort]) AssumptionCheckResult {
-	switch __gp_m20 := any(solver).(type) {
+	switch __gp_m37 := any(solver).(type) {
 	case solverValue:
-		context := __gp_m20.contextID
-		depth := __gp_m20.depth
-		state := __gp_m20.state
+		context := __gp_m37.contextID
+		depth := __gp_m37.depth
+		state := __gp_m37.state
 
 		if depth < 0 {
 			panic("smt: invalid depth")
@@ -2406,12 +3052,12 @@ func CheckAssuming(solver Solver, assumptions ...Term[BoolSort]) AssumptionCheck
 
 //goplus:dep BoolValue(0 c nat, model Model[c], term Term[BoolSort]) (bool, bool)
 func BoolValue(model Model, term Term[BoolSort]) (bool, bool) {
-	switch __gp_m21 := any(model).(type) {
+	switch __gp_m38 := any(model).(type) {
 	case modelValue:
-		booleans := __gp_m21.booleans
-		integers := __gp_m21.integers
-		reals := __gp_m21.reals
-		datatypes := __gp_m21.datatypes
+		booleans := __gp_m38.booleans
+		integers := __gp_m38.integers
+		reals := __gp_m38.reals
+		datatypes := __gp_m38.datatypes
 		return evaluateBoolWithDatatypes(term, booleans, integers, reals, datatypes)
 	default:
 		panic("goplus: impossible enum value in match")
@@ -2420,11 +3066,11 @@ func BoolValue(model Model, term Term[BoolSort]) (bool, bool) {
 
 //goplus:dep IntValue(0 c nat, model Model[c], term Term[IntSort]) (int64, bool)
 func IntValue(model Model, term Term[IntSort]) (int64, bool) {
-	switch __gp_m22 := any(model).(type) {
+	switch __gp_m39 := any(model).(type) {
 	case modelValue:
-		booleans := __gp_m22.booleans
-		integers := __gp_m22.integers
-		reals := __gp_m22.reals
+		booleans := __gp_m39.booleans
+		integers := __gp_m39.integers
+		reals := __gp_m39.reals
 		return evaluateInt(term, booleans, integers, reals)
 	default:
 		panic("goplus: impossible enum value in match")
@@ -2433,12 +3079,12 @@ func IntValue(model Model, term Term[IntSort]) (int64, bool) {
 
 //goplus:dep ExactIntValue(0 c nat, model Model[c], term Term[IntSort]) (IntegerValue, bool)
 func ExactIntValue(model Model, term Term[IntSort]) (IntegerValue, bool) {
-	switch __gp_m23 := any(model).(type) {
+	switch __gp_m40 := any(model).(type) {
 	case modelValue:
-		booleans := __gp_m23.booleans
-		integers := __gp_m23.integers
-		reals := __gp_m23.reals
-		bitVectors := __gp_m23.bitVectors
+		booleans := __gp_m40.booleans
+		integers := __gp_m40.integers
+		reals := __gp_m40.reals
+		bitVectors := __gp_m40.bitVectors
 		return evaluateIntegerWithBitVectors(term, booleans, integers, reals, bitVectors)
 	default:
 		panic("goplus: impossible enum value in match")
@@ -2447,13 +3093,13 @@ func ExactIntValue(model Model, term Term[IntSort]) (IntegerValue, bool) {
 
 //goplus:dep IntegerModelValue(0 c nat, model Model[c], term Term[IntSort]) (IntegerValue, bool)
 func IntegerModelValue(model Model, term Term[IntSort]) (IntegerValue, bool) {
-	switch __gp_m24 := any(model).(type) {
+	switch __gp_m41 := any(model).(type) {
 	case modelValue:
-		booleans := __gp_m24.booleans
-		integers := __gp_m24.integers
-		reals := __gp_m24.reals
-		bitVectors := __gp_m24.bitVectors
-		arrays := __gp_m24.arrays
+		booleans := __gp_m41.booleans
+		integers := __gp_m41.integers
+		reals := __gp_m41.reals
+		bitVectors := __gp_m41.bitVectors
+		arrays := __gp_m41.arrays
 		return evaluateIntegerModelTerm(term, booleans, integers, reals, bitVectors, arrays)
 	default:
 		panic("goplus: impossible enum value in match")
@@ -2462,11 +3108,11 @@ func IntegerModelValue(model Model, term Term[IntSort]) (IntegerValue, bool) {
 
 //goplus:dep RealValue(0 c nat, model Model[c], term Term[RealSort]) (Rational, bool)
 func RealValue(model Model, term Term[RealSort]) (Rational, bool) {
-	switch __gp_m25 := any(model).(type) {
+	switch __gp_m42 := any(model).(type) {
 	case modelValue:
-		booleans := __gp_m25.booleans
-		integers := __gp_m25.integers
-		reals := __gp_m25.reals
+		booleans := __gp_m42.booleans
+		integers := __gp_m42.integers
+		reals := __gp_m42.reals
 		return evaluateReal(term, booleans, integers, reals)
 	default:
 		panic("goplus: impossible enum value in match")
@@ -2475,11 +3121,11 @@ func RealValue(model Model, term Term[RealSort]) (Rational, bool) {
 
 //goplus:dep BitVecModelValue(0 c nat, 0 width nat, model Model[c], term Term[BitVecSort[width]]) (BitVectorValue, bool)
 func BitVecModelValue(model Model, term Term[BitVecSort]) (BitVectorValue, bool) {
-	switch __gp_m26 := any(model).(type) {
+	switch __gp_m43 := any(model).(type) {
 	case modelValue:
-		integers := __gp_m26.integers
-		bitVectors := __gp_m26.bitVectors
-		arrays := __gp_m26.bitVectorArrays
+		integers := __gp_m43.integers
+		bitVectors := __gp_m43.bitVectors
+		arrays := __gp_m43.bitVectorArrays
 		return evaluateBitVectorModelTerm(term, bitVectors, integers, arrays)
 	default:
 		panic("goplus: impossible enum value in match")
@@ -2488,10 +3134,10 @@ func BitVecModelValue(model Model, term Term[BitVecSort]) (BitVectorValue, bool)
 
 //goplus:dep IntegerArrayValue(0 c nat, model Model[c], array Term[ArraySort[IntSort, IntSort]], index IntegerValue) (IntegerValue, bool)
 func IntegerArrayValue(model Model, array Term[ArraySort[IntSort, IntSort]], index IntegerValue) (IntegerValue, bool) {
-	switch __gp_m27 := any(model).(type) {
+	switch __gp_m44 := any(model).(type) {
 	case modelValue:
-		integers := __gp_m27.integers
-		arrays := __gp_m27.arrays
+		integers := __gp_m44.integers
+		arrays := __gp_m44.arrays
 		return evaluateIntegerArray(array, index, integers, arrays)
 	default:
 		panic("goplus: impossible enum value in match")
@@ -2500,9 +3146,9 @@ func IntegerArrayValue(model Model, array Term[ArraySort[IntSort, IntSort]], ind
 
 //goplus:dep BitVectorArrayValue(0 c nat, 0 indexWidth nat, 0 elementWidth nat, model Model[c], array Term[ArraySort[BitVecSort[indexWidth], BitVecSort[elementWidth]]], index BitVectorValue) (BitVectorValue, bool)
 func BitVectorArrayValue(model Model, array Term[ArraySort[BitVecSort, BitVecSort]], index BitVectorValue) (BitVectorValue, bool) {
-	switch __gp_m28 := any(model).(type) {
+	switch __gp_m45 := any(model).(type) {
 	case modelValue:
-		arrays := __gp_m28.bitVectorArrays
+		arrays := __gp_m45.bitVectorArrays
 		return evaluateBitVectorArray(array, index, arrays)
 	default:
 		panic("goplus: impossible enum value in match")
@@ -2511,9 +3157,9 @@ func BitVectorArrayValue(model Model, array Term[ArraySort[BitVecSort, BitVecSor
 
 //goplus:dep DatatypeModelValue(datatype nat, constructors nat, 0 c nat, model Model[c], term Term[DatatypeSort[datatype, constructors]]) (DatatypeValue, bool)
 func DatatypeModelValue(datatype int, constructors int, model Model, term Term[DatatypeSort]) (DatatypeValue, bool) {
-	switch __gp_m29 := any(model).(type) {
+	switch __gp_m46 := any(model).(type) {
 	case modelValue:
-		datatypes := __gp_m29.datatypes
+		datatypes := __gp_m46.datatypes
 		return evaluateDatatype(term, datatypes)
 	default:
 		panic("goplus: impossible enum value in match")

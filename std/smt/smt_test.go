@@ -303,7 +303,11 @@ func TestArbitraryPrecisionIntegerDifferenceModel(t *testing.T) {
 	}}
 	result, ok := Check(Assert(1, New(), formula)).(Satisfiable)
 	if !ok {
-		t.Fatalf("result=%T", Check(Assert(1, New(), formula)))
+		checked := Check(Assert(1, New(), formula))
+		if unknown, unknownOK := checked.(Unknown); unknownOK {
+			t.Fatalf("result=%T reason=%#v", checked, unknown.Reason)
+		}
+		t.Fatalf("result=%#v", checked)
 	}
 	value, found := ExactIntValue(result.Value, x)
 	if !found || CompareIntegerValue(value, lower) < 0 || CompareIntegerValue(value, upper) > 0 {
@@ -774,7 +778,7 @@ func TestFiniteEnumerationDatatypeModelsAndRecognizers(t *testing.T) {
 	}}
 	result, ok := Check(Assert(1, New(), formula)).(Satisfiable)
 	if !ok {
-		t.Fatalf("result=%T", Check(Assert(1, New(), formula)))
+		t.Fatalf("result=%#v", Check(Assert(1, New(), formula)))
 	}
 	value, found := DatatypeModelValue(7, 3, result.Value, x)
 	if !found || value.DatatypeID != 7 || value.ConstructorCount != 3 || value.ConstructorID != 1 {
@@ -823,7 +827,11 @@ func TestRecursiveUnaryDatatypeConstructorsSelectorsAndModels(t *testing.T) {
 	}}
 	result, ok := Check(Assert(1, New(), formula)).(Satisfiable)
 	if !ok {
-		t.Fatalf("result=%T", Check(Assert(1, New(), formula)))
+		checked := Check(Assert(1, New(), formula))
+		if unknown, unknownOK := checked.(Unknown); unknownOK {
+			t.Fatalf("result=%T reason=%#v", checked, unknown.Reason)
+		}
+		t.Fatalf("result=%#v", checked)
 	}
 	value, found := DatatypeModelValue(10, 2, result.Value, x)
 	if !found || value.ConstructorID != 1 || value.Child == nil || value.Child.ConstructorID != 1 || value.Child.Child == nil || value.Child.Child.ConstructorID != 0 {
@@ -988,6 +996,124 @@ func TestNaryRecursiveDatatypeInjectivityAndAcyclicity(t *testing.T) {
 	}
 }
 
+func mixedIntSelfSignature() MixedDatatypeSignature {
+	return IntDatatypeField("payload", SelfDatatypeField("next", EmptyMixedDatatypeSignature{}))
+}
+
+func mixedIntSelfArguments(payload Term[IntSort], next Term[DatatypeSort]) MixedDatatypeArguments {
+	return IntDatatypeArgument(payload, SelfDatatypeArgument(next, EmptyMixedDatatypeArguments{}))
+}
+
+func TestMixedRecursiveDatatypeSelectorsAndExactModel(t *testing.T) {
+	leaf := DatatypeConstructor(90, 2, 0, "leaf")
+	node := DeclareMixedRecursiveDatatypeConstructor(90, 2, 1, "node", mixedIntSelfSignature())
+	nested := ApplyMixedRecursiveDatatypeConstructor(node, mixedIntSelfArguments(Integer{Value: 42}, leaf))
+	x := DatatypeConst(90, 2, 1, "x")
+	fields := MixedDatatypeFields(node)
+	next := NextMixedDatatypeField(fields)
+	formula := And{
+		Values: []Term[BoolSort]{
+			Equal{Left: x, Right: nested},
+			Equal{Left: SelectMixedIntDatatypeField(fields, x), Right: Integer{Value: 42}},
+			Equal{Left: SelectMixedSelfDatatypeField(next, x), Right: leaf},
+			IsMixedRecursiveDatatypeConstructor(node, x),
+		},
+	}
+	result, ok := Check(Assert(1, New(), formula)).(Satisfiable)
+	if !ok {
+		checked := Check(Assert(1, New(), formula))
+		if unknown, unknownOK := checked.(Unknown); unknownOK {
+			t.Fatalf("result=%T reason=%#v", checked, unknown.Reason)
+		}
+		t.Fatalf("result=%#v", checked)
+	}
+	value, found := DatatypeModelValue(90, 2, result.Value, x)
+	if !found || value.ConstructorID != 1 || value.Fields.Len() != 2 {
+		t.Fatalf("value=%+v found=%v", value, found)
+	}
+	payload, _ := value.Fields.At(0)
+	child, _ := value.Fields.At(1)
+	if CompareIntegerValue(payload.Integer, NewIntegerValue(42)) != 0 || child.Datatype == nil || child.Datatype.ConstructorID != 0 {
+		t.Fatalf("payload=%+v child=%+v", payload, child)
+	}
+}
+
+func TestMixedRecursiveDatatypeInjectivityAndAcyclicity(t *testing.T) {
+	leaf := DatatypeConstructor(91, 2, 0, "leaf")
+	node := DeclareMixedRecursiveDatatypeConstructor(91, 2, 1, "node", mixedIntSelfSignature())
+	first := ApplyMixedRecursiveDatatypeConstructor(node, mixedIntSelfArguments(Integer{Value: 1}, leaf))
+	second := ApplyMixedRecursiveDatatypeConstructor(node, mixedIntSelfArguments(Integer{Value: 2}, leaf))
+	if _, ok := Check(Assert(1, New(), Equal{Left: first, Right: second})).(Unsatisfiable); !ok {
+		t.Fatal("mixed scalar-field injectivity violation was satisfiable")
+	}
+	x := DatatypeConst(91, 2, 2, "x")
+	cycle := Equal{Left: x, Right: ApplyMixedRecursiveDatatypeConstructor(node, mixedIntSelfArguments(Integer{Value: 1}, x))}
+	if _, ok := Check(Assert(1, New(), cycle)).(Unsatisfiable); !ok {
+		t.Fatal("mixed recursive cycle was satisfiable")
+	}
+}
+
+func TestMixedRecursiveDatatypeRecognizerBuildsExactDefaultModel(t *testing.T) {
+	node := DeclareMixedRecursiveDatatypeConstructor(92, 2, 1, "node", mixedIntSelfSignature())
+	x := DatatypeConst(92, 2, 1, "x")
+	result, ok := Check(Assert(1, New(), IsMixedRecursiveDatatypeConstructor(node, x))).(Satisfiable)
+	if !ok {
+		t.Fatalf("mixed recognizer result=%#v", Check(Assert(1, New(), IsMixedRecursiveDatatypeConstructor(node, x))))
+	}
+	value, found := DatatypeModelValue(92, 2, result.Value, x)
+	payload, payloadOK := value.Fields.At(0)
+	child, childOK := value.Fields.At(1)
+	if !found || value.ConstructorID != 1 || value.Fields.Len() != 2 || !payloadOK || CompareIntegerValue(payload.Integer, NewIntegerValue(0)) != 0 || !childOK || child.Datatype == nil || child.Datatype.ConstructorID != 0 {
+		t.Fatalf("mixed recognizer model=%+v found=%v", value, found)
+	}
+}
+
+func TestMixedRecursiveDatatypeSupportsEveryScalarFieldSortTogether(t *testing.T) {
+	signature := BoolDatatypeField("flag",
+		IntDatatypeField("count",
+			RealDatatypeField("weight",
+				BitVecDatatypeField(8, "bits",
+					SelfDatatypeField("next", EmptyMixedDatatypeSignature{})))))
+	leaf := DatatypeConstructor(93, 2, 0, "leaf")
+	node := DeclareMixedRecursiveDatatypeConstructor(93, 2, 1, "node", signature)
+	arguments := BoolDatatypeArgument(Bool{Value: true},
+		IntDatatypeArgument(Integer{Value: 7},
+			RealDatatypeArgument(Real{Value: NewRational(3, 2)},
+				BitVecDatatypeArgument(8, BitVecVal(8, 0xa5),
+					SelfDatatypeArgument(leaf, EmptyMixedDatatypeArguments{})))))
+	valueTerm := ApplyMixedRecursiveDatatypeConstructor(node, arguments)
+	x := DatatypeConst(93, 2, 1, "x")
+	flag := MixedDatatypeFields(node)
+	count := NextMixedDatatypeField(flag)
+	weight := NextMixedDatatypeField(count)
+	bits := NextMixedDatatypeField(weight)
+	next := NextMixedDatatypeField(bits)
+	formula := And{Values: []Term[BoolSort]{
+		Equal{Left: x, Right: valueTerm},
+		Equal{Left: SelectMixedBoolDatatypeField(flag, x), Right: Bool{Value: true}},
+		Equal{Left: SelectMixedIntDatatypeField(count, x), Right: Integer{Value: 7}},
+		Equal{Left: SelectMixedRealDatatypeField(weight, x), Right: Real{Value: NewRational(3, 2)}},
+		Equal{Left: SelectMixedBitVecDatatypeField(8, bits, x), Right: BitVecVal(8, 0xa5)},
+		Equal{Left: SelectMixedSelfDatatypeField(next, x), Right: leaf},
+	}}
+	result, ok := Check(Assert(1, New(), formula)).(Satisfiable)
+	if !ok {
+		t.Fatalf("mixed all-sort result=%#v", Check(Assert(1, New(), formula)))
+	}
+	value, found := DatatypeModelValue(93, 2, result.Value, x)
+	if !found || value.Fields.Len() != 5 {
+		t.Fatalf("mixed all-sort model=%+v found=%v", value, found)
+	}
+	flagValue, _ := value.Fields.At(0)
+	countValue, _ := value.Fields.At(1)
+	weightValue, _ := value.Fields.At(2)
+	bitsValue, _ := value.Fields.At(3)
+	nextValue, _ := value.Fields.At(4)
+	if !flagValue.Boolean || CompareIntegerValue(countValue.Integer, NewIntegerValue(7)) != 0 || CompareRational(weightValue.Real, NewRational(3, 2)) != 0 || !EqualBitVectorValue(bitsValue.BitVector, NewBitVectorUint64(8, 0xa5)) || nextValue.Datatype == nil || nextValue.Datatype.ConstructorID != 0 {
+		t.Fatalf("mixed all-sort fields=%+v", value.Fields)
+	}
+}
+
 func TestNaryRecursiveDatatypeRecognizerBuildsWellFoundedModel(t *testing.T) {
 	branch := DeclareNaryRecursiveDatatypeConstructor(90, 2, 1, 3, "branch", ternaryDatatypeNames())
 	x := DatatypeConst(90, 2, 1, "x")
@@ -1046,7 +1172,11 @@ func TestDisjointEUFLinearRealCombinationReturnsBothDecisionAndModel(t *testing.
 	}}
 	result, ok := Check(Assert(1, New(), formula)).(Satisfiable)
 	if !ok {
-		t.Fatalf("result=%T", Check(Assert(1, New(), formula)))
+		checked := Check(Assert(1, New(), formula))
+		if unknown, unknownOK := checked.(Unknown); unknownOK {
+			t.Fatalf("result=%T reason=%#v", checked, unknown.Reason)
+		}
+		t.Fatalf("result=%#v", checked)
 	}
 	value, found := RealValue(result.Value, x)
 	if !found || rationalCmp(value, NewRational(1, 1)) < 0 || rationalCmp(value, NewRational(2, 1)) > 0 {

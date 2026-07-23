@@ -122,7 +122,10 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table, probe domainPro
 
 	// Tag domains (v0.7.0 4b/4c): a type-parameter-less enum is a
 	// first-order index domain when every variant's parameters are
-	// themselves index-sorted (nat or another domain). Bare tags have
+	// themselves index-sorted (nat, another domain, or the domain being
+	// defined). The self case admits strictly-positive recursive index data
+	// such as type-level lists; index terms remain finite constructor syntax.
+	// Bare tags have
 	// arity 0; structured tags (`Circle(r nat)`) carry their arity.
 	tagDomains := map[string]map[string]int{}
 	candidates := map[string]*located{}
@@ -150,7 +153,7 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table, probe domainPro
 				if v.Params != nil {
 					for _, fld := range v.Params.List {
 						ptext := string(src.Src[src.Offset(fld.Type.Pos()):src.Offset(fld.Type.End())])
-						if ptext != "nat" && tagDomains[ptext] == nil {
+						if ptext != "nat" && ptext != name && tagDomains[ptext] == nil {
 							okDomain = false
 						}
 						arity += len(fld.Names)
@@ -165,6 +168,32 @@ func planEnums(idx *pkgIndex, pkgPath string, tbl *naming.Table, probe domainPro
 				tagDomains[name] = tags
 				changed = true
 			}
+		}
+	}
+
+	// The preliminary arity table above can identify nat positions before
+	// domain discovery. Complete it now with local and imported first-order
+	// domain binders so ordinary-position erasure drops every value index,
+	// including recursive domain terms such as FieldCons(IntField, tail).
+	for _, le := range all {
+		tp := le.e.Spec.TypeParams
+		if tp == nil {
+			continue
+		}
+		src := le.f.gp
+		pos, idxSet := 0, map[int]bool{}
+		for _, field := range tp.List {
+			ctext := string(src.Src[src.Offset(field.Type.Pos()):src.Offset(field.Type.End())])
+			_, _, importedDomain := probeDomain(le.f, ctext)
+			for range field.Names {
+				if ctext == "nat" || tagDomains[ctext] != nil || importedDomain {
+					idxSet[pos] = true
+				}
+				pos++
+			}
+		}
+		if len(idxSet) > 0 {
+			indexedArity[le.e.Spec.Name.Name] = indexInfo{idx: idxSet, arity: pos}
 		}
 	}
 
@@ -822,7 +851,7 @@ func rootDomainEnums(idx *pkgIndex, pkgPath string) []*registry.Enum {
 				if v.Params != nil {
 					for _, fld := range v.Params.List {
 						ptext := string(src.Src[src.Offset(fld.Type.Pos()):src.Offset(fld.Type.End())])
-						if ptext != "nat" && !names[ptext] {
+						if ptext != "nat" && ptext != name && !names[ptext] {
 							okDomain = false
 						}
 						arity += len(fld.Names)

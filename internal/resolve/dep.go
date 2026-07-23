@@ -130,7 +130,11 @@ func (r *fileResolver) dependentCallResult(call *ast.CallExpr) (string, string, 
 	sub := map[string]string{}
 	for i, p := range d.Params {
 		if aligned[i] != nil {
-			sub[p.Name] = r.text(aligned[i].Pos(), aligned[i].End())
+			value := r.text(aligned[i].Pos(), aligned[i].End())
+			if p.Quantity == "0" {
+				value = r.normalizeIndexText(value)
+			}
+			sub[p.Name] = value
 		}
 	}
 	// Infer omitted index parameters from an indexed runtime argument. This is
@@ -139,7 +143,10 @@ func (r *fileResolver) dependentCallResult(call *ast.CallExpr) (string, string, 
 	if !full {
 		variables := map[string]bool{}
 		for _, p := range d.Params {
-			if p.Quantity == "0" && p.Type == "nat" {
+			// Quantity-zero parameters are the erased evidence/index variables
+			// available for result refinement. This includes user-defined index
+			// domains (for example a recursive type-level list), not only nat.
+			if p.Quantity == "0" {
 				variables[p.Name] = true
 			}
 		}
@@ -151,9 +158,20 @@ func (r *fileResolver) dependentCallResult(call *ast.CallExpr) (string, string, 
 			switch argument := aligned[i].(type) {
 			case *ast.CallExpr:
 				_, actual, _ = r.dependentCallResult(argument)
+			case *ast.CompositeLit:
+				_, actual, _ = r.dependentCompositeResult(argument)
 			case *ast.Ident:
 				if known, found := r.dependentIdentType(argument); found {
 					actual = known.typeText
+					// A prior indexing pass may have recorded this local before
+					// its own omitted domain indices were inferred. Re-evaluate
+					// the immutable producer so nested smart constructors refine
+					// recursive index lists all the way to their ground tail.
+					if known.origin != nil && known.origin != call {
+						if _, refined, ok := r.dependentCallResult(known.origin); ok {
+							actual = refined
+						}
+					}
 				}
 			}
 			if actual != "" {
@@ -238,6 +256,8 @@ func (r *fileResolver) dependentConstructorResult(call *ast.CallExpr) (string, s
 			switch argument := call.Args[i].(type) {
 			case *ast.CallExpr:
 				_, actual, _ = r.dependentCallResult(argument)
+			case *ast.CompositeLit:
+				_, actual, _ = r.dependentCompositeResult(argument)
 			case *ast.Ident:
 				if known, found := r.dependentIdentType(argument); found {
 					actual = known.typeText
@@ -292,6 +312,31 @@ func unifyDependentInstantiation(pattern, actual string, variables map[string]bo
 	return true
 }
 
+// normalizeIndexText canonicalizes authored index values to marker syntax.
+// In source a nullary enum value is called as End(), while dependent type
+// arguments spell the same tag as End. Structured recursive domains may nest
+// both forms, so normalize through the first-order core before substitution.
+func (r *fileResolver) normalizeIndexText(text string) string {
+	term, err := core.ParseIndexTerm(text, nil)
+	if err != nil {
+		return text
+	}
+	term = core.ResolveTags(term, func(name string) (string, bool) {
+		for _, enum := range r.reg.AllEnums() {
+			if !enum.IsDomain {
+				continue
+			}
+			for _, variant := range enum.Variants {
+				if variant.Name == name {
+					return enum.Name, true
+				}
+			}
+		}
+		return "", false
+	})
+	return term.String()
+}
+
 func (r *fileResolver) dependentIdentType(id *ast.Ident) (dependentValueType, bool) {
 	obj, _ := r.pkg.TypesInfo.ObjectOf(id).(*types.Var)
 	if obj == nil {
@@ -331,6 +376,74 @@ func (r *fileResolver) dependentIdentType(id *ast.Ident) (dependentValueType, bo
 		return dependentValueType{pkgPath: pkgPath, typeText: parameter.Type}, true
 	}
 	return dependentValueType{}, false
+}
+
+// dependentCompositeResult recovers a fixed-index GADT constructor after an
+// earlier fixpoint iteration has lowered Constructor() to Variant{}. This is
+// essential for nested dependent smart constructors: their runtime argument
+// remains, but the producer call no longer does.
+func (r *fileResolver) dependentCompositeResult(literal *ast.CompositeLit) (string, string, bool) {
+	named, _ := asNamed(r.pkg.TypesInfo.TypeOf(literal))
+	if named == nil || named.Obj() == nil || named.Obj().Pkg() == nil {
+		return "", "", false
+	}
+	pkgPath := named.Obj().Pkg().Path()
+	variantType := named.Obj().Name()
+	for _, enum := range r.reg.AllEnums() {
+		if enum.PkgPath != pkgPath || len(enum.TParams) != 0 || len(enum.Indices) == 0 {
+			continue
+		}
+		for _, variant := range enum.Variants {
+			if variant.TypeName != variantType || len(variant.IndexArgs) != len(enum.Indices) {
+				continue
+			}
+			// Only recover indices fixed by the constructor itself. A generic
+			// variant such as Tick(prev Counter[n]) still needs call-site
+			// inference to instantiate n; returning its raw marker expression
+			// here would turn Counter[2] into the spurious Counter[n+1].
+			fixed := true
+			for _, argument := range variant.IndexArgs {
+				for _, binder := range enum.Indices {
+					if indexTextUsesName(argument, binder.Name) {
+						fixed = false
+						break
+					}
+				}
+				if !fixed {
+					break
+				}
+			}
+			if !fixed {
+				continue
+			}
+			ordered := make([]string, len(enum.Indices))
+			for index, binder := range enum.Indices {
+				if binder.Pos < 0 || binder.Pos >= len(ordered) {
+					return "", "", false
+				}
+				ordered[binder.Pos] = variant.IndexArgs[index]
+			}
+			return enum.PkgPath, enum.Name + "[" + strings.Join(ordered, ", ") + "]", true
+		}
+	}
+	return "", "", false
+}
+
+func indexTextUsesName(text, name string) bool {
+	for start := 0; start < len(text); {
+		for start < len(text) && !((text[start] >= 'A' && text[start] <= 'Z') || (text[start] >= 'a' && text[start] <= 'z') || text[start] == '_') {
+			start++
+		}
+		end := start
+		for end < len(text) && ((text[end] >= 'A' && text[end] <= 'Z') || (text[end] >= 'a' && text[end] <= 'z') || (text[end] >= '0' && text[end] <= '9') || text[end] == '_') {
+			end++
+		}
+		if text[start:end] == name {
+			return true
+		}
+		start = end
+	}
+	return false
 }
 
 // Dependent call sites (v0.7.0). The surface passes every argument —
@@ -569,9 +682,13 @@ func (r *fileResolver) validateDependentIndexedArgs(call *ast.CallExpr, d *regis
 	variables := map[string]bool{}
 	for i, p := range d.Params {
 		if i < len(args) && args[i] != nil {
-			outer[p.Name] = r.text(args[i].Pos(), args[i].End())
+			value := r.text(args[i].Pos(), args[i].End())
+			if p.Quantity == "0" {
+				value = r.normalizeIndexText(value)
+			}
+			outer[p.Name] = value
 		}
-		if p.Quantity == "0" && p.Type == "nat" {
+		if p.Quantity == "0" {
 			variables[p.Name] = true
 		}
 	}
@@ -580,7 +697,7 @@ func (r *fileResolver) validateDependentIndexedArgs(call *ast.CallExpr, d *regis
 		implicit = implicit || argument == nil
 	}
 	if implicit {
-		// Recover omitted natural indices from indexed runtime arguments before
+		// Recover omitted indices from indexed runtime arguments before
 		// substituting expected types below.
 		for i, p := range d.Params {
 			if i >= len(args) || args[i] == nil {
@@ -590,6 +707,8 @@ func (r *fileResolver) validateDependentIndexedArgs(call *ast.CallExpr, d *regis
 			switch argument := args[i].(type) {
 			case *ast.CallExpr:
 				_, actual, _ = r.dependentCallResult(argument)
+			case *ast.CompositeLit:
+				_, actual, _ = r.dependentCompositeResult(argument)
 			case *ast.Ident:
 				if known, found := r.dependentIdentType(argument); found {
 					actual = known.typeText
@@ -617,6 +736,8 @@ func (r *fileResolver) validateDependentIndexedArgs(call *ast.CallExpr, d *regis
 		switch argument := args[i].(type) {
 		case *ast.CallExpr:
 			_, actual, _ = r.dependentCallResult(argument)
+		case *ast.CompositeLit:
+			_, actual, _ = r.dependentCompositeResult(argument)
 		case *ast.Ident:
 			if known, found := r.dependentIdentType(argument); found {
 				actual = known.typeText
@@ -656,7 +777,7 @@ func (r *fileResolver) validateDependentIndexedArgs(call *ast.CallExpr, d *regis
 		}
 		for pos, raw := range expectedRawArgs {
 			for _, candidate := range d.Params {
-				if candidate.Type == "nat" && strings.TrimSpace(raw) == candidate.Name {
+				if candidate.Quantity == "0" && strings.TrimSpace(raw) == candidate.Name {
 					indexPositions[pos] = true
 				}
 			}
@@ -673,6 +794,12 @@ func (r *fileResolver) validateDependentIndexedArgs(call *ast.CallExpr, d *regis
 			var found bool
 			actualPkg, actual, found = r.dependentCallResult(argument)
 			actualOrigin = argument
+			if !found {
+				continue
+			}
+		case *ast.CompositeLit:
+			var found bool
+			actualPkg, actual, found = r.dependentCompositeResult(argument)
 			if !found {
 				continue
 			}

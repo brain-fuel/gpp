@@ -47,3 +47,13 @@ func TestUnifyDependentInstantiationBindsMultiIndexNestedType(t *testing.T) {
 		t.Fatalf("X = %q", got)
 	}
 }
+
+func TestUnifyDependentInstantiationBindsRecursiveDomainIndex(t *testing.T) {
+	bind := map[string]string{}
+	if !unifyDependentInstantiation("Arguments[tail]", "Arguments[NoFields]", map[string]bool{"tail": true}, bind) {
+		t.Fatal("recursive domain index unification failed")
+	}
+	if got := bind["tail"]; got != "NoFields" {
+		t.Fatalf("tail = %q", got)
+	}
+}

@@ -275,6 +275,12 @@ func (model rationalModel) lookup(id int) (Rational, bool) {
 	return Rational{}, false
 }
 
+func (model *rationalModel) merge(other rationalModel) {
+	for _, entry := range other.entries() {
+		model.set(entry.id, entry.value)
+	}
+}
+
 func (model *rationalModel) entries() []rationalModelEntry {
 	if model.overflow != nil {
 		return model.overflow[:model.count]
