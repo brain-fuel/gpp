@@ -343,7 +343,7 @@ func bindBoundedWordEquationGroundConjunct(term Term[BoolSort], constraints *bou
 				return assignBoundedWordEquationGroundValue(constraints, id, ground)
 			}
 		}
-		return false, false
+		return appendBoundedWordEquationPredicate(constraints, value)
 	case Less:
 		id, minimum, maximum, hasMaximum, ok := boundedWordEquationLengthComparison(value.Left, value.Right, true)
 		if !ok {

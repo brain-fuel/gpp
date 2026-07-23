@@ -288,11 +288,18 @@ func evaluateString(term Term[StringSort], model stringModel, integers integerMo
 		if !textOK || !indexOK {
 			return "", false
 		}
-		runes := DecodeStringCodePoints(text)
-		if index < 0 || index >= int64(len(runes)) {
+		if index < 0 {
 			return "", true
 		}
-		return string(runes[index]), true
+		start, _, found := stringCodePointByteOffset(text, index)
+		if !found || start == len(text) {
+			return "", true
+		}
+		width := stringCodePointWidth(text, start)
+		if width == 1 && text[start] >= 0x80 {
+			return string(utf8.RuneError), true
+		}
+		return text[start : start+width], true
 	case stringSubstring[StringSort]:
 		text, textOK := evaluateString(value.value, model, integers)
 		offset, offsetOK := evaluateStringOffset(value.offset, integers)
@@ -300,15 +307,29 @@ func evaluateString(term Term[StringSort], model stringModel, integers integerMo
 		if !textOK || !offsetOK || !lengthOK {
 			return "", false
 		}
-		runes := DecodeStringCodePoints(text)
-		if offset < 0 || offset >= int64(len(runes)) || length <= 0 {
+		if offset < 0 || length <= 0 {
 			return "", true
 		}
-		end := offset + length
-		if end < offset || end > int64(len(runes)) {
-			end = int64(len(runes))
+		start, _, found := stringCodePointByteOffset(text, offset)
+		if !found || start == len(text) {
+			return "", true
 		}
-		return string(runes[offset:end]), true
+		end := start
+		valid := true
+		for remaining := length; remaining > 0 && end < len(text); remaining-- {
+			width := stringCodePointWidth(text, end)
+			valid = valid && (width != 1 || text[end] < 0x80)
+			end += width
+		}
+		if !valid {
+			codes := DecodeStringCodePoints(text)
+			last := offset + length
+			if last < offset || last > int64(len(codes)) {
+				last = int64(len(codes))
+			}
+			return string(codes[offset:last]), true
+		}
+		return text[start:end], true
 	case stringReplace[StringSort]:
 		text, textOK := evaluateString(value.value, model, integers)
 		source, sourceOK := evaluateString(value.source, model, integers)
@@ -1413,6 +1434,9 @@ func evaluateStringOffsetTerm(term any, integers integerModel) (int64, bool) {
 }
 
 func stringIndexOfRunes(text, substring string, offset int64) int64 {
+	if !stringCodePointsValid(text) || !stringCodePointsValid(substring) {
+		return stringIndexOfDecodedCodePoints(text, substring, offset)
+	}
 	if offset < 0 {
 		return -1
 	}
@@ -1432,6 +1456,33 @@ func stringIndexOfRunes(text, substring string, offset int64) int64 {
 		codePointIndex++
 	}
 	return -1
+}
+
+func stringIndexOfDecodedCodePoints(text, substring string, offset int64) int64 {
+	textRunes, substringRunes := DecodeStringCodePoints(text), DecodeStringCodePoints(substring)
+	if offset < 0 || offset > int64(len(textRunes)) {
+		return -1
+	}
+	if len(substringRunes) == 0 {
+		return offset
+	}
+	for index := int(offset); index+len(substringRunes) <= len(textRunes); index++ {
+		if string(textRunes[index:index+len(substringRunes)]) == substring {
+			return int64(index)
+		}
+	}
+	return -1
+}
+
+func stringCodePointsValid(value string) bool {
+	for offset := 0; offset < len(value); {
+		width := stringCodePointWidth(value, offset)
+		if width == 1 && value[offset] >= 0x80 {
+			return false
+		}
+		offset += width
+	}
+	return true
 }
 
 func stringCodePointByteOffset(value string, target int64) (int, int64, bool) {
@@ -1455,16 +1506,23 @@ func stringCodePointBoundary(value string, offset int) bool {
 
 func stringCodePointWidth(value string, offset int) int {
 	first := value[offset]
+	width := 1
 	switch {
 	case first < 0x80:
 		return 1
 	case first&0xe0 == 0xc0 && offset+2 <= len(value):
-		return 2
+		width = 2
 	case first&0xf0 == 0xe0 && offset+3 <= len(value):
-		return 3
+		width = 3
 	case first&0xf8 == 0xf0 && offset+4 <= len(value):
-		return 4
+		width = 4
 	default:
 		return 1
 	}
+	for index := 1; index < width; index++ {
+		if value[offset+index]&0xc0 != 0x80 {
+			return 1
+		}
+	}
+	return width
 }

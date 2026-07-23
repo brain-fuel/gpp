@@ -26,6 +26,7 @@ func TestStringGroundOperations(t *testing.T) {
 
 func TestStringIndexedOperationsUseUnicodeCodePoints(t *testing.T) {
 	value := StringVal("a🙂bc🙂")
+	invalid := StringVal("\xe2x")
 	formula := And{Values: []Term[BoolSort]{
 		Equal{Left: StringAt(value, Integer{Value: 1}), Right: StringVal("🙂")},
 		Equal{Left: StringAt(value, Integer{Value: -1}), Right: StringVal("")},
@@ -38,6 +39,9 @@ func TestStringIndexedOperationsUseUnicodeCodePoints(t *testing.T) {
 		Equal{Left: StringIndexOf(value, StringVal("x"), Integer{Value: 0}), Right: Integer{Value: -1}},
 		Equal{Left: StringReplace(value, StringVal("🙂"), StringVal("!")), Right: StringVal("a!bc🙂")},
 		Equal{Left: StringReplace(StringVal("ab"), StringVal(""), StringVal("!")), Right: StringVal("!ab")},
+		Equal{Left: StringAt(invalid, Integer{Value: 0}), Right: StringVal(string([]rune{'\uFFFD'}))},
+		Equal{Left: StringSubstring(invalid, Integer{Value: 0}, Integer{Value: 2}), Right: StringVal(string([]rune{'\uFFFD', 'x'}))},
+		Equal{Left: StringIndexOf(invalid, StringVal("\xe2"), Integer{Value: 0}), Right: Integer{Value: -1}},
 	}}
 	if _, ok := Check(Assert(6, New(), formula)).(Satisfiable); !ok {
 		t.Fatalf("result=%T", Check(Assert(6, New(), formula)))
@@ -716,6 +720,99 @@ func TestWordEquationIntegerStringOperationInteraction(t *testing.T) {
 		Equal{Left: StringToCode(x), Right: Integer{Value: 122}},
 	}}
 	checked = Check(Assert(43, New(), impossible))
+	if _, ok := checked.(Unsatisfiable); !ok {
+		t.Fatalf("impossible result=%T", checked)
+	}
+}
+
+func TestWordEquationDerivedStringOperationInteraction(t *testing.T) {
+	x := StringConst(1, "x")
+	y := StringConst(2, "y")
+	cases := []struct {
+		name      string
+		target    string
+		predicate Term[BoolSort]
+		want      string
+	}{
+		{
+			name:   "at",
+			target: "a🙂c",
+			predicate: Equal{
+				Left: StringAt(x, Integer{Value: 1}), Right: StringVal("🙂"),
+			},
+			want: "a🙂",
+		},
+		{
+			name:   "substring",
+			target: "abcd",
+			predicate: Equal{
+				Left:  StringSubstring(x, Integer{Value: 1}, Integer{Value: 2}),
+				Right: StringVal("bc"),
+			},
+			want: "abc",
+		},
+		{
+			name:   "replace",
+			target: "abc",
+			predicate: Equal{
+				Left:  StringReplace(x, StringVal("a"), StringVal("z")),
+				Right: StringVal("z"),
+			},
+			want: "a",
+		},
+		{
+			name:   "replace-all",
+			target: "aab",
+			predicate: Equal{
+				Left:  StringReplaceAll(x, StringVal("a"), StringVal("z")),
+				Right: StringVal("zz"),
+			},
+			want: "aa",
+		},
+		{
+			name:   "from-int",
+			target: "12x",
+			predicate: Equal{
+				Left:  StringAt(x, Integer{Value: 0}),
+				Right: StringAt(IntToString(Integer{Value: 12}), Integer{Value: 0}),
+			},
+			want: "1",
+		},
+		{
+			name:   "from-code",
+			target: "a🙂",
+			predicate: Equal{
+				Left:  StringAt(x, Integer{Value: 0}),
+				Right: StringFromCode(Integer{Value: 97}),
+			},
+			want: "a",
+		},
+	}
+	for index, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			formula := And{Values: []Term[BoolSort]{
+				Equal{Left: StringConcat(x, y), Right: StringVal(test.target)},
+				test.predicate,
+			}}
+			checked := Check(Assert(44+index, New(), formula))
+			result, ok := checked.(Satisfiable)
+			if !ok {
+				t.Fatalf("result=%T", checked)
+			}
+			if actual, found := StringModelValue(result.Value, x); !found || actual != test.want {
+				t.Fatalf("x=(%q,%v), want %q", actual, found, test.want)
+			}
+			if valid, found := BoolValue(result.Value, formula); !found || !valid {
+				t.Fatalf("formula=(%v,%v)", valid, found)
+			}
+		})
+	}
+
+	impossible := And{Values: []Term[BoolSort]{
+		Equal{Left: StringConcat(x, y), Right: StringVal("abc")},
+		Equal{Left: StringAt(x, Integer{Value: 4}), Right: StringVal("z")},
+	}}
+	checked := Check(Assert(50, New(), impossible))
 	if _, ok := checked.(Unsatisfiable); !ok {
 		t.Fatalf("impossible result=%T", checked)
 	}
