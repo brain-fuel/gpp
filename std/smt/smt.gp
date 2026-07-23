@@ -187,6 +187,13 @@ type Term[S any] enum {
 	sequenceUnit(Value any) Term[S]
 	sequenceConcat(Values any) Term[S]
 	sequenceLength(Value any) Term[IntSort]
+	sequenceAt(Value any, Index Term[IntSort]) Term[S]
+	sequenceExtract(Value any, Offset Term[IntSort], Length Term[IntSort]) Term[S]
+	sequenceContains(Value any, Subsequence any) Term[BoolSort]
+	sequencePrefix(Prefix any, Value any) Term[BoolSort]
+	sequenceSuffix(Suffix any, Value any) Term[BoolSort]
+	sequenceIndexOf(Value any, Subsequence any, Offset Term[IntSort]) Term[IntSort]
+	sequenceReplace(Value any, Source any, Replacement any) Term[S]
 	uninterpretedValue(SortID int, ID int, Name string) Term[S]
 	unaryApplication(Function any, Argument any) Term[S]
 	binaryApplication(Function any, First any, Second any) Term[S]
@@ -564,6 +571,13 @@ func SequenceEmpty[E any]() Term[SequenceSort[E]] { return Term[SequenceSort[E]]
 func SequenceUnit[E any](value Term[E]) Term[SequenceSort[E]] { return Term[SequenceSort[E]].sequenceUnit(value) }
 func SequenceConcat[E any](values ...Term[SequenceSort[E]]) Term[SequenceSort[E]] { return Term[SequenceSort[E]].sequenceConcat(values) }
 func SequenceLength[E any](value Term[SequenceSort[E]]) Term[IntSort] { return sequenceLength(value) }
+func SequenceAt[E any](value Term[SequenceSort[E]], index Term[IntSort]) Term[SequenceSort[E]] { return Term[SequenceSort[E]].sequenceAt(value, index) }
+func SequenceExtract[E any](value Term[SequenceSort[E]], offset Term[IntSort], length Term[IntSort]) Term[SequenceSort[E]] { return Term[SequenceSort[E]].sequenceExtract(value, offset, length) }
+func SequenceContains[E any](value Term[SequenceSort[E]], subsequence Term[SequenceSort[E]]) Term[BoolSort] { return sequenceContains(value, subsequence) }
+func SequenceHasPrefix[E any](value Term[SequenceSort[E]], prefix Term[SequenceSort[E]]) Term[BoolSort] { return sequencePrefix(prefix, value) }
+func SequenceHasSuffix[E any](value Term[SequenceSort[E]], suffix Term[SequenceSort[E]]) Term[BoolSort] { return sequenceSuffix(suffix, value) }
+func SequenceIndexOf[E any](value Term[SequenceSort[E]], subsequence Term[SequenceSort[E]], offset Term[IntSort]) Term[IntSort] { return sequenceIndexOf(value, subsequence, offset) }
+func SequenceReplace[E any](value Term[SequenceSort[E]], source Term[SequenceSort[E]], replacement Term[SequenceSort[E]]) Term[SequenceSort[E]] { return Term[SequenceSort[E]].sequenceReplace(value, source, replacement) }
 
 func ArrayConst[I any, E any](id int, name string) Term[ArraySort[I, E]] {
 	return Term[ArraySort[I, E]].arraySymbol(id, name)

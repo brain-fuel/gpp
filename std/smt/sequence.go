@@ -113,9 +113,109 @@ func evaluateIntegerSequence(
 			result.appendSequence(evaluated)
 		}
 		return result, true
+	case sequenceAt[SequenceSort[IntSort]]:
+		sequence, ok := value.value.(Term[SequenceSort[IntSort]])
+		if !ok {
+			return IntegerSequenceValue{}, false
+		}
+		evaluated, ok := evaluateIntegerSequence(sequence, booleans, integers, reals)
+		if !ok {
+			return IntegerSequenceValue{}, false
+		}
+		index, ok := evaluateInteger(value.index, booleans, integers, reals)
+		if !ok {
+			return IntegerSequenceValue{}, false
+		}
+		position, fits := index.Int64()
+		if !fits || position < 0 || position >= int64(evaluated.Len()) {
+			return IntegerSequenceValue{}, true
+		}
+		element, _ := evaluated.At(int(position))
+		var result IntegerSequenceValue
+		result.append(element)
+		return result, true
+	case sequenceExtract[SequenceSort[IntSort]]:
+		sequence, ok := value.value.(Term[SequenceSort[IntSort]])
+		if !ok {
+			return IntegerSequenceValue{}, false
+		}
+		evaluated, ok := evaluateIntegerSequence(sequence, booleans, integers, reals)
+		if !ok {
+			return IntegerSequenceValue{}, false
+		}
+		offset, offsetOK := evaluateInteger(value.offset, booleans, integers, reals)
+		length, lengthOK := evaluateInteger(value.length, booleans, integers, reals)
+		if !offsetOK || !lengthOK {
+			return IntegerSequenceValue{}, false
+		}
+		start, startFits := offset.Int64()
+		count, countFits := length.Int64()
+		if !startFits || !countFits || start < 0 || count <= 0 || start >= int64(evaluated.Len()) {
+			return IntegerSequenceValue{}, true
+		}
+		end := start + count
+		if end < start || end > int64(evaluated.Len()) {
+			end = int64(evaluated.Len())
+		}
+		return sliceIntegerSequence(evaluated, int(start), int(end)), true
+	case sequenceReplace[SequenceSort[IntSort]]:
+		sequence, sequenceOK := value.value.(Term[SequenceSort[IntSort]])
+		source, sourceOK := value.source.(Term[SequenceSort[IntSort]])
+		replacement, replacementOK := value.replacement.(Term[SequenceSort[IntSort]])
+		if !sequenceOK || !sourceOK || !replacementOK {
+			return IntegerSequenceValue{}, false
+		}
+		evaluated, valueOK := evaluateIntegerSequence(sequence, booleans, integers, reals)
+		old, oldOK := evaluateIntegerSequence(source, booleans, integers, reals)
+		next, nextOK := evaluateIntegerSequence(replacement, booleans, integers, reals)
+		if !valueOK || !oldOK || !nextOK {
+			return IntegerSequenceValue{}, false
+		}
+		position := findIntegerSubsequence(evaluated, old, 0)
+		if position < 0 {
+			return evaluated, true
+		}
+		var result IntegerSequenceValue
+		result.appendSequence(sliceIntegerSequence(evaluated, 0, position))
+		result.appendSequence(next)
+		result.appendSequence(sliceIntegerSequence(evaluated, position+old.Len(), evaluated.Len()))
+		return result, true
 	default:
 		return IntegerSequenceValue{}, false
 	}
+}
+
+func sliceIntegerSequence(value IntegerSequenceValue, start, end int) IntegerSequenceValue {
+	var result IntegerSequenceValue
+	for index := start; index < end; index++ {
+		element, _ := value.At(index)
+		result.append(element)
+	}
+	return result
+}
+
+func findIntegerSubsequence(value, subsequence IntegerSequenceValue, offset int) int {
+	if offset < 0 || offset > value.Len() {
+		return -1
+	}
+	if subsequence.Len() == 0 {
+		return offset
+	}
+	for start := offset; start+subsequence.Len() <= value.Len(); start++ {
+		found := true
+		for index := 0; index < subsequence.Len(); index++ {
+			left, _ := value.At(start + index)
+			right, _ := subsequence.At(index)
+			if CompareIntegerValue(left, right) != 0 {
+				found = false
+				break
+			}
+		}
+		if found {
+			return start
+		}
+	}
+	return -1
 }
 
 func equalIntegerSequences(left, right IntegerSequenceValue) bool {
@@ -151,8 +251,49 @@ func evaluateIntegerSequenceEquality(
 	return equalIntegerSequences(leftValue, rightValue), leftOK && rightOK
 }
 
+func evaluateIntegerSequencePredicate(
+	term Term[BoolSort],
+	booleans booleanModel,
+	integers integerModel,
+	reals rationalModel,
+) (bool, bool) {
+	var leftTerm, rightTerm any
+	var kind uint8
+	switch value := term.(type) {
+	case sequenceContains:
+		leftTerm, rightTerm, kind = value.value, value.subsequence, 0
+	case sequencePrefix:
+		leftTerm, rightTerm, kind = value.value, value.prefix, 1
+	case sequenceSuffix:
+		leftTerm, rightTerm, kind = value.value, value.suffix, 2
+	default:
+		return false, false
+	}
+	left, leftOK := leftTerm.(Term[SequenceSort[IntSort]])
+	right, rightOK := rightTerm.(Term[SequenceSort[IntSort]])
+	if !leftOK || !rightOK {
+		return false, false
+	}
+	value, valueOK := evaluateIntegerSequence(left, booleans, integers, reals)
+	part, partOK := evaluateIntegerSequence(right, booleans, integers, reals)
+	if !valueOK || !partOK {
+		return false, false
+	}
+	switch kind {
+	case 0:
+		return findIntegerSubsequence(value, part, 0) >= 0, true
+	case 1:
+		return findIntegerSubsequence(value, part, 0) == 0, true
+	default:
+		return part.Len() <= value.Len() &&
+			findIntegerSubsequence(value, part, value.Len()-part.Len()) == value.Len()-part.Len(), true
+	}
+}
+
 func containsIntegerSequenceTheory(term Term[BoolSort]) bool {
 	switch value := term.(type) {
+	case sequenceContains, sequencePrefix, sequenceSuffix:
+		return true
 	case Equal:
 		if _, ok := value.Left.(Term[SequenceSort[IntSort]]); ok {
 			return true
@@ -204,8 +345,15 @@ func containsIntegerSequenceTheory(term Term[BoolSort]) bool {
 
 func containsIntegerSequenceLength(term any) bool {
 	switch value := term.(type) {
-	case sequenceLength:
-		_, ok := value.value.(Term[SequenceSort[IntSort]])
+	case sequenceLength, sequenceIndexOf:
+		var sequence any
+		switch operation := value.(type) {
+		case sequenceLength:
+			sequence = operation.value
+		case sequenceIndexOf:
+			sequence = operation.value
+		}
+		_, ok := sequence.(Term[SequenceSort[IntSort]])
 		return ok
 	case Add:
 		for _, item := range value.Values {

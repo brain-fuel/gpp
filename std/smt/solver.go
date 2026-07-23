@@ -605,6 +605,8 @@ func evaluateBool(term Term[BoolSort], booleans booleanModel, integers integerMo
 			return rationalCmp(leftValue, rightValue) == 0, leftOK && rightValueOK
 		}
 		return false, false
+	case sequenceContains, sequencePrefix, sequenceSuffix:
+		return evaluateIntegerSequencePredicate(term, booleans, integers, reals)
 	case LessEqual:
 		left, leftOK := evaluateInteger(value.Left, booleans, integers, reals)
 		right, rightOK := evaluateInteger(value.Right, booleans, integers, reals)
@@ -790,6 +792,23 @@ func evaluateIntegerWithBitVectors(term Term[IntSort], booleans booleanModel, in
 			return IntegerValue{}, false
 		}
 		return NewIntegerValue(int64(evaluated.Len())), true
+	case sequenceIndexOf:
+		sequence, sequenceOK := value.value.(Term[SequenceSort[IntSort]])
+		subsequence, subsequenceOK := value.subsequence.(Term[SequenceSort[IntSort]])
+		if !sequenceOK || !subsequenceOK {
+			return IntegerValue{}, false
+		}
+		evaluated, valueOK := evaluateIntegerSequence(sequence, booleans, integers, reals)
+		part, partOK := evaluateIntegerSequence(subsequence, booleans, integers, reals)
+		offset, offsetOK := evaluateInteger(value.offset, booleans, integers, reals)
+		if !valueOK || !partOK || !offsetOK {
+			return IntegerValue{}, false
+		}
+		start, fits := offset.Int64()
+		if !fits || start < 0 || start > int64(evaluated.Len()) {
+			return NewIntegerValue(-1), true
+		}
+		return NewIntegerValue(int64(findIntegerSubsequence(evaluated, part, int(start)))), true
 	default:
 		return IntegerValue{}, false
 	}

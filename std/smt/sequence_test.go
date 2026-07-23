@@ -103,3 +103,60 @@ func TestGroundIntegerSequenceInlineOverflow(t *testing.T) {
 		}
 	}
 }
+
+func TestGroundIntegerSequenceIndexedOperations(t *testing.T) {
+	unit := func(value int64) Term[SequenceSort[IntSort]] {
+		return SequenceUnit[IntSort](Integer{Value: value})
+	}
+	sequence := SequenceConcat(unit(1), unit(2), unit(3), unit(2))
+	pair := SequenceConcat(unit(2), unit(3))
+	replaced := SequenceConcat(unit(1), unit(9), unit(2))
+	inserted := SequenceConcat(unit(9), unit(1), unit(2), unit(3), unit(2))
+	formula := And{Values: []Term[BoolSort]{
+		Equal{Left: SequenceAt(sequence, Integer{Value: 1}), Right: unit(2)},
+		Equal{Left: SequenceAt(sequence, Integer{Value: -1}), Right: SequenceEmpty[IntSort]()},
+		Equal{Left: SequenceAt(sequence, Integer{Value: 9}), Right: SequenceEmpty[IntSort]()},
+		Equal{
+			Left:  SequenceExtract(sequence, Integer{Value: 1}, Integer{Value: 2}),
+			Right: pair,
+		},
+		Equal{
+			Left:  SequenceExtract(sequence, Integer{Value: 3}, Integer{Value: 9}),
+			Right: unit(2),
+		},
+		SequenceContains(sequence, pair),
+		SequenceHasPrefix(sequence, SequenceConcat(unit(1), unit(2))),
+		SequenceHasSuffix(sequence, SequenceConcat(unit(3), unit(2))),
+		Equal{
+			Left:  SequenceIndexOf(sequence, unit(2), Integer{Value: 2}),
+			Right: Integer{Value: 3},
+		},
+		Equal{
+			Left:  SequenceIndexOf(sequence, SequenceEmpty[IntSort](), Integer{Value: 4}),
+			Right: Integer{Value: 4},
+		},
+		Equal{
+			Left:  SequenceReplace(sequence, pair, unit(9)),
+			Right: replaced,
+		},
+		Equal{
+			Left:  SequenceReplace(sequence, SequenceEmpty[IntSort](), unit(9)),
+			Right: inserted,
+		},
+	}}
+	checked := Check(Assert(4, New(), formula))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", checked)
+	}
+	if valid, found := BoolValue(result.Value, formula); !found || !valid {
+		t.Fatalf("formula=(%v,%v)", valid, found)
+	}
+	value, found := IntegerSequenceModelValue(
+		result.Value,
+		SequenceReplace(sequence, pair, unit(9)),
+	)
+	if !found || value.Len() != 3 {
+		t.Fatalf("replacement len=(%d,%v)", value.Len(), found)
+	}
+}

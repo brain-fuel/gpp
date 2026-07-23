@@ -1066,6 +1066,65 @@ type sequenceLength struct {
 
 func (sequenceLength) isTerm(IntSort) {}
 
+//goplus:variant (Term[S]) sequenceAt(Value any, Index Term[IntSort]) Term[S]
+type sequenceAt[S any] struct {
+	value any
+	index Term[IntSort]
+}
+
+func (sequenceAt[S]) isTerm(S) {}
+
+//goplus:variant (Term[S]) sequenceExtract(Value any, Offset Term[IntSort], Length Term[IntSort]) Term[S]
+type sequenceExtract[S any] struct {
+	value  any
+	offset Term[IntSort]
+	length Term[IntSort]
+}
+
+func (sequenceExtract[S]) isTerm(S) {}
+
+//goplus:variant (Term[S]) sequenceContains(Value any, Subsequence any) Term[BoolSort]
+type sequenceContains struct {
+	value       any
+	subsequence any
+}
+
+func (sequenceContains) isTerm(BoolSort) {}
+
+//goplus:variant (Term[S]) sequencePrefix(Prefix any, Value any) Term[BoolSort]
+type sequencePrefix struct {
+	prefix any
+	value  any
+}
+
+func (sequencePrefix) isTerm(BoolSort) {}
+
+//goplus:variant (Term[S]) sequenceSuffix(Suffix any, Value any) Term[BoolSort]
+type sequenceSuffix struct {
+	suffix any
+	value  any
+}
+
+func (sequenceSuffix) isTerm(BoolSort) {}
+
+//goplus:variant (Term[S]) sequenceIndexOf(Value any, Subsequence any, Offset Term[IntSort]) Term[IntSort]
+type sequenceIndexOf struct {
+	value       any
+	subsequence any
+	offset      Term[IntSort]
+}
+
+func (sequenceIndexOf) isTerm(IntSort) {}
+
+//goplus:variant (Term[S]) sequenceReplace(Value any, Source any, Replacement any) Term[S]
+type sequenceReplace[S any] struct {
+	value       any
+	source      any
+	replacement any
+}
+
+func (sequenceReplace[S]) isTerm(S) {}
+
 //goplus:variant (Term[S]) uninterpretedValue(SortID int, ID int, Name string) Term[S]
 type uninterpretedValue[S any] struct {
 	sortID int
@@ -1699,6 +1758,13 @@ type TermCases[S any, R any] struct {
 	sequenceUnit                       func(Value any) R
 	sequenceConcat                     func(Values any) R
 	sequenceLength                     func(Value any) R
+	sequenceAt                         func(Value any, Index Term[IntSort]) R
+	sequenceExtract                    func(Value any, Offset Term[IntSort], Length Term[IntSort]) R
+	sequenceContains                   func(Value any, Subsequence any) R
+	sequencePrefix                     func(Prefix any, Value any) R
+	sequenceSuffix                     func(Suffix any, Value any) R
+	sequenceIndexOf                    func(Value any, Subsequence any, Offset Term[IntSort]) R
+	sequenceReplace                    func(Value any, Source any, Replacement any) R
 	uninterpretedValue                 func(SortID int, ID int, Name string) R
 	unaryApplication                   func(Function any, Argument any) R
 	binaryApplication                  func(Function any, First any, Second any) R
@@ -1874,6 +1940,20 @@ func TermFold[S any, R any](t Term[S], cs TermCases[S, R]) R {
 		return cs.sequenceConcat(m.values)
 	case sequenceLength:
 		return cs.sequenceLength(m.value)
+	case sequenceAt[S]:
+		return cs.sequenceAt(m.value, m.index)
+	case sequenceExtract[S]:
+		return cs.sequenceExtract(m.value, m.offset, m.length)
+	case sequenceContains:
+		return cs.sequenceContains(m.value, m.subsequence)
+	case sequencePrefix:
+		return cs.sequencePrefix(m.prefix, m.value)
+	case sequenceSuffix:
+		return cs.sequenceSuffix(m.suffix, m.value)
+	case sequenceIndexOf:
+		return cs.sequenceIndexOf(m.value, m.subsequence, m.offset)
+	case sequenceReplace[S]:
+		return cs.sequenceReplace(m.value, m.source, m.replacement)
 	case uninterpretedValue[S]:
 		return cs.uninterpretedValue(m.sortID, m.iD, m.name)
 	case unaryApplication[S]:
@@ -3061,6 +3141,27 @@ func SequenceConcat[E any](values ...Term[SequenceSort[E]]) Term[SequenceSort[E]
 }
 func SequenceLength[E any](value Term[SequenceSort[E]]) Term[IntSort] {
 	return sequenceLength{value: value}
+}
+func SequenceAt[E any](value Term[SequenceSort[E]], index Term[IntSort]) Term[SequenceSort[E]] {
+	return sequenceAt[SequenceSort[E]]{value: value, index: index}
+}
+func SequenceExtract[E any](value Term[SequenceSort[E]], offset Term[IntSort], length Term[IntSort]) Term[SequenceSort[E]] {
+	return sequenceExtract[SequenceSort[E]]{value: value, offset: offset, length: length}
+}
+func SequenceContains[E any](value Term[SequenceSort[E]], subsequence Term[SequenceSort[E]]) Term[BoolSort] {
+	return sequenceContains{value: value, subsequence: subsequence}
+}
+func SequenceHasPrefix[E any](value Term[SequenceSort[E]], prefix Term[SequenceSort[E]]) Term[BoolSort] {
+	return sequencePrefix{prefix: prefix, value: value}
+}
+func SequenceHasSuffix[E any](value Term[SequenceSort[E]], suffix Term[SequenceSort[E]]) Term[BoolSort] {
+	return sequenceSuffix{suffix: suffix, value: value}
+}
+func SequenceIndexOf[E any](value Term[SequenceSort[E]], subsequence Term[SequenceSort[E]], offset Term[IntSort]) Term[IntSort] {
+	return sequenceIndexOf{value: value, subsequence: subsequence, offset: offset}
+}
+func SequenceReplace[E any](value Term[SequenceSort[E]], source Term[SequenceSort[E]], replacement Term[SequenceSort[E]]) Term[SequenceSort[E]] {
+	return sequenceReplace[SequenceSort[E]]{value: value, source: source, replacement: replacement}
 }
 
 func ArrayConst[I any, E any](id int, name string) Term[ArraySort[I, E]] {
