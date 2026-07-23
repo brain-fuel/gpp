@@ -22,6 +22,162 @@ type CompactStringWordEquation struct {
 
 func (CompactStringWordEquation) isTerm(BoolSort) {}
 
+func solveBoundedWordEquationConjunction(assertions []Term[BoolSort]) (checkOutcome, bool) {
+	var conjuncts [8]Term[BoolSort]
+	count := 0
+	for _, assertion := range assertions {
+		if !appendBoundedWordEquationConjunct(assertion, &conjuncts, &count) {
+			return checkOutcome{}, false
+		}
+	}
+	equationIndex := -1
+	var equation CompactStringWordEquation
+	for index := 0; index < count; index++ {
+		if candidate, ok := compactStringWordEquationFromTerm(conjuncts[index]); ok {
+			if equationIndex >= 0 {
+				return checkOutcome{}, false
+			}
+			equation, equationIndex = candidate, index
+		}
+	}
+	if equationIndex < 0 {
+		return checkOutcome{}, false
+	}
+	var initial stringModel
+	for index := 0; index < count; index++ {
+		if index == equationIndex {
+			continue
+		}
+		recognized, contradiction := bindBoundedWordEquationGroundConjunct(conjuncts[index], &initial)
+		if !recognized {
+			return checkOutcome{}, false
+		}
+		if contradiction {
+			return checkOutcome{status: checkUnsat}, true
+		}
+	}
+	steps := 0
+	model, found, complete := searchCompactStringWordEquation(
+		equation.Pattern, equation.Target, 0, 0, initial, &steps,
+	)
+	if !complete {
+		return checkOutcome{
+			status: checkUnknown,
+			reason: ResourceLimit{Limit: compactStringWordEquationSearchLimit},
+		}, true
+	}
+	if !found {
+		return checkOutcome{status: checkUnsat}, true
+	}
+	for index := 0; index < count; index++ {
+		value, complete := evaluateStringBoolean(conjuncts[index], model, integerModel{})
+		if !complete || !value {
+			return checkOutcome{}, false
+		}
+	}
+	return checkOutcome{status: checkSat, strings: model}, true
+}
+
+func appendBoundedWordEquationConjunct(term Term[BoolSort], result *[8]Term[BoolSort], count *int) bool {
+	switch value := term.(type) {
+	case And:
+		for _, child := range value.Values {
+			if !appendBoundedWordEquationConjunct(child, result, count) {
+				return false
+			}
+		}
+		return true
+	case BooleanConjunction:
+		children, negated := value.values()
+		for index, child := range children {
+			if negated[index] || !appendBoundedWordEquationConjunct(child, result, count) {
+				return false
+			}
+		}
+		return true
+	default:
+		if *count == len(result) {
+			return false
+		}
+		result[*count] = term
+		*count++
+		return true
+	}
+}
+
+func compactStringWordEquationFromTerm(term Term[BoolSort]) (CompactStringWordEquation, bool) {
+	if equation, ok := term.(CompactStringWordEquation); ok {
+		return equation, true
+	}
+	equality, ok := term.(Equal)
+	if !ok || !isStringTerm(equality.Left) || !isStringTerm(equality.Right) {
+		return CompactStringWordEquation{}, false
+	}
+	if target, ground := evaluateString(equality.Right.(Term[StringSort]), stringModel{}, integerModel{}); ground {
+		if pattern, ok := compactPatternFromStringTerm(equality.Left); ok {
+			return CompactStringWordEquation{Pattern: pattern, Target: target}, true
+		}
+	}
+	if target, ground := evaluateString(equality.Left.(Term[StringSort]), stringModel{}, integerModel{}); ground {
+		if pattern, ok := compactPatternFromStringTerm(equality.Right); ok {
+			return CompactStringWordEquation{Pattern: pattern, Target: target}, true
+		}
+	}
+	return CompactStringWordEquation{}, false
+}
+
+func bindBoundedWordEquationGroundConjunct(term Term[BoolSort], model *stringModel) (bool, bool) {
+	switch value := term.(type) {
+	case Bool:
+		return true, !value.Value
+	case Equal:
+		if !isStringTerm(value.Left) || !isStringTerm(value.Right) {
+			return false, false
+		}
+		if id, symbol := stringSymbolID(value.Left); symbol {
+			if ground, ok := evaluateString(value.Right.(Term[StringSort]), stringModel{}, integerModel{}); ok {
+				return assignBoundedWordEquationGroundValue(model, id, ground)
+			}
+		}
+		if id, symbol := stringSymbolID(value.Right); symbol {
+			if ground, ok := evaluateString(value.Left.(Term[StringSort]), stringModel{}, integerModel{}); ok {
+				return assignBoundedWordEquationGroundValue(model, id, ground)
+			}
+		}
+		return false, false
+	case stringSystem:
+		for _, relation := range value.system.relations() {
+			if relation.Kind != CompactStringEqual || relation.Negated {
+				return false, false
+			}
+			if relation.Left.Kind == compactStringSymbol && relation.Right.Kind == compactStringLiteral {
+				if _, contradiction := assignBoundedWordEquationGroundValue(model, relation.Left.ID, relation.Right.Value); contradiction {
+					return true, true
+				}
+				continue
+			}
+			if relation.Right.Kind == compactStringSymbol && relation.Left.Kind == compactStringLiteral {
+				if _, contradiction := assignBoundedWordEquationGroundValue(model, relation.Right.ID, relation.Left.Value); contradiction {
+					return true, true
+				}
+				continue
+			}
+			return false, false
+		}
+		return true, false
+	default:
+		return false, false
+	}
+}
+
+func assignBoundedWordEquationGroundValue(model *stringModel, id int, value string) (bool, bool) {
+	if existing, found := model.lookup(id); found {
+		return true, existing != value
+	}
+	model.set(id, value)
+	return true, false
+}
+
 func solveCompactStringWordEquationAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
 	if len(assertions) != 1 {
 		return checkOutcome{}, false

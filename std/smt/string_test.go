@@ -309,6 +309,28 @@ func TestStringUniquelyDelimitedWordEquation(t *testing.T) {
 		t.Fatalf("ambiguous y=(%q,%v)", actual, found)
 	}
 
+	secondSplit := And{Values: []Term[BoolSort]{
+		ambiguous,
+		Equal{Left: x, Right: StringVal("a]b")},
+	}}
+	checked = Check(Assert(25, New(), secondSplit))
+	secondResult, sat := checked.(Satisfiable)
+	if !sat {
+		t.Fatalf("second split result=%T", checked)
+	}
+	if actual, found := StringModelValue(secondResult.Value, y); !found || actual != "c" {
+		t.Fatalf("second split y=(%q,%v)", actual, found)
+	}
+
+	impossibleSplit := And{Values: []Term[BoolSort]{
+		ambiguous,
+		Equal{Left: x, Right: StringVal("wrong")},
+	}}
+	checked = Check(Assert(26, New(), impossibleSplit))
+	if _, unsat := checked.(Unsatisfiable); !unsat {
+		t.Fatalf("impossible split result=%T", checked)
+	}
+
 	adjacent := Equal{
 		Left:  StringConcat(x, y),
 		Right: StringVal("forge"),
