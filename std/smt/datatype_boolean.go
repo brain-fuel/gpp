@@ -3,16 +3,82 @@ package smt
 const datatypeBooleanBranchLimit = 256
 
 type datatypeBooleanBranches struct {
-	values    []datatypeBooleanBranch
+	count     int
+	inline    [4]datatypeBooleanBranch
+	overflow  []datatypeBooleanBranch
 	exhausted bool
 }
 
 type datatypeBooleanBranch struct {
-	atoms []Term[BoolSort]
+	count    int
+	inline   [8]Term[BoolSort]
+	overflow []Term[BoolSort]
+}
+
+func (branches *datatypeBooleanBranches) append(branch datatypeBooleanBranch) {
+	if branches.count >= datatypeBooleanBranchLimit {
+		branches.exhausted = true
+		return
+	}
+	if branches.count < len(branches.inline) && branches.overflow == nil {
+		branches.inline[branches.count] = branch
+		branches.count++
+		return
+	}
+	if branches.overflow == nil {
+		branches.overflow = make([]datatypeBooleanBranch, branches.count, branches.count*2)
+		copy(branches.overflow, branches.inline[:branches.count])
+	}
+	branches.overflow = append(branches.overflow, branch)
+	branches.count++
+}
+
+func (branches *datatypeBooleanBranches) branches() []datatypeBooleanBranch {
+	if branches.overflow != nil {
+		return branches.overflow[:branches.count]
+	}
+	return branches.inline[:branches.count]
+}
+
+func (branch *datatypeBooleanBranch) append(atom Term[BoolSort]) {
+	if branch.count < len(branch.inline) && branch.overflow == nil {
+		branch.inline[branch.count] = atom
+		branch.count++
+		return
+	}
+	if branch.overflow == nil {
+		branch.overflow = make([]Term[BoolSort], branch.count, branch.count*2)
+		copy(branch.overflow, branch.inline[:branch.count])
+	}
+	branch.overflow = append(branch.overflow, atom)
+	branch.count++
+}
+
+func (branch *datatypeBooleanBranch) atoms() []Term[BoolSort] {
+	if branch.overflow != nil {
+		return branch.overflow[:branch.count]
+	}
+	return branch.inline[:branch.count]
+}
+
+func appendDatatypeBooleanAtoms(first, second datatypeBooleanBranch) datatypeBooleanBranch {
+	result := datatypeBooleanBranch{}
+	total := first.count + second.count
+	if total > len(result.inline) {
+		result.overflow = make([]Term[BoolSort], 0, total)
+	}
+	for _, atom := range first.atoms() {
+		result.append(atom)
+	}
+	for _, atom := range second.atoms() {
+		result.append(atom)
+	}
+	return result
 }
 
 func solveBooleanDatatypeAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
-	branches := datatypeBooleanBranches{values: []datatypeBooleanBranch{{}}}
+	branches := datatypeBooleanBranches{}
+	branches.append(datatypeBooleanBranch{})
 	for _, assertion := range assertions {
 		next, ok := normalizeDatatypeBoolean(assertion, true)
 		if !ok {
@@ -25,8 +91,8 @@ func solveBooleanDatatypeAssertions(assertions []Term[BoolSort]) (checkOutcome, 
 	}
 	var unknown checkOutcome
 	unknownSeen := false
-	for _, branch := range branches.values {
-		outcome, recognized := solveDatatypeAssertions(branch.atoms)
+	for _, branch := range branches.branches() {
+		outcome, recognized := solveDatatypeAssertions(branch.atoms())
 		if !recognized {
 			return checkOutcome{}, false
 		}
@@ -83,7 +149,9 @@ func normalizeDatatypeBoolean(term Term[BoolSort], positive bool) (datatypeBoole
 	switch value := term.(type) {
 	case Bool:
 		if value.Value == positive {
-			return datatypeBooleanBranches{values: []datatypeBooleanBranch{{}}}, true
+			result := datatypeBooleanBranches{}
+			result.append(datatypeBooleanBranch{})
+			return result, true
 		}
 		return datatypeBooleanBranches{}, true
 	case Not:
@@ -116,7 +184,7 @@ func normalizeDatatypeBoolean(term Term[BoolSort], positive bool) (datatypeBoole
 		items, negated := value.values()
 		result := datatypeBooleanBranches{}
 		if positive {
-			result.values = append(result.values, datatypeBooleanBranch{})
+			result.append(datatypeBooleanBranch{})
 		}
 		for index, item := range items {
 			part, ok := normalizeDatatypeBoolean(item, positive != negated[index])
@@ -162,7 +230,7 @@ func normalizeDatatypeEquivalence(left, right Term[BoolSort], positive bool) (da
 func normalizeDatatypeBooleanMany(terms []Term[BoolSort], childPositive, conjunction bool) (datatypeBooleanBranches, bool) {
 	result := datatypeBooleanBranches{}
 	if conjunction {
-		result.values = append(result.values, datatypeBooleanBranch{})
+		result.append(datatypeBooleanBranch{})
 	}
 	for _, term := range terms {
 		part, ok := normalizeDatatypeBoolean(term, childPositive)
@@ -188,31 +256,36 @@ func datatypeBooleanAtom(term Term[BoolSort], positive bool) (datatypeBooleanBra
 	if !positive {
 		term = Not{Value: term}
 	}
-	return datatypeBooleanBranches{values: []datatypeBooleanBranch{{atoms: []Term[BoolSort]{term}}}}, true
+	branch := datatypeBooleanBranch{}
+	branch.append(term)
+	result := datatypeBooleanBranches{}
+	result.append(branch)
+	return result, true
 }
 
 func unionDatatypeBooleanBranches(left, right datatypeBooleanBranches) datatypeBooleanBranches {
-	if left.exhausted || right.exhausted || len(left.values)+len(right.values) > datatypeBooleanBranchLimit {
+	if left.exhausted || right.exhausted || left.count+right.count > datatypeBooleanBranchLimit {
 		return datatypeBooleanBranches{exhausted: true}
 	}
-	values := make([]datatypeBooleanBranch, 0, len(left.values)+len(right.values))
-	values = append(values, left.values...)
-	values = append(values, right.values...)
-	return datatypeBooleanBranches{values: values}
+	result := datatypeBooleanBranches{}
+	for _, branch := range left.branches() {
+		result.append(branch)
+	}
+	for _, branch := range right.branches() {
+		result.append(branch)
+	}
+	return result
 }
 
 func combineDatatypeBooleanBranches(left, right datatypeBooleanBranches) datatypeBooleanBranches {
-	if left.exhausted || right.exhausted || len(left.values) != 0 && len(right.values) > datatypeBooleanBranchLimit/len(left.values) {
+	if left.exhausted || right.exhausted || left.count != 0 && right.count > datatypeBooleanBranchLimit/left.count {
 		return datatypeBooleanBranches{exhausted: true}
 	}
-	values := make([]datatypeBooleanBranch, 0, len(left.values)*len(right.values))
-	for _, first := range left.values {
-		for _, second := range right.values {
-			atoms := make([]Term[BoolSort], 0, len(first.atoms)+len(second.atoms))
-			atoms = append(atoms, first.atoms...)
-			atoms = append(atoms, second.atoms...)
-			values = append(values, datatypeBooleanBranch{atoms: atoms})
+	result := datatypeBooleanBranches{}
+	for _, first := range left.branches() {
+		for _, second := range right.branches() {
+			result.append(appendDatatypeBooleanAtoms(first, second))
 		}
 	}
-	return datatypeBooleanBranches{values: values}
+	return result
 }
