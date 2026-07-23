@@ -275,6 +275,29 @@ func TestExecuteSingleUnknownWordEquation(t *testing.T) {
 	}
 }
 
+func TestExecuteUniquelyDelimitedWordEquation(t *testing.T) {
+	script := `(set-logic QF_SLIA)
+(declare-const x String)
+(declare-const y String)
+(assert (= (str.++ "[" x "]" y "!") "[go]forge!"))
+(check-sat)
+(get-value (x y))`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("result=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[len(result.Responses)-2].(Satisfiable); !ok {
+		t.Fatalf("check response=%T", result.Responses[len(result.Responses)-2])
+	}
+	values := result.Responses[len(result.Responses)-1].(ValuesAvailable).Values
+	if value, ok := values[0].(StringValue); !ok || value.Value != "go" {
+		t.Fatalf("x=%#v", values[0])
+	}
+	if value, ok := values[1].(StringValue); !ok || value.Value != "forge" {
+		t.Fatalf("y=%#v", values[1])
+	}
+}
+
 func TestExecuteDifferenceLogicPushPop(t *testing.T) {
 	script := `(set-logic QF_IDL)
 (declare-const x Int)

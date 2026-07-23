@@ -352,7 +352,8 @@ func evaluateBoolWithStringsAndDatatypes(term Term[BoolSort], booleans booleanMo
 
 func containsStringTheory(term Term[BoolSort]) bool {
 	switch value := term.(type) {
-	case stringContains, stringPrefix, stringSuffix, stringIsDigit, stringInRegex, stringSystem, CompactStringBooleanFormula:
+	case stringContains, stringPrefix, stringSuffix, stringIsDigit, stringInRegex, stringSystem,
+		CompactStringBooleanFormula, CompactStringWordEquation:
 		return true
 	case Equal:
 		return isStringTerm(value.Left) || isStringTerm(value.Right) || isStringIntegerTerm(value.Left) || isStringIntegerTerm(value.Right)
@@ -406,6 +407,9 @@ func isStringIntegerTerm(term any) bool {
 }
 
 func solveStringAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
+	if outcome, recognized := solveCompactStringWordEquationAssertions(assertions); recognized {
+		return outcome, true
+	}
 	if outcome, recognized := solveCompactStringBooleanAssertions(assertions); recognized {
 		return outcome, true
 	}
@@ -711,6 +715,10 @@ func compactSingleSymbolConcatMatches(term CompactStringTerm, value, target stri
 
 func collectStringSymbolsBoolean(term Term[BoolSort], symbols *stringSymbols) {
 	switch value := term.(type) {
+	case CompactStringWordEquation:
+		for index := 0; index < value.Pattern.Count; index++ {
+			symbols.add(value.Pattern.SymbolIDs[index])
+		}
 	case stringSystem:
 		for _, relation := range value.system.relations() {
 			if relation.Left.Kind == compactStringSymbol || relation.Left.Kind == compactStringSingleSymbolConcat {
@@ -863,6 +871,11 @@ func bindStringAssertion(term Term[BoolSort], negated bool, model *stringModel) 
 
 func bindForcedStringAssertion(term Term[BoolSort], negated bool, model *stringModel) bool {
 	switch value := term.(type) {
+	case CompactStringWordEquation:
+		if negated {
+			return false
+		}
+		return bindCompactStringWordEquation(value, model)
 	case stringSystem:
 		if negated {
 			return false
@@ -918,12 +931,12 @@ func bindForcedStringAssertion(term Term[BoolSort], negated bool, model *stringM
 			return setExistingString(model, rightID, left)
 		}
 		if rightOK {
-			if changed, handled := bindSingleUnknownStringConcat(value.Left, right, model); handled {
+			if changed, handled := bindUniquelyDelimitedStringConcat(value.Left, right, model); handled {
 				return changed
 			}
 		}
 		if leftOK {
-			if changed, handled := bindSingleUnknownStringConcat(value.Right, left, model); handled {
+			if changed, handled := bindUniquelyDelimitedStringConcat(value.Right, left, model); handled {
 				return changed
 			}
 		}
@@ -931,49 +944,77 @@ func bindForcedStringAssertion(term Term[BoolSort], negated bool, model *stringM
 	return false
 }
 
-func bindSingleUnknownStringConcat(term any, target string, model *stringModel) (bool, bool) {
+func bindUniquelyDelimitedStringConcat(term any, target string, model *stringModel) (bool, bool) {
 	concat, ok := term.(stringConcat[StringSort])
 	if !ok {
 		return false, false
 	}
-	prefix, suffix := "", ""
-	unknownID := 0
-	foundUnknown := false
+	type unknownStringPart struct {
+		id        int
+		delimiter string
+	}
+	var unknowns [4]unknownStringPart
+	unknownCount := 0
+	literal := ""
 	for _, item := range concat.values {
 		if id, symbolic := stringSymbolID(item); symbolic {
 			if bound, exists := model.lookup(id); exists {
-				if foundUnknown {
-					suffix += bound
-				} else {
-					prefix += bound
-				}
+				literal += bound
 				continue
 			}
-			if foundUnknown {
+			for index := 0; index < unknownCount; index++ {
+				if unknowns[index].id == id {
+					return false, false
+				}
+			}
+			if unknownCount == len(unknowns) {
 				return false, false
 			}
-			unknownID, foundUnknown = id, true
+			if unknownCount > 0 && literal == "" {
+				return false, false
+			}
+			unknowns[unknownCount] = unknownStringPart{id: id, delimiter: literal}
+			unknownCount++
+			literal = ""
 			continue
 		}
 		part, known := evaluateString(item, *model, integerModel{})
 		if !known {
 			return false, false
 		}
-		if foundUnknown {
-			suffix += part
-		} else {
-			prefix += part
-		}
+		literal += part
 	}
-	if !foundUnknown {
+	if unknownCount == 0 {
 		return false, false
 	}
-	if len(target) < len(prefix)+len(suffix) ||
-		!strings.HasPrefix(target, prefix) || !strings.HasSuffix(target, suffix) {
-		return setExistingString(model, unknownID, ""), true
+	prefix, suffix := unknowns[0].delimiter, literal
+	if !strings.HasPrefix(target, prefix) || !strings.HasSuffix(target, suffix) ||
+		len(target) < len(prefix)+len(suffix) {
+		changed := false
+		for index := 0; index < unknownCount; index++ {
+			changed = setExistingString(model, unknowns[index].id, "") || changed
+		}
+		return changed, true
 	}
-	middle := target[len(prefix) : len(target)-len(suffix)]
-	return setExistingString(model, unknownID, middle), true
+	remaining := target[len(prefix) : len(target)-len(suffix)]
+	changed := false
+	for index := 1; index < unknownCount; index++ {
+		delimiter := unknowns[index].delimiter
+		first := strings.Index(remaining, delimiter)
+		if first < 0 {
+			for rest := index - 1; rest < unknownCount; rest++ {
+				changed = setExistingString(model, unknowns[rest].id, "") || changed
+			}
+			return changed, true
+		}
+		if strings.LastIndex(remaining, delimiter) != first {
+			return false, false
+		}
+		changed = setExistingString(model, unknowns[index-1].id, remaining[:first]) || changed
+		remaining = remaining[first+len(delimiter):]
+	}
+	changed = setExistingString(model, unknowns[unknownCount-1].id, remaining) || changed
+	return changed, true
 }
 
 func synthesizeStringAssertion(term Term[BoolSort], negated bool, model *stringModel) {
@@ -1067,6 +1108,8 @@ func integerConstant(term any) (int64, bool) {
 
 func evaluateStringBoolean(term Term[BoolSort], model stringModel, integers integerModel) (bool, bool) {
 	switch value := term.(type) {
+	case CompactStringWordEquation:
+		return evaluateCompactStringWordEquation(value, model)
 	case CompactStringBooleanFormula:
 		return evaluateCompactStringBooleanModel(value, model)
 	case stringSystem:

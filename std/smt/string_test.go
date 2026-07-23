@@ -256,6 +256,83 @@ func TestStringSingleUnknownWordEquation(t *testing.T) {
 	}
 }
 
+func TestStringUniquelyDelimitedWordEquation(t *testing.T) {
+	x := StringConst(1, "x")
+	y := StringConst(2, "y")
+	equation := Equal{
+		Left: StringConcat(
+			StringVal("["), x, StringVal("]"),
+			y, StringVal("!"),
+		),
+		Right: StringVal("[go]forge!"),
+	}
+	checked := Check(Assert(22, New(), equation))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", checked)
+	}
+	if actual, found := StringModelValue(result.Value, x); !found || actual != "go" {
+		t.Fatalf("x=(%q,%v)", actual, found)
+	}
+	if actual, found := StringModelValue(result.Value, y); !found || actual != "forge" {
+		t.Fatalf("y=(%q,%v)", actual, found)
+	}
+	if valid, found := BoolValue(result.Value, equation); !found || !valid {
+		t.Fatalf("equation=(%v,%v)", valid, found)
+	}
+
+	conflict := And{Values: []Term[BoolSort]{
+		equation,
+		Equal{Left: x, Right: StringVal("not-go")},
+	}}
+	checked = Check(Assert(23, New(), conflict))
+	if _, unsat := checked.(Unsatisfiable); !unsat {
+		t.Fatalf("conflict result=%T", checked)
+	}
+
+	ambiguous := Equal{
+		Left:  StringConcat(StringVal("["), x, StringVal("]"), y, StringVal("!")),
+		Right: StringVal("[a]b]c!"),
+	}
+	checked = Check(Assert(24, New(), ambiguous))
+	if _, unknown := checked.(Unknown); !unknown {
+		t.Fatalf("ambiguous result=%T", checked)
+	}
+}
+
+func TestCompactStringWordEquationModel(t *testing.T) {
+	pattern := CompactStringPattern{
+		Count:       4,
+		SymbolIDs:   [4]int{1, 2, 3, 4},
+		SymbolNames: [4]string{"x", "y", "z", "w"},
+		Delimiters:  [5]string{"[", "]", "{", "}", "!"},
+	}
+	equation := CompactStringWordEquation{
+		Pattern: pattern,
+		Target:  "[go]forge{typed}solver!",
+	}
+	checked := Check(Assert(25, New(), equation))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", checked)
+	}
+	if actual, found := CompactStringModelValue(result.Value, CompactStringSymbolTerm(1, "x")); !found || actual != "go" {
+		t.Fatalf("x=(%q,%v)", actual, found)
+	}
+	if actual, found := CompactStringModelValue(result.Value, CompactStringSymbolTerm(2, "y")); !found || actual != "forge" {
+		t.Fatalf("y=(%q,%v)", actual, found)
+	}
+	if actual, found := CompactStringModelValue(result.Value, CompactStringSymbolTerm(3, "z")); !found || actual != "typed" {
+		t.Fatalf("z=(%q,%v)", actual, found)
+	}
+	if actual, found := CompactStringModelValue(result.Value, CompactStringSymbolTerm(4, "w")); !found || actual != "solver" {
+		t.Fatalf("w=(%q,%v)", actual, found)
+	}
+	if valid, found := CompactStringWordEquationValue(result.Value, equation); !found || !valid {
+		t.Fatalf("equation=(%v,%v)", valid, found)
+	}
+}
+
 func TestStringSymbolModel(t *testing.T) {
 	x := StringConst(1, "x")
 	formula := And{Values: []Term[BoolSort]{
