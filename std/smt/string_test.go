@@ -592,6 +592,56 @@ func TestMultipleWordEquationInteraction(t *testing.T) {
 	}
 }
 
+func TestWordEquationRegexInteraction(t *testing.T) {
+	x := StringConst(1, "x")
+	y := StringConst(2, "y")
+	equation := Equal{Left: StringConcat(x, y), Right: StringVal("abc")}
+	language := UnionRegex(
+		StringToRegex(StringVal("a")),
+		StringToRegex(StringVal("ab")),
+	)
+	formula := And{Values: []Term[BoolSort]{
+		equation,
+		StringInRegex(x, language),
+	}}
+	checked := Check(Assert(37, New(), formula))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", checked)
+	}
+	if actual, found := StringModelValue(result.Value, x); !found || actual != "a" {
+		t.Fatalf("x=(%q,%v)", actual, found)
+	}
+	if actual, found := StringModelValue(result.Value, y); !found || actual != "bc" {
+		t.Fatalf("y=(%q,%v)", actual, found)
+	}
+	if valid, found := BoolValue(result.Value, formula); !found || !valid {
+		t.Fatalf("formula=(%v,%v)", valid, found)
+	}
+
+	negative := And{Values: []Term[BoolSort]{
+		equation,
+		Not{Value: StringInRegex(x, StringToRegex(StringVal("")))},
+	}}
+	checked = Check(Assert(38, New(), negative))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("negative result=%T", checked)
+	}
+	if actual, found := StringModelValue(result.Value, x); !found || actual != "a" {
+		t.Fatalf("negative x=(%q,%v)", actual, found)
+	}
+
+	impossible := And{Values: []Term[BoolSort]{
+		equation,
+		StringInRegex(x, StringToRegex(StringVal("z"))),
+	}}
+	checked = Check(Assert(39, New(), impossible))
+	if _, ok := checked.(Unsatisfiable); !ok {
+		t.Fatalf("impossible result=%T", checked)
+	}
+}
+
 func TestStringSymbolModel(t *testing.T) {
 	x := StringConst(1, "x")
 	formula := And{Values: []Term[BoolSort]{

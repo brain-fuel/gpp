@@ -30,9 +30,13 @@ type boundedWordEquationLength struct {
 }
 
 type boundedWordEquationConstraints struct {
-	model       stringModel
-	lengthCount int
-	lengths     [4]boundedWordEquationLength
+	model          stringModel
+	lengthCount    int
+	lengths        [4]boundedWordEquationLength
+	regexCount     int
+	regexes        [4]symbolicRegexConstraint
+	predicateCount int
+	predicates     [4]Term[BoolSort]
 }
 
 func solveBoundedWordEquationConjunction(assertions []Term[BoolSort]) (checkOutcome, bool) {
@@ -88,9 +92,13 @@ func solveBoundedWordEquationConjunction(assertions []Term[BoolSort]) (checkOutc
 		equations, equationCount, 0, 0, 0, constraints, &steps,
 	)
 	if !complete {
+		var reason UnknownReason = ResourceLimit{Limit: compactStringWordEquationSearchLimit}
+		if steps <= compactStringWordEquationSearchLimit {
+			reason = UnsupportedTheory{Name: "bounded word-equation predicate"}
+		}
 		return checkOutcome{
 			status: checkUnknown,
-			reason: ResourceLimit{Limit: compactStringWordEquationSearchLimit},
+			reason: reason,
 		}, true
 	}
 	if !found {
@@ -187,6 +195,20 @@ func bindBoundedWordEquationGroundConjunct(term Term[BoolSort], constraints *bou
 			return false, false
 		}
 		return assignBoundedWordEquationLengthRange(constraints, id, minimum, maximum, hasMaximum)
+	case stringInRegex:
+		return assignBoundedWordEquationRegex(constraints, value, false)
+	case Not:
+		if membership, ok := value.Value.(stringInRegex); ok {
+			return assignBoundedWordEquationRegex(constraints, membership, true)
+		}
+		return false, false
+	case CompactStringBooleanFormula:
+		if constraints.predicateCount == len(constraints.predicates) {
+			return false, false
+		}
+		constraints.predicates[constraints.predicateCount] = value
+		constraints.predicateCount++
+		return true, false
 	case stringSystem:
 		for _, relation := range value.system.relations() {
 			if relation.Negated &&
@@ -231,6 +253,30 @@ func bindBoundedWordEquationGroundConjunct(term Term[BoolSort], constraints *bou
 	default:
 		return false, false
 	}
+}
+
+func assignBoundedWordEquationRegex(
+	constraints *boundedWordEquationConstraints,
+	membership stringInRegex,
+	negated bool,
+) (bool, bool) {
+	id, symbolic := stringSymbolID(membership.value)
+	if !symbolic || constraints.regexCount == len(constraints.regexes) {
+		return false, false
+	}
+	constraint := symbolicRegexConstraint{
+		id: id, expression: membership.expression, negated: negated,
+	}
+	if value, bound := constraints.model.lookup(id); bound {
+		accepted, known := regexCandidateMembership(value, constraint.expression, constraints.model)
+		if !known {
+			return false, false
+		}
+		return true, accepted == negated
+	}
+	constraints.regexes[constraints.regexCount] = constraint
+	constraints.regexCount++
+	return true, false
 }
 
 func compactStringLengthRange(relation CompactStringRelation) (minimum, maximum int64, hasMaximum bool) {
@@ -528,6 +574,31 @@ func searchCompactStringWordEquationSystem(
 	steps *int,
 ) (stringModel, bool, bool) {
 	if equationIndex == equationCount {
+		for index := 0; index < constraints.regexCount; index++ {
+			constraint := constraints.regexes[index]
+			value, bound := constraints.model.lookup(constraint.id)
+			if !bound {
+				return stringModel{}, false, false
+			}
+			accepted, known := regexCandidateMembership(value, constraint.expression, constraints.model)
+			if !known {
+				return stringModel{}, false, false
+			}
+			if accepted == constraint.negated {
+				return stringModel{}, false, true
+			}
+		}
+		for index := 0; index < constraints.predicateCount; index++ {
+			value, known := evaluateStringBoolean(
+				constraints.predicates[index], constraints.model, integerModel{},
+			)
+			if !known {
+				return stringModel{}, false, false
+			}
+			if !value {
+				return stringModel{}, false, true
+			}
+		}
 		return constraints.model, true, true
 	}
 	*steps++
@@ -572,6 +643,21 @@ func searchCompactStringWordEquationSystem(
 		}
 		candidate := constraints
 		candidate.model.set(id, value)
+		rejected := false
+		for regexIndex := 0; regexIndex < candidate.regexCount; regexIndex++ {
+			regex := candidate.regexes[regexIndex]
+			if regex.id != id {
+				continue
+			}
+			accepted, known := regexCandidateMembership(value, regex.expression, candidate.model)
+			if known && accepted == regex.negated {
+				rejected = true
+				break
+			}
+		}
+		if rejected {
+			continue
+		}
 		result, found, complete := searchCompactStringWordEquationSystem(
 			equations, equationCount, equationIndex, index+1, end, candidate, steps,
 		)
