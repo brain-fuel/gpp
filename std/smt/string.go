@@ -387,7 +387,8 @@ func evaluateBoolWithStringsAndDatatypes(term Term[BoolSort], booleans booleanMo
 func containsStringTheory(term Term[BoolSort]) bool {
 	switch value := term.(type) {
 	case stringContains, stringPrefix, stringSuffix, stringIsDigit, stringInRegex, stringSystem,
-		CompactStringBooleanFormula, CompactStringWordEquation, CompactStringLengthRelation:
+		CompactStringBooleanFormula, CompactStringWordEquation, CompactStringLengthRelation,
+		CompactStringIndexedEquality:
 		return true
 	case Equal:
 		return isStringTerm(value.Left) || isStringTerm(value.Right) || isStringIntegerTerm(value.Left) || isStringIntegerTerm(value.Right)
@@ -441,6 +442,9 @@ func isStringIntegerTerm(term any) bool {
 }
 
 func solveStringAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
+	if outcome, recognized := solveGroundIndexedStringEqualities(assertions); recognized {
+		return outcome, true
+	}
 	if outcome, recognized := solveBoundedWordEquationConjunction(assertions); recognized {
 		return outcome, true
 	}
@@ -1203,6 +1207,26 @@ func integerConstant(term any) (int64, bool) {
 
 func evaluateStringBoolean(term Term[BoolSort], model stringModel, integers integerModel) (bool, bool) {
 	switch value := term.(type) {
+	case CompactStringIndexedEquality:
+		symbol, found := model.lookup(value.SymbolID)
+		if !found {
+			return false, false
+		}
+		var derived Term[StringSort]
+		switch value.Kind {
+		case CompactStringAtEquality:
+			derived = StringAt(StringVal(symbol), Integer{Value: value.Offset})
+		case CompactStringSubstringEquality:
+			derived = StringSubstring(
+				StringVal(symbol),
+				Integer{Value: value.Offset},
+				Integer{Value: value.Length},
+			)
+		default:
+			return false, false
+		}
+		actual, known := evaluateString(derived, stringModel{}, integers)
+		return actual == value.Target, known
 	case CompactStringLengthRelation:
 		left, leftOK := evaluateCompactString(value.Left, model)
 		right, rightOK := evaluateCompactString(value.Right, model)

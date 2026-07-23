@@ -818,6 +818,95 @@ func TestWordEquationDerivedStringOperationInteraction(t *testing.T) {
 	}
 }
 
+func TestGroundIndexedStringEqualities(t *testing.T) {
+	x := StringConst(1, "x")
+	t.Run("at canonical model", func(t *testing.T) {
+		formula := Equal{
+			Left: StringAt(x, Integer{Value: 1}), Right: StringVal("🙂"),
+		}
+		checked := Check(Assert(51, New(), formula))
+		result, ok := checked.(Satisfiable)
+		if !ok {
+			t.Fatalf("result=%T", checked)
+		}
+		if actual, found := StringModelValue(result.Value, x); !found || actual != "a🙂" {
+			t.Fatalf("x=(%q,%v)", actual, found)
+		}
+	})
+
+	t.Run("overlapping substring and at", func(t *testing.T) {
+		formula := And{Values: []Term[BoolSort]{
+			Equal{
+				Left:  StringSubstring(x, Integer{Value: 1}, Integer{Value: 3}),
+				Right: StringVal("b🙂c"),
+			},
+			Equal{
+				Left: StringAt(x, Integer{Value: 2}), Right: StringVal("🙂"),
+			},
+		}}
+		checked := Check(Assert(52, New(), formula))
+		result, ok := checked.(Satisfiable)
+		if !ok {
+			t.Fatalf("result=%T", checked)
+		}
+		if actual, found := StringModelValue(result.Value, x); !found || actual != "ab🙂c" {
+			t.Fatalf("x=(%q,%v)", actual, found)
+		}
+	})
+
+	t.Run("truncated substring fixes length", func(t *testing.T) {
+		formula := Equal{
+			Left:  StringSubstring(x, Integer{Value: 2}, Integer{Value: 8}),
+			Right: StringVal("go"),
+		}
+		checked := Check(Assert(53, New(), formula))
+		result, ok := checked.(Satisfiable)
+		if !ok {
+			t.Fatalf("result=%T", checked)
+		}
+		if actual, found := StringModelValue(result.Value, x); !found || actual != "aago" {
+			t.Fatalf("x=(%q,%v)", actual, found)
+		}
+	})
+
+	t.Run("conflicting placement", func(t *testing.T) {
+		formula := And{Values: []Term[BoolSort]{
+			Equal{Left: StringAt(x, Integer{Value: 0}), Right: StringVal("a")},
+			Equal{Left: StringAt(x, Integer{Value: 0}), Right: StringVal("b")},
+		}}
+		checked := Check(Assert(54, New(), formula))
+		if _, ok := checked.(Unsatisfiable); !ok {
+			t.Fatalf("result=%T", checked)
+		}
+	})
+
+	t.Run("empty result upper bound", func(t *testing.T) {
+		formula := And{Values: []Term[BoolSort]{
+			Equal{Left: StringAt(x, Integer{Value: 1}), Right: StringVal("")},
+			Equal{Left: StringAt(x, Integer{Value: 2}), Right: StringVal("c")},
+		}}
+		checked := Check(Assert(55, New(), formula))
+		if _, ok := checked.(Unsatisfiable); !ok {
+			t.Fatalf("result=%T", checked)
+		}
+	})
+
+	t.Run("reversed ground derived result", func(t *testing.T) {
+		formula := Equal{
+			Left:  StringFromCode(Integer{Value: 97}),
+			Right: StringAt(x, Integer{Value: 0}),
+		}
+		checked := Check(Assert(56, New(), formula))
+		result, ok := checked.(Satisfiable)
+		if !ok {
+			t.Fatalf("result=%T", checked)
+		}
+		if actual, found := StringModelValue(result.Value, x); !found || actual != "a" {
+			t.Fatalf("x=(%q,%v)", actual, found)
+		}
+	})
+}
+
 func TestMultipleWordEquationInteraction(t *testing.T) {
 	x := StringConst(1, "x")
 	y := StringConst(2, "y")
