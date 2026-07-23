@@ -923,6 +923,26 @@ type integerSequenceLengthAffine struct {
 	valid       bool
 }
 
+func containsIntegerSequenceAffineLength(term any) bool {
+	switch value := term.(type) {
+	case sequenceLength:
+		_, ok := value.value.(Term[SequenceSort[IntSort]])
+		return ok
+	case Add:
+		for _, item := range value.Values {
+			if containsIntegerSequenceAffineLength(item) {
+				return true
+			}
+		}
+	case Subtract:
+		return containsIntegerSequenceAffineLength(value.Left) ||
+			containsIntegerSequenceAffineLength(value.Right)
+	case IntegerScale:
+		return containsIntegerSequenceAffineLength(value.Value)
+	}
+	return false
+}
+
 func accumulateIntegerSequenceLengthAffine(
 	term Term[IntSort],
 	multiplier IntegerValue,
@@ -941,7 +961,7 @@ func accumulateIntegerSequenceLengthAffine(
 		form.coefficient = AddIntegerValue(form.coefficient, multiplier)
 		return
 	}
-	if containsIntegerSequenceLength(term) {
+	if containsIntegerSequenceAffineLength(term) {
 		if value, ok := evaluateIntegerWithSequences(
 			term,
 			booleanModel{},
@@ -1034,7 +1054,8 @@ func collectAffineIntegerSequenceLengthEquality(
 	left, leftOK := value.Left.(Term[IntSort])
 	right, rightOK := value.Right.(Term[IntSort])
 	if !leftOK || !rightOK ||
-		(!containsIntegerSequenceLength(left) && !containsIntegerSequenceLength(right)) {
+		(!containsIntegerSequenceAffineLength(left) &&
+			!containsIntegerSequenceAffineLength(right)) {
 		return true, true, false
 	}
 	form := normalizeIntegerSequenceLengthAffine(left, right)
@@ -1085,7 +1106,8 @@ func collectAffineIntegerSequenceLengthBound(
 	model integerSequenceModel,
 	requirements *integerSequenceRequirementSet,
 ) (bool, bool, bool) {
-	if !containsIntegerSequenceLength(left) && !containsIntegerSequenceLength(right) {
+	if !containsIntegerSequenceAffineLength(left) &&
+		!containsIntegerSequenceAffineLength(right) {
 		return true, true, false
 	}
 	form := normalizeIntegerSequenceLengthAffine(left, right)
