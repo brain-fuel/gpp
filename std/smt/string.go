@@ -8,6 +8,7 @@ import (
 const (
 	compactStringLiteral = iota
 	compactStringSymbol
+	compactStringSingleSymbolConcat
 )
 
 const (
@@ -19,10 +20,11 @@ const (
 )
 
 type CompactStringTerm struct {
-	Kind  uint8
-	ID    int
-	Name  string
-	Value string
+	Kind   uint8
+	ID     int
+	Name   string
+	Value  string
+	Suffix string
 }
 
 type CompactStringRelation struct {
@@ -45,6 +47,30 @@ func CompactStringLiteralTerm(value string) CompactStringTerm {
 
 func CompactStringSymbolTerm(id int, name string) CompactStringTerm {
 	return CompactStringTerm{Kind: compactStringSymbol, ID: id, Name: name}
+}
+
+func CompactStringSingleSymbolConcatTerm(prefix string, id int, name, suffix string) CompactStringTerm {
+	return CompactStringTerm{
+		Kind: compactStringSingleSymbolConcat, ID: id, Name: name,
+		Value: prefix, Suffix: suffix,
+	}
+}
+
+func MaterializeCompactStringTerm(term CompactStringTerm) Term[StringSort] {
+	switch term.Kind {
+	case compactStringLiteral:
+		return StringVal(term.Value)
+	case compactStringSymbol:
+		return StringConst(term.ID, term.Name)
+	case compactStringSingleSymbolConcat:
+		return StringConcat(
+			StringVal(term.Value),
+			StringConst(term.ID, term.Name),
+			StringVal(term.Suffix),
+		)
+	default:
+		panic("smt: invalid compact string term")
+	}
 }
 
 func AppendCompactStringRelation(system CompactStringSystem, relation CompactStringRelation) CompactStringSystem {
@@ -326,7 +352,7 @@ func evaluateBoolWithStringsAndDatatypes(term Term[BoolSort], booleans booleanMo
 
 func containsStringTheory(term Term[BoolSort]) bool {
 	switch value := term.(type) {
-	case stringContains, stringPrefix, stringSuffix, stringIsDigit, stringInRegex, stringSystem:
+	case stringContains, stringPrefix, stringSuffix, stringIsDigit, stringInRegex, stringSystem, CompactStringBooleanFormula:
 		return true
 	case Equal:
 		return isStringTerm(value.Left) || isStringTerm(value.Right) || isStringIntegerTerm(value.Left) || isStringIntegerTerm(value.Right)
@@ -345,6 +371,18 @@ func containsStringTheory(term Term[BoolSort]) bool {
 				return true
 			}
 		}
+	case Or:
+		for _, item := range value.Values {
+			if containsStringTheory(item) {
+				return true
+			}
+		}
+	case Implies:
+		return containsStringTheory(value.Left) || containsStringTheory(value.Right)
+	case Iff:
+		return containsStringTheory(value.Left) || containsStringTheory(value.Right)
+	case If[BoolSort]:
+		return containsStringTheory(value.Condition) || containsStringTheory(value.Then) || containsStringTheory(value.Else)
 	}
 	return false
 }
@@ -368,6 +406,12 @@ func isStringIntegerTerm(term any) bool {
 }
 
 func solveStringAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
+	if outcome, recognized := solveCompactStringBooleanAssertions(assertions); recognized {
+		return outcome, true
+	}
+	if containsBooleanStringAssertions(assertions) {
+		return solveBooleanStringAssertions(assertions)
+	}
 	var forcedModel stringModel
 	var symbols stringSymbols
 	for _, assertion := range assertions {
@@ -453,10 +497,10 @@ func solveCompactStringSystem(system CompactStringSystem) (checkOutcome, bool) {
 		if relation.Kind == CompactStringLengthEqual && !relation.Negated && relation.Integer < 0 {
 			return checkOutcome{status: checkUnsat}, true
 		}
-		if relation.Left.Kind == compactStringSymbol {
+		if relation.Left.Kind == compactStringSymbol || relation.Left.Kind == compactStringSingleSymbolConcat {
 			symbols.add(relation.Left.ID)
 		}
-		if relation.Right.Kind == compactStringSymbol {
+		if relation.Right.Kind == compactStringSymbol || relation.Right.Kind == compactStringSingleSymbolConcat {
 			symbols.add(relation.Right.ID)
 		}
 	}
@@ -465,6 +509,32 @@ func solveCompactStringSystem(system CompactStringSystem) (checkOutcome, bool) {
 		for _, relation := range relations {
 			if relation.Kind != CompactStringEqual || relation.Negated {
 				continue
+			}
+			if relation.Left.Kind == compactStringSingleSymbolConcat {
+				if right, ok := evaluateCompactString(relation.Right, model); ok {
+					value, possible := solveCompactSingleSymbolConcat(relation.Left, right)
+					if !possible {
+						return checkOutcome{status: checkUnsat}, true
+					}
+					if existing, bound := model.lookup(relation.Left.ID); bound && existing != value {
+						return checkOutcome{status: checkUnsat}, true
+					}
+					changed = setExistingString(&model, relation.Left.ID, value) || changed
+					continue
+				}
+			}
+			if relation.Right.Kind == compactStringSingleSymbolConcat {
+				if left, ok := evaluateCompactString(relation.Left, model); ok {
+					value, possible := solveCompactSingleSymbolConcat(relation.Right, left)
+					if !possible {
+						return checkOutcome{status: checkUnsat}, true
+					}
+					if existing, bound := model.lookup(relation.Right.ID); bound && existing != value {
+						return checkOutcome{status: checkUnsat}, true
+					}
+					changed = setExistingString(&model, relation.Right.ID, value) || changed
+					continue
+				}
 			}
 			left, leftOK := evaluateCompactString(relation.Left, model)
 			right, rightOK := evaluateCompactString(relation.Right, model)
@@ -551,25 +621,51 @@ func evaluateCompactString(term CompactStringTerm, model stringModel) (string, b
 	if term.Kind == compactStringSymbol {
 		return model.lookup(term.ID)
 	}
+	if term.Kind == compactStringSingleSymbolConcat {
+		value, ok := model.lookup(term.ID)
+		if !ok {
+			return "", false
+		}
+		return term.Value + value + term.Suffix, true
+	}
 	return "", false
 }
 
+func solveCompactSingleSymbolConcat(term CompactStringTerm, target string) (string, bool) {
+	if len(target) < len(term.Value)+len(term.Suffix) ||
+		!strings.HasPrefix(target, term.Value) || !strings.HasSuffix(target, term.Suffix) {
+		return "", false
+	}
+	return target[len(term.Value) : len(target)-len(term.Suffix)], true
+}
+
+func CompactStringModelValue(model Model, term CompactStringTerm) (string, bool) {
+	return evaluateCompactString(term, model.strings)
+}
+
+func CompactStringRelationValue(model Model, relation CompactStringRelation) (bool, bool) {
+	return evaluateCompactStringRelation(relation, model.strings)
+}
+
 func evaluateCompactStringRelation(relation CompactStringRelation, model stringModel) (bool, bool) {
-	left, leftOK := evaluateCompactString(relation.Left, model)
-	result, complete := false, leftOK
+	result, complete := false, false
 	switch relation.Kind {
 	case CompactStringEqual:
-		right, rightOK := evaluateCompactString(relation.Right, model)
-		result, complete = left == right, leftOK && rightOK
+		result, complete = evaluateCompactStringEquality(relation.Left, relation.Right, model)
 	case CompactStringLengthEqual:
+		left, leftOK := evaluateCompactString(relation.Left, model)
 		result = int64(len(DecodeStringCodePoints(left))) == relation.Integer
+		complete = leftOK
 	case CompactStringContains:
+		left, leftOK := evaluateCompactString(relation.Left, model)
 		right, rightOK := evaluateCompactString(relation.Right, model)
 		result, complete = strings.Contains(left, right), leftOK && rightOK
 	case CompactStringPrefix:
+		left, leftOK := evaluateCompactString(relation.Left, model)
 		right, rightOK := evaluateCompactString(relation.Right, model)
 		result, complete = strings.HasPrefix(left, right), leftOK && rightOK
 	case CompactStringSuffix:
+		left, leftOK := evaluateCompactString(relation.Left, model)
 		right, rightOK := evaluateCompactString(relation.Right, model)
 		result, complete = strings.HasSuffix(left, right), leftOK && rightOK
 	default:
@@ -581,14 +677,46 @@ func evaluateCompactStringRelation(relation CompactStringRelation, model stringM
 	return result, complete
 }
 
+func evaluateCompactStringEquality(left, right CompactStringTerm, model stringModel) (bool, bool) {
+	if left.Kind == compactStringSingleSymbolConcat {
+		if target, ok := evaluateCompactString(right, model); ok {
+			value, bound := model.lookup(left.ID)
+			if !bound {
+				return false, false
+			}
+			return compactSingleSymbolConcatMatches(left, value, target), true
+		}
+	}
+	if right.Kind == compactStringSingleSymbolConcat {
+		if target, ok := evaluateCompactString(left, model); ok {
+			value, bound := model.lookup(right.ID)
+			if !bound {
+				return false, false
+			}
+			return compactSingleSymbolConcatMatches(right, value, target), true
+		}
+	}
+	leftValue, leftOK := evaluateCompactString(left, model)
+	rightValue, rightOK := evaluateCompactString(right, model)
+	return leftValue == rightValue, leftOK && rightOK
+}
+
+func compactSingleSymbolConcatMatches(term CompactStringTerm, value, target string) bool {
+	if len(target) != len(term.Value)+len(value)+len(term.Suffix) ||
+		!strings.HasPrefix(target, term.Value) || !strings.HasSuffix(target, term.Suffix) {
+		return false
+	}
+	return target[len(term.Value):len(target)-len(term.Suffix)] == value
+}
+
 func collectStringSymbolsBoolean(term Term[BoolSort], symbols *stringSymbols) {
 	switch value := term.(type) {
 	case stringSystem:
 		for _, relation := range value.system.relations() {
-			if relation.Left.Kind == compactStringSymbol {
+			if relation.Left.Kind == compactStringSymbol || relation.Left.Kind == compactStringSingleSymbolConcat {
 				symbols.add(relation.Left.ID)
 			}
-			if relation.Right.Kind == compactStringSymbol {
+			if relation.Right.Kind == compactStringSymbol || relation.Right.Kind == compactStringSingleSymbolConcat {
 				symbols.add(relation.Right.ID)
 			}
 		}
@@ -789,8 +917,63 @@ func bindForcedStringAssertion(term Term[BoolSort], negated bool, model *stringM
 		if rightSymbol && leftOK {
 			return setExistingString(model, rightID, left)
 		}
+		if rightOK {
+			if changed, handled := bindSingleUnknownStringConcat(value.Left, right, model); handled {
+				return changed
+			}
+		}
+		if leftOK {
+			if changed, handled := bindSingleUnknownStringConcat(value.Right, left, model); handled {
+				return changed
+			}
+		}
 	}
 	return false
+}
+
+func bindSingleUnknownStringConcat(term any, target string, model *stringModel) (bool, bool) {
+	concat, ok := term.(stringConcat[StringSort])
+	if !ok {
+		return false, false
+	}
+	prefix, suffix := "", ""
+	unknownID := 0
+	foundUnknown := false
+	for _, item := range concat.values {
+		if id, symbolic := stringSymbolID(item); symbolic {
+			if bound, exists := model.lookup(id); exists {
+				if foundUnknown {
+					suffix += bound
+				} else {
+					prefix += bound
+				}
+				continue
+			}
+			if foundUnknown {
+				return false, false
+			}
+			unknownID, foundUnknown = id, true
+			continue
+		}
+		part, known := evaluateString(item, *model, integerModel{})
+		if !known {
+			return false, false
+		}
+		if foundUnknown {
+			suffix += part
+		} else {
+			prefix += part
+		}
+	}
+	if !foundUnknown {
+		return false, false
+	}
+	if len(target) < len(prefix)+len(suffix) ||
+		!strings.HasPrefix(target, prefix) || !strings.HasSuffix(target, suffix) {
+		return setExistingString(model, unknownID, ""), true
+	}
+	middle := target[len(prefix) : len(target)-len(suffix)]
+	return setExistingString(model, unknownID, middle), true
 }
 
 func synthesizeStringAssertion(term Term[BoolSort], negated bool, model *stringModel) {
@@ -884,6 +1067,8 @@ func integerConstant(term any) (int64, bool) {
 
 func evaluateStringBoolean(term Term[BoolSort], model stringModel, integers integerModel) (bool, bool) {
 	switch value := term.(type) {
+	case CompactStringBooleanFormula:
+		return evaluateCompactStringBooleanModel(value, model)
 	case stringSystem:
 		for _, relation := range value.system.relations() {
 			result, ok := evaluateCompactStringRelation(relation, model)
@@ -892,6 +1077,34 @@ func evaluateStringBoolean(term Term[BoolSort], model stringModel, integers inte
 			}
 		}
 		return true, true
+	case Or:
+		for _, item := range value.Values {
+			result, ok := evaluateStringBoolean(item, model, integers)
+			if !ok {
+				return false, false
+			}
+			if result {
+				return true, true
+			}
+		}
+		return false, true
+	case Implies:
+		left, leftOK := evaluateStringBoolean(value.Left, model, integers)
+		right, rightOK := evaluateStringBoolean(value.Right, model, integers)
+		return !left || right, leftOK && rightOK
+	case Iff:
+		left, leftOK := evaluateStringBoolean(value.Left, model, integers)
+		right, rightOK := evaluateStringBoolean(value.Right, model, integers)
+		return left == right, leftOK && rightOK
+	case If[BoolSort]:
+		condition, ok := evaluateStringBoolean(value.Condition, model, integers)
+		if !ok {
+			return false, false
+		}
+		if condition {
+			return evaluateStringBoolean(value.Then, model, integers)
+		}
+		return evaluateStringBoolean(value.Else, model, integers)
 	case Bool:
 		return value.Value, true
 	case Not:

@@ -174,6 +174,88 @@ func TestStringRegexProvesEmptySingletonIntersection(t *testing.T) {
 	}
 }
 
+func TestStringRegexBooleanBranchModels(t *testing.T) {
+	x := StringConst(1, "x")
+	a := StringInRegex(x, StringToRegex(StringVal("a")))
+	b := StringInRegex(x, StringToRegex(StringVal("b")))
+	c := StringInRegex(x, StringToRegex(StringVal("c")))
+
+	choice := And{Values: []Term[BoolSort]{
+		Or{Values: []Term[BoolSort]{a, b}},
+		Not{Value: a},
+	}}
+	checked := Check(Assert(14, New(), choice))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("choice result=%T", checked)
+	}
+	if actual, found := StringModelValue(result.Value, x); !found || actual != "b" {
+		t.Fatalf("choice x=(%q,%v)", actual, found)
+	}
+	if valid, found := BoolValue(result.Value, choice); !found || !valid {
+		t.Fatalf("choice formula=(%v,%v)", valid, found)
+	}
+
+	impossibleImplication := And{Values: []Term[BoolSort]{
+		a,
+		Implies{Left: a, Right: b},
+	}}
+	checked = Check(Assert(15, New(), impossibleImplication))
+	if _, unsat := checked.(Unsatisfiable); !unsat {
+		t.Fatalf("implication result=%T", checked)
+	}
+
+	impossibleEquivalence := And{Values: []Term[BoolSort]{
+		Or{Values: []Term[BoolSort]{a, b}},
+		Iff{Left: a, Right: b},
+	}}
+	checked = Check(Assert(16, New(), impossibleEquivalence))
+	if _, unsat := checked.(Unsatisfiable); !unsat {
+		t.Fatalf("equivalence result=%T", checked)
+	}
+
+	conditional := And{Values: []Term[BoolSort]{
+		Not{Value: a},
+		If[BoolSort]{Condition: a, Then: c, Else: b},
+	}}
+	checked = Check(Assert(17, New(), conditional))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("conditional result=%T", checked)
+	}
+	if actual, found := StringModelValue(result.Value, x); !found || actual != "b" {
+		t.Fatalf("conditional x=(%q,%v)", actual, found)
+	}
+}
+
+func TestStringSingleUnknownWordEquation(t *testing.T) {
+	x := StringConst(1, "x")
+	equation := Equal{
+		Left:  StringConcat(StringVal("go-"), x, StringVal("!")),
+		Right: StringVal("go-forge!"),
+	}
+	checked := Check(Assert(18, New(), equation))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", checked)
+	}
+	if actual, found := StringModelValue(result.Value, x); !found || actual != "forge" {
+		t.Fatalf("x=(%q,%v)", actual, found)
+	}
+	if valid, found := BoolValue(result.Value, equation); !found || !valid {
+		t.Fatalf("equation=(%v,%v)", valid, found)
+	}
+
+	impossible := Equal{
+		Left:  StringConcat(StringVal("go-"), x),
+		Right: StringVal("no-forge"),
+	}
+	checked = Check(Assert(19, New(), impossible))
+	if _, ok := checked.(Unsatisfiable); !ok {
+		t.Fatalf("impossible result=%T", checked)
+	}
+}
+
 func TestStringSymbolModel(t *testing.T) {
 	x := StringConst(1, "x")
 	formula := And{Values: []Term[BoolSort]{
@@ -261,5 +343,47 @@ func TestCompactStringSystemModel(t *testing.T) {
 	}
 	if valid, found := BoolValue(result.Value, term); !found || !valid {
 		t.Fatalf("formula=(%v,%v)", valid, found)
+	}
+}
+
+func TestCompactStringBooleanFormulaModel(t *testing.T) {
+	x := CompactStringSymbolTerm(1, "x")
+	a, ok := CompactStringRegexLiteralFormula(x, "a")
+	if !ok {
+		t.Fatal("expected compact a membership")
+	}
+	b, _ := CompactStringRegexLiteralFormula(x, "b")
+	c, _ := CompactStringRegexLiteralFormula(x, "c")
+	aOrB, _ := CompactStringBooleanOrFormula(a, b)
+	notA, _ := CompactStringBooleanNotFormula(a)
+	notB, _ := CompactStringBooleanNotFormula(b)
+	notC, _ := CompactStringBooleanNotFormula(c)
+	implication, _ := CompactStringBooleanOrFormula(notB, notC)
+	aAndC, _ := CompactStringBooleanAndFormula(a, c)
+	notAAndB, _ := CompactStringBooleanAndFormula(notA, b)
+	conditional, _ := CompactStringBooleanOrFormula(aAndC, notAAndB)
+	formula, _ := CompactStringBooleanAndFormula(aOrB, notA)
+	formula, _ = CompactStringBooleanAndFormula(formula, implication)
+	formula, ok = CompactStringBooleanAndFormula(formula, conditional)
+	if !ok {
+		t.Fatal("expected formula to fit the compact postfix arena")
+	}
+
+	checked := Check(Assert(20, New(), formula))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", checked)
+	}
+	if value, found := CompactStringModelValue(result.Value, x); !found || value != "b" {
+		t.Fatalf("x=(%q,%v)", value, found)
+	}
+	if valid, found := CompactStringBooleanValue(result.Value, formula); !found || !valid {
+		t.Fatalf("formula=(%v,%v)", valid, found)
+	}
+
+	contradiction, _ := CompactStringBooleanAndFormula(a, notA)
+	checked = Check(Assert(21, New(), contradiction))
+	if _, unsat := checked.(Unsatisfiable); !unsat {
+		t.Fatalf("contradiction result=%T", checked)
 	}
 }
