@@ -288,6 +288,9 @@ func (e *engine) solveAdditional(assumptions []Term[BoolSort]) checkOutcome {
 	if outcome, recognized := solveCompactArrayIntegerExchange(allAssertions); recognized {
 		return outcome
 	}
+	if outcome, recognized := solveGroundIntegerSequenceAssertions(allAssertions); recognized {
+		return outcome
+	}
 	integerTheory := false
 	eufTheory := false
 	realTheory := false
@@ -571,6 +574,9 @@ func evaluateBool(term Term[BoolSort], booleans booleanModel, integers integerMo
 		}
 		return evaluateBool(value.Else, booleans, integers, reals)
 	case Equal:
+		if result, ok := evaluateIntegerSequenceEquality(value, booleans, integers, reals); ok {
+			return result, true
+		}
 		if left, ok := value.Left.(Term[BoolSort]); ok {
 			right, rightOK := value.Right.(Term[BoolSort])
 			if !rightOK {
@@ -774,6 +780,16 @@ func evaluateIntegerWithBitVectors(term Term[IntSort], booleans booleanModel, in
 			return IntegerValue{}, false
 		}
 		return BitVectorToIntegerValue(operand, value.signed), true
+	case sequenceLength:
+		sequence, ok := value.value.(Term[SequenceSort[IntSort]])
+		if !ok {
+			return IntegerValue{}, false
+		}
+		evaluated, ok := evaluateIntegerSequence(sequence, booleans, integers, reals)
+		if !ok {
+			return IntegerValue{}, false
+		}
+		return NewIntegerValue(int64(evaluated.Len())), true
 	default:
 		return IntegerValue{}, false
 	}
