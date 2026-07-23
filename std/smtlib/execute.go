@@ -2102,6 +2102,21 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 		if values, ok := stringTerms(); ok && len(values) == 1 {
 			return dynamicTerm{sort: sortInt, integer: smt.StringLength(values[0])}, nil
 		}
+	case "str.<", "str.<=":
+		if values, ok := stringTerms(); ok && len(values) >= 2 {
+			comparisons := make([]smt.Term[smt.BoolSort], len(values)-1)
+			for index := 1; index < len(values); index++ {
+				if operator == "str.<" {
+					comparisons[index-1] = smt.StringLess(values[index-1], values[index])
+				} else {
+					comparisons[index-1] = smt.StringLessEqual(values[index-1], values[index])
+				}
+			}
+			if len(comparisons) == 1 {
+				return dynamicTerm{sort: sortBool, boolean: comparisons[0]}, nil
+			}
+			return dynamicTerm{sort: sortBool, boolean: smt.And{Values: comparisons}}, nil
+		}
 	case "str.contains":
 		if values, ok := stringTerms(); ok && len(values) == 2 {
 			return dynamicTerm{sort: sortBool, boolean: smt.StringContains(values[0], values[1])}, nil

@@ -384,7 +384,7 @@ func bindBoundedWordEquationGroundConjunct(term Term[BoolSort], constraints *bou
 		return appendBoundedWordEquationPredicate(constraints, value)
 	case CompactStringReplaceEquality:
 		return appendBoundedWordEquationPredicate(constraints, value)
-	case stringContains, stringPrefix, stringSuffix, stringIsDigit:
+	case stringContains, stringPrefix, stringSuffix, stringLess, stringLessEqual, stringIsDigit:
 		return appendBoundedWordEquationPredicate(constraints, value)
 	case Or, Implies, Iff, If[BoolSort]:
 		return appendBoundedWordEquationPredicate(constraints, value)
@@ -456,7 +456,7 @@ func appendBoundedWordEquationPredicate(
 
 func isBoundedWordEquationPredicate(term Term[BoolSort]) bool {
 	switch value := term.(type) {
-	case Bool, stringContains, stringPrefix, stringSuffix, stringIsDigit,
+	case Bool, stringContains, stringPrefix, stringSuffix, stringLess, stringLessEqual, stringIsDigit,
 		stringInRegex, CompactStringBooleanFormula, CompactStringLengthRelation,
 		CompactStringIndexedEquality, CompactStringReplaceEquality:
 		return true
@@ -469,7 +469,7 @@ func isBoundedWordEquationPredicate(term Term[BoolSort]) bool {
 		return isBoundedWordEquationIntegerRelation(value.Left, value.Right)
 	case stringSystem:
 		for _, relation := range value.system.relations() {
-			if relation.Kind > CompactStringSuffix {
+			if relation.Kind > CompactStringLessEqual {
 				return false
 			}
 		}

@@ -171,6 +171,8 @@ type Term[S any] enum {
 	stringContains(Value Term[StringSort], Substring Term[StringSort]) Term[BoolSort]
 	stringPrefix(Prefix Term[StringSort], Value Term[StringSort]) Term[BoolSort]
 	stringSuffix(Suffix Term[StringSort], Value Term[StringSort]) Term[BoolSort]
+	stringLess(Left Term[StringSort], Right Term[StringSort]) Term[BoolSort]
+	stringLessEqual(Left Term[StringSort], Right Term[StringSort]) Term[BoolSort]
 	stringAt(Value Term[StringSort], Index Term[IntSort]) Term[S]
 	stringSubstring(Value Term[StringSort], Offset Term[IntSort], Length Term[IntSort]) Term[S]
 	stringIndexOf(Value Term[StringSort], Substring Term[StringSort], Offset Term[IntSort]) Term[IntSort]
@@ -557,6 +559,8 @@ func StringLength(value Term[StringSort]) Term[IntSort] { return stringLength(va
 func StringContains(value Term[StringSort], substring Term[StringSort]) Term[BoolSort] { return stringContains(value, substring) }
 func StringHasPrefix(value Term[StringSort], prefix Term[StringSort]) Term[BoolSort] { return stringPrefix(prefix, value) }
 func StringHasSuffix(value Term[StringSort], suffix Term[StringSort]) Term[BoolSort] { return stringSuffix(suffix, value) }
+func StringLess(left Term[StringSort], right Term[StringSort]) Term[BoolSort] { return stringLess(left, right) }
+func StringLessEqual(left Term[StringSort], right Term[StringSort]) Term[BoolSort] { return stringLessEqual(left, right) }
 func StringAt(value Term[StringSort], index Term[IntSort]) Term[StringSort] { return Term[StringSort].stringAt(value, index) }
 func StringSubstring(value Term[StringSort], offset Term[IntSort], length Term[IntSort]) Term[StringSort] { return Term[StringSort].stringSubstring(value, offset, length) }
 func StringIndexOf(value Term[StringSort], substring Term[StringSort], offset Term[IntSort]) Term[IntSort] { return stringIndexOf(value, substring, offset) }

@@ -114,6 +114,8 @@ func TestExecuteStringConversionsAndReplaceAll(t *testing.T) {
 (assert (= (str.replace_all "ab" "" "x") "ab"))
 (assert (= (str.replace_re "abc123" (re.+ (re.range "0" "9")) "!") "abc!23"))
 (assert (= (str.replace_re_all "abc123" (re.+ (re.range "0" "9")) "!") "abc!!!"))
+(assert (str.< "a" "aa" "b"))
+(assert (str.<= "a" "a" "b"))
 (assert (= (str.to_int "0012") 12))
 (assert (= (str.to_int "12x") (- 1)))
 (assert (= (str.from_int 12) "12"))

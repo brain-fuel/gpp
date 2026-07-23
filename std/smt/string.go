@@ -19,6 +19,8 @@ const (
 	CompactStringContains
 	CompactStringPrefix
 	CompactStringSuffix
+	CompactStringLess
+	CompactStringLessEqual
 )
 
 type CompactStringTerm struct {
@@ -194,6 +196,65 @@ func DecodeStringCodePoints(value string) []rune {
 		offset += width
 	}
 	return result
+}
+
+// CompareStringValues compares SMT-LIB strings by Unicode code point without
+// allocating decoded rune slices. It returns -1, 0, or 1.
+func CompareStringValues(left, right string) int {
+	leftOffset, rightOffset := 0, 0
+	for leftOffset < len(left) && rightOffset < len(right) {
+		leftCode, leftWidth := nextSMTStringCodePoint(left, leftOffset)
+		rightCode, rightWidth := nextSMTStringCodePoint(right, rightOffset)
+		if leftCode < rightCode {
+			return -1
+		}
+		if leftCode > rightCode {
+			return 1
+		}
+		leftOffset += leftWidth
+		rightOffset += rightWidth
+	}
+	if leftOffset < len(left) {
+		return 1
+	}
+	if rightOffset < len(right) {
+		return -1
+	}
+	return 0
+}
+
+func compareSMTStrings(left, right string) int {
+	return CompareStringValues(left, right)
+}
+
+func nextSMTStringCodePoint(value string, offset int) (rune, int) {
+	first := value[offset]
+	if first < 0x80 {
+		return rune(first), 1
+	}
+	width := 0
+	var code rune
+	switch {
+	case first&0xe0 == 0xc0:
+		width, code = 2, rune(first&0x1f)
+	case first&0xf0 == 0xe0:
+		width, code = 3, rune(first&0x0f)
+	case first&0xf8 == 0xf0:
+		width, code = 4, rune(first&0x07)
+	default:
+		return utf8.RuneError, 1
+	}
+	if offset+width > len(value) {
+		return utf8.RuneError, 1
+	}
+	for index := 1; index < width; index++ {
+		next := value[offset+index]
+		if next&0xc0 != 0x80 {
+			return utf8.RuneError, 1
+		}
+		code = code<<6 | rune(next&0x3f)
+	}
+	return code, width
 }
 
 func EncodeStringCodePoint(value int64) (string, bool) {
@@ -395,7 +456,7 @@ func evaluateBoolWithStringsAndDatatypes(term Term[BoolSort], booleans booleanMo
 
 func containsStringTheory(term Term[BoolSort]) bool {
 	switch value := term.(type) {
-	case stringContains, stringPrefix, stringSuffix, stringIsDigit, stringInRegex, stringSystem,
+	case stringContains, stringPrefix, stringSuffix, stringLess, stringLessEqual, stringIsDigit, stringInRegex, stringSystem,
 		CompactStringBooleanFormula, CompactStringWordEquation, CompactStringLengthRelation,
 		CompactStringIndexedEquality, CompactStringReplaceEquality, *CompactGroundIndexedStringFormula,
 		CompactStringIndexOfEquality, *CompactGroundStringEvaluationFormula:
@@ -452,6 +513,9 @@ func isStringIntegerTerm(term any) bool {
 }
 
 func solveStringAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
+	if outcome, recognized := solveDirectCompactStringOrders(assertions); recognized {
+		return outcome, true
+	}
 	if outcome, recognized := solveGroundStringReplaceEqualities(assertions); recognized {
 		return outcome, true
 	}
@@ -478,7 +542,13 @@ func solveStringAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
 	}
 	var forcedModel stringModel
 	var symbols stringSymbols
+	if contradictoryStrictStringOrderCycle(assertions) {
+		return checkOutcome{status: checkUnsat}, true
+	}
 	for _, assertion := range assertions {
+		if contradictoryReflexiveStringOrder(assertion, false) {
+			return checkOutcome{status: checkUnsat}, true
+		}
 		if value, ground := evaluateStringBoolean(assertion, stringModel{}, integerModel{}); ground && !value {
 			return checkOutcome{status: checkUnsat}, true
 		}
@@ -532,6 +602,206 @@ func solveStringAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
 		}
 	}
 	return checkOutcome{status: checkSat, strings: model}, true
+}
+
+func solveDirectCompactStringOrders(
+	assertions []Term[BoolSort],
+) (checkOutcome, bool) {
+	var system CompactStringSystem
+	recognized := true
+	var collect func(Term[BoolSort], bool)
+	collect = func(term Term[BoolSort], negated bool) {
+		if !recognized {
+			return
+		}
+		switch value := term.(type) {
+		case Not:
+			collect(value.Value, !negated)
+		case And:
+			if negated {
+				recognized = false
+				return
+			}
+			for _, item := range value.Values {
+				collect(item, false)
+			}
+		case BooleanConjunction:
+			if negated {
+				recognized = false
+				return
+			}
+			items, polarities := value.values()
+			for index, item := range items {
+				collect(item, polarities[index])
+			}
+		case stringLess:
+			left, leftOK := compactDirectStringTerm(value.left)
+			right, rightOK := compactDirectStringTerm(value.right)
+			if !leftOK || !rightOK {
+				recognized = false
+				return
+			}
+			system = AppendCompactStringRelation(system, CompactStringRelation{
+				Kind: CompactStringLess, Negated: negated, Left: left, Right: right,
+			})
+		case stringLessEqual:
+			left, leftOK := compactDirectStringTerm(value.left)
+			right, rightOK := compactDirectStringTerm(value.right)
+			if !leftOK || !rightOK {
+				recognized = false
+				return
+			}
+			system = AppendCompactStringRelation(system, CompactStringRelation{
+				Kind: CompactStringLessEqual, Negated: negated, Left: left, Right: right,
+			})
+		default:
+			recognized = false
+		}
+	}
+	for _, assertion := range assertions {
+		collect(assertion, false)
+	}
+	if !recognized || system.Count == 0 {
+		return checkOutcome{}, false
+	}
+	return solveCompactStringSystem(system)
+}
+
+func compactDirectStringTerm(term Term[StringSort]) (CompactStringTerm, bool) {
+	switch value := term.(type) {
+	case stringValue[StringSort]:
+		return CompactStringLiteralTerm(value.value), true
+	case stringSymbol[StringSort]:
+		return CompactStringSymbolTerm(value.iD, value.name), true
+	default:
+		return CompactStringTerm{}, false
+	}
+}
+
+func contradictoryReflexiveStringOrder(term Term[BoolSort], negated bool) bool {
+	switch value := term.(type) {
+	case Not:
+		return contradictoryReflexiveStringOrder(value.Value, !negated)
+	case And:
+		if negated {
+			return false
+		}
+		for _, item := range value.Values {
+			if contradictoryReflexiveStringOrder(item, false) {
+				return true
+			}
+		}
+	case BooleanConjunction:
+		if negated {
+			return false
+		}
+		items, polarities := value.values()
+		for index, item := range items {
+			if contradictoryReflexiveStringOrder(item, polarities[index]) {
+				return true
+			}
+		}
+	case stringLess:
+		left, leftOK := stringSymbolID(value.left)
+		right, rightOK := stringSymbolID(value.right)
+		if !negated && leftOK && rightOK && left == right {
+			return true
+		}
+		rightValue, rightGround := evaluateString(value.right, stringModel{}, integerModel{})
+		return !negated && rightGround && rightValue == ""
+	case stringLessEqual:
+		left, leftOK := stringSymbolID(value.left)
+		right, rightOK := stringSymbolID(value.right)
+		if negated && leftOK && rightOK && left == right {
+			return true
+		}
+		leftValue, leftGround := evaluateString(value.left, stringModel{}, integerModel{})
+		return negated && leftGround && leftValue == ""
+	}
+	return false
+}
+
+type stringOrderEdge struct {
+	from   int
+	to     int
+	strict bool
+}
+
+func contradictoryStrictStringOrderCycle(assertions []Term[BoolSort]) bool {
+	var edges [64]stringOrderEdge
+	count := 0
+	var collect func(Term[BoolSort], bool)
+	collect = func(term Term[BoolSort], negated bool) {
+		switch value := term.(type) {
+		case Not:
+			collect(value.Value, !negated)
+		case And:
+			if !negated {
+				for _, item := range value.Values {
+					collect(item, false)
+				}
+			}
+		case BooleanConjunction:
+			if !negated {
+				items, polarities := value.values()
+				for index, item := range items {
+					collect(item, polarities[index])
+				}
+			}
+		case stringLess:
+			left, leftOK := stringSymbolID(value.left)
+			right, rightOK := stringSymbolID(value.right)
+			if leftOK && rightOK && count < len(edges) {
+				if negated {
+					left, right = right, left
+				}
+				edges[count] = stringOrderEdge{from: left, to: right, strict: !negated}
+				count++
+			}
+		case stringLessEqual:
+			left, leftOK := stringSymbolID(value.left)
+			right, rightOK := stringSymbolID(value.right)
+			if leftOK && rightOK && count < len(edges) {
+				if negated {
+					left, right = right, left
+				}
+				edges[count] = stringOrderEdge{from: left, to: right, strict: negated}
+				count++
+			}
+		}
+	}
+	for _, assertion := range assertions {
+		collect(assertion, false)
+	}
+	var path [65]int
+	var reaches func(int, int, int, bool) bool
+	reaches = func(current, target, depth int, strict bool) bool {
+		if current == target {
+			return strict
+		}
+		if depth == len(path) {
+			return false
+		}
+		for index := 0; index < depth; index++ {
+			if path[index] == current {
+				return false
+			}
+		}
+		path[depth] = current
+		for index := 0; index < count; index++ {
+			if edges[index].from == current &&
+				reaches(edges[index].to, target, depth+1, strict || edges[index].strict) {
+				return true
+			}
+		}
+		return false
+	}
+	for index := 0; index < count; index++ {
+		if reaches(edges[index].to, edges[index].from, 0, edges[index].strict) {
+			return true
+		}
+	}
+	return false
 }
 
 func solveGroundAssignedStringEvaluation(
@@ -674,6 +944,9 @@ func solveCompactStringSystem(system CompactStringSystem) (checkOutcome, bool) {
 	var model stringModel
 	var symbols stringSymbols
 	relations := system.relations()
+	if contradictoryCompactStringOrder(relations) {
+		return checkOutcome{status: checkUnsat}, true
+	}
 	for _, relation := range relations {
 		if relation.Left.Kind == compactStringLiteral &&
 			(relation.Kind >= CompactStringLengthEqual && relation.Kind <= CompactStringLengthLessEqual ||
@@ -769,7 +1042,8 @@ func solveCompactStringSystem(system CompactStringSystem) (checkOutcome, bool) {
 		}
 	}
 	for _, relation := range relations {
-		if relation.Kind < CompactStringContains || relation.Left.Kind != compactStringSymbol {
+		if (relation.Kind < CompactStringContains || relation.Kind > CompactStringSuffix) ||
+			relation.Left.Kind != compactStringSymbol {
 			continue
 		}
 		if _, bound := model.lookup(relation.Left.ID); bound {
@@ -784,6 +1058,18 @@ func solveCompactStringSystem(system CompactStringSystem) (checkOutcome, bool) {
 			candidate = ""
 		}
 		setExistingString(&model, relation.Left.ID, candidate)
+	}
+	for pass := 0; pass < len(relations)+1; pass++ {
+		changed := false
+		for _, relation := range relations {
+			if relation.Kind != CompactStringLess && relation.Kind != CompactStringLessEqual {
+				continue
+			}
+			changed = synthesizeCompactStringOrder(relation, &model) || changed
+		}
+		if !changed {
+			break
+		}
 	}
 	var lengthConstraints boundedWordEquationConstraints
 	for _, relation := range relations {
@@ -838,6 +1124,220 @@ func solveCompactStringSystem(system CompactStringSystem) (checkOutcome, bool) {
 		}
 	}
 	return checkOutcome{status: checkSat, strings: model}, true
+}
+
+func contradictoryCompactStringOrder(relations []CompactStringRelation) bool {
+	type bounds struct {
+		id          int
+		lower       string
+		upper       string
+		hasLower    bool
+		hasUpper    bool
+		lowerStrict bool
+		upperStrict bool
+	}
+	var orderBounds [16]bounds
+	boundCount := 0
+	boundFor := func(id int) *bounds {
+		for index := 0; index < boundCount; index++ {
+			if orderBounds[index].id == id {
+				return &orderBounds[index]
+			}
+		}
+		if boundCount == len(orderBounds) {
+			return nil
+		}
+		orderBounds[boundCount].id = id
+		boundCount++
+		return &orderBounds[boundCount-1]
+	}
+	addLower := func(id int, value string, strict bool) {
+		target := boundFor(id)
+		if target == nil {
+			return
+		}
+		order := compareSMTStrings(value, target.lower)
+		if !target.hasLower || order > 0 {
+			target.lower, target.hasLower, target.lowerStrict = value, true, strict
+		} else if order == 0 {
+			target.lowerStrict = target.lowerStrict || strict
+		}
+	}
+	addUpper := func(id int, value string, strict bool) {
+		target := boundFor(id)
+		if target == nil {
+			return
+		}
+		order := compareSMTStrings(value, target.upper)
+		if !target.hasUpper || order < 0 {
+			target.upper, target.hasUpper, target.upperStrict = value, true, strict
+		} else if order == 0 {
+			target.upperStrict = target.upperStrict || strict
+		}
+	}
+	var edges [64]stringOrderEdge
+	count := 0
+	for _, relation := range relations {
+		if relation.Kind != CompactStringLess && relation.Kind != CompactStringLessEqual {
+			continue
+		}
+		left, leftOK := evaluateCompactString(relation.Left, stringModel{})
+		right, rightOK := evaluateCompactString(relation.Right, stringModel{})
+		if leftOK && rightOK {
+			valid, _ := evaluateCompactStringRelation(relation, stringModel{})
+			if !valid {
+				return true
+			}
+		}
+		if relation.Kind == CompactStringLess && !relation.Negated && rightOK && right == "" ||
+			relation.Kind == CompactStringLessEqual && relation.Negated && leftOK && left == "" {
+			return true
+		}
+		if relation.Left.Kind == compactStringSymbol && rightOK {
+			switch {
+			case relation.Kind == CompactStringLess && !relation.Negated:
+				addUpper(relation.Left.ID, right, true)
+			case relation.Kind == CompactStringLess && relation.Negated:
+				addLower(relation.Left.ID, right, false)
+			case relation.Kind == CompactStringLessEqual && !relation.Negated:
+				addUpper(relation.Left.ID, right, false)
+			case relation.Kind == CompactStringLessEqual && relation.Negated:
+				addLower(relation.Left.ID, right, true)
+			}
+		}
+		if relation.Right.Kind == compactStringSymbol && leftOK {
+			switch {
+			case relation.Kind == CompactStringLess && !relation.Negated:
+				addLower(relation.Right.ID, left, true)
+			case relation.Kind == CompactStringLess && relation.Negated:
+				addUpper(relation.Right.ID, left, false)
+			case relation.Kind == CompactStringLessEqual && !relation.Negated:
+				addLower(relation.Right.ID, left, false)
+			case relation.Kind == CompactStringLessEqual && relation.Negated:
+				addUpper(relation.Right.ID, left, true)
+			}
+		}
+		if relation.Left.Kind != compactStringSymbol ||
+			relation.Right.Kind != compactStringSymbol {
+			continue
+		}
+		if count == len(edges) {
+			return false
+		}
+		from, to := relation.Left.ID, relation.Right.ID
+		if relation.Negated {
+			from, to = to, from
+		}
+		edges[count] = stringOrderEdge{
+			from: from, to: to,
+			strict: relation.Kind == CompactStringLess && !relation.Negated ||
+				relation.Kind == CompactStringLessEqual && relation.Negated,
+		}
+		count++
+	}
+	for index := 0; index < boundCount; index++ {
+		bound := orderBounds[index]
+		if !bound.hasUpper {
+			continue
+		}
+		candidate := ""
+		if bound.hasLower {
+			candidate = bound.lower
+			if bound.lowerStrict {
+				candidate += "\x00"
+			}
+		}
+		order := compareSMTStrings(candidate, bound.upper)
+		if order > 0 || order == 0 && bound.upperStrict {
+			return true
+		}
+	}
+	var path [65]int
+	var reaches func(int, int, int, bool) bool
+	reaches = func(current, target, depth int, strict bool) bool {
+		if current == target {
+			return strict
+		}
+		if depth == len(path) {
+			return false
+		}
+		for index := 0; index < depth; index++ {
+			if path[index] == current {
+				return false
+			}
+		}
+		path[depth] = current
+		for index := 0; index < count; index++ {
+			if edges[index].from == current &&
+				reaches(edges[index].to, target, depth+1, strict || edges[index].strict) {
+				return true
+			}
+		}
+		return false
+	}
+	for index := 0; index < count; index++ {
+		if reaches(edges[index].to, edges[index].from, 0, edges[index].strict) {
+			return true
+		}
+	}
+	return false
+}
+
+func synthesizeCompactStringOrder(relation CompactStringRelation, model *stringModel) bool {
+	leftValue, leftKnown := evaluateCompactString(relation.Left, *model)
+	rightValue, rightKnown := evaluateCompactString(relation.Right, *model)
+	leftSymbol := relation.Left.Kind == compactStringSymbol
+	rightSymbol := relation.Right.Kind == compactStringSymbol
+	inclusive := relation.Kind == CompactStringLessEqual
+	if leftSymbol && rightSymbol && relation.Left.ID == relation.Right.ID {
+		return false
+	}
+	if leftKnown && rightKnown {
+		valid, _ := evaluateCompactStringRelation(relation, *model)
+		if valid {
+			return false
+		}
+	}
+	if !leftKnown && !rightKnown && leftSymbol && rightSymbol {
+		if relation.Negated && inclusive {
+			leftChanged := setExistingString(model, relation.Left.ID, "\x00")
+			return setExistingString(model, relation.Right.ID, "") || leftChanged
+		} else if !relation.Negated && !inclusive {
+			leftChanged := setExistingString(model, relation.Left.ID, "")
+			return setExistingString(model, relation.Right.ID, "\x00") || leftChanged
+		} else {
+			leftChanged := setExistingString(model, relation.Left.ID, "")
+			return setExistingString(model, relation.Right.ID, "") || leftChanged
+		}
+	}
+	if leftSymbol && rightKnown && (!leftKnown || !rightSymbol) {
+		candidate := ""
+		switch {
+		case !relation.Negated && !inclusive:
+			if rightValue == "" {
+				return false
+			}
+		case relation.Negated && inclusive:
+			candidate = rightValue + "\x00"
+		default:
+			candidate = rightValue
+		}
+		return setExistingString(model, relation.Left.ID, candidate)
+	}
+	if rightSymbol && leftKnown {
+		candidate := leftValue
+		switch {
+		case !relation.Negated && !inclusive:
+			candidate = leftValue + "\x00"
+		case relation.Negated && inclusive:
+			if leftValue == "" {
+				return false
+			}
+			candidate = ""
+		}
+		return setExistingString(model, relation.Right.ID, candidate)
+	}
+	return false
 }
 
 func evaluateCompactString(term CompactStringTerm, model stringModel) (string, bool) {
@@ -902,6 +1402,14 @@ func evaluateCompactStringRelation(relation CompactStringRelation, model stringM
 		left, leftOK := evaluateCompactString(relation.Left, model)
 		right, rightOK := evaluateCompactString(relation.Right, model)
 		result, complete = strings.HasSuffix(left, right), leftOK && rightOK
+	case CompactStringLess:
+		left, leftOK := evaluateCompactString(relation.Left, model)
+		right, rightOK := evaluateCompactString(relation.Right, model)
+		result, complete = compareSMTStrings(left, right) < 0, leftOK && rightOK
+	case CompactStringLessEqual:
+		left, leftOK := evaluateCompactString(relation.Left, model)
+		right, rightOK := evaluateCompactString(relation.Right, model)
+		result, complete = compareSMTStrings(left, right) <= 0, leftOK && rightOK
 	default:
 		return false, false
 	}
@@ -994,6 +1502,12 @@ func collectStringSymbolsBoolean(term Term[BoolSort], symbols *stringSymbols) {
 	case stringSuffix:
 		collectStringSymbols(value.suffix, symbols)
 		collectStringSymbols(value.value, symbols)
+	case stringLess:
+		collectStringSymbols(value.left, symbols)
+		collectStringSymbols(value.right, symbols)
+	case stringLessEqual:
+		collectStringSymbols(value.left, symbols)
+		collectStringSymbols(value.right, symbols)
 	case stringInRegex:
 		collectStringSymbols(value.value, symbols)
 		if value.expression.node != nil {
@@ -1330,6 +1844,10 @@ func synthesizeStringAssertion(term Term[BoolSort], negated bool, model *stringM
 		synthesizeStringPredicate(value.value, value.prefix, negated, 1, model)
 	case stringSuffix:
 		synthesizeStringPredicate(value.value, value.suffix, negated, 2, model)
+	case stringLess:
+		synthesizeStringOrder(value.left, value.right, negated, false, model)
+	case stringLessEqual:
+		synthesizeStringOrder(value.left, value.right, negated, true, model)
 	case stringInRegex:
 		synthesizeStringRegex(value.value, value.expression, negated, model)
 	}
@@ -1354,6 +1872,62 @@ func synthesizeStringPredicate(value, part Term[StringSort], negated bool, kind 
 	switch kind {
 	case 0, 1, 2:
 		setExistingString(model, id, partValue)
+	}
+}
+
+func synthesizeStringOrder(
+	left, right Term[StringSort],
+	negated bool,
+	inclusive bool,
+	model *stringModel,
+) {
+	leftID, leftSymbol := stringSymbolID(left)
+	rightID, rightSymbol := stringSymbolID(right)
+	leftValue, leftKnown := evaluateString(left, *model, integerModel{})
+	rightValue, rightKnown := evaluateString(right, *model, integerModel{})
+	if leftSymbol && rightSymbol && leftID == rightID {
+		return
+	}
+	if !leftKnown && !rightKnown && leftSymbol && rightSymbol {
+		if negated && inclusive {
+			setExistingString(model, leftID, "\x00")
+			setExistingString(model, rightID, "")
+		} else if !negated && !inclusive {
+			setExistingString(model, leftID, "")
+			setExistingString(model, rightID, "\x00")
+		} else {
+			setExistingString(model, leftID, "")
+			setExistingString(model, rightID, "")
+		}
+		return
+	}
+	if !leftKnown && leftSymbol && rightKnown {
+		candidate := ""
+		switch {
+		case !negated && !inclusive:
+			if rightValue == "" {
+				return
+			}
+		case negated && inclusive:
+			candidate = rightValue + "\x00"
+		default:
+			candidate = rightValue
+		}
+		setExistingString(model, leftID, candidate)
+		return
+	}
+	if !rightKnown && rightSymbol && leftKnown {
+		candidate := leftValue
+		switch {
+		case !negated && !inclusive:
+			candidate = leftValue + "\x00"
+		case negated && inclusive:
+			if leftValue == "" {
+				return
+			}
+			candidate = ""
+		}
+		setExistingString(model, rightID, candidate)
 	}
 }
 
@@ -1567,6 +2141,14 @@ func evaluateStringBoolean(term Term[BoolSort], model stringModel, integers inte
 		suffix, suffixOK := evaluateString(value.suffix, model, integers)
 		text, textOK := evaluateString(value.value, model, integers)
 		return strings.HasSuffix(text, suffix), suffixOK && textOK
+	case stringLess:
+		left, leftOK := evaluateString(value.left, model, integers)
+		right, rightOK := evaluateString(value.right, model, integers)
+		return compareSMTStrings(left, right) < 0, leftOK && rightOK
+	case stringLessEqual:
+		left, leftOK := evaluateString(value.left, model, integers)
+		right, rightOK := evaluateString(value.right, model, integers)
+		return compareSMTStrings(left, right) <= 0, leftOK && rightOK
 	case stringIsDigit:
 		text, ok := evaluateString(value.value, model, integers)
 		return len(text) == 1 && text[0] >= '0' && text[0] <= '9', ok

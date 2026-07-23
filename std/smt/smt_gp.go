@@ -946,6 +946,22 @@ type stringSuffix struct {
 
 func (stringSuffix) isTerm(BoolSort) {}
 
+//goplus:variant (Term[S]) stringLess(Left Term[StringSort], Right Term[StringSort]) Term[BoolSort]
+type stringLess struct {
+	left  Term[StringSort]
+	right Term[StringSort]
+}
+
+func (stringLess) isTerm(BoolSort) {}
+
+//goplus:variant (Term[S]) stringLessEqual(Left Term[StringSort], Right Term[StringSort]) Term[BoolSort]
+type stringLessEqual struct {
+	left  Term[StringSort]
+	right Term[StringSort]
+}
+
+func (stringLessEqual) isTerm(BoolSort) {}
+
 //goplus:variant (Term[S]) stringAt(Value Term[StringSort], Index Term[IntSort]) Term[S]
 type stringAt[S any] struct {
 	value Term[StringSort]
@@ -1750,6 +1766,8 @@ type TermCases[S any, R any] struct {
 	stringContains                     func(Value Term[StringSort], Substring Term[StringSort]) R
 	stringPrefix                       func(Prefix Term[StringSort], Value Term[StringSort]) R
 	stringSuffix                       func(Suffix Term[StringSort], Value Term[StringSort]) R
+	stringLess                         func(Left Term[StringSort], Right Term[StringSort]) R
+	stringLessEqual                    func(Left Term[StringSort], Right Term[StringSort]) R
 	stringAt                           func(Value Term[StringSort], Index Term[IntSort]) R
 	stringSubstring                    func(Value Term[StringSort], Offset Term[IntSort], Length Term[IntSort]) R
 	stringIndexOf                      func(Value Term[StringSort], Substring Term[StringSort], Offset Term[IntSort]) R
@@ -1917,6 +1935,10 @@ func TermFold[S any, R any](t Term[S], cs TermCases[S, R]) R {
 		return cs.stringPrefix(m.prefix, m.value)
 	case stringSuffix:
 		return cs.stringSuffix(m.suffix, m.value)
+	case stringLess:
+		return cs.stringLess(m.left, m.right)
+	case stringLessEqual:
+		return cs.stringLessEqual(m.left, m.right)
 	case stringAt[S]:
 		return cs.stringAt(m.value, m.index)
 	case stringSubstring[S]:
@@ -3116,6 +3138,12 @@ func StringHasPrefix(value Term[StringSort], prefix Term[StringSort]) Term[BoolS
 }
 func StringHasSuffix(value Term[StringSort], suffix Term[StringSort]) Term[BoolSort] {
 	return stringSuffix{suffix: suffix, value: value}
+}
+func StringLess(left Term[StringSort], right Term[StringSort]) Term[BoolSort] {
+	return stringLess{left: left, right: right}
+}
+func StringLessEqual(left Term[StringSort], right Term[StringSort]) Term[BoolSort] {
+	return stringLessEqual{left: left, right: right}
 }
 func StringAt(value Term[StringSort], index Term[IntSort]) Term[StringSort] {
 	return stringAt[StringSort]{value: value, index: index}

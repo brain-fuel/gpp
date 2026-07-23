@@ -108,6 +108,91 @@ func TestGroundStringRegexReplacement(t *testing.T) {
 	}
 }
 
+func TestStringLexicographicOrdering(t *testing.T) {
+	ground := []struct {
+		name string
+		term Term[BoolSort]
+		want bool
+	}{
+		{"strict-prefix", StringLess(StringVal("a"), StringVal("aa")), true},
+		{"strict-code-point", StringLess(StringVal("z"), StringVal("🙂")), true},
+		{"strict-equal", StringLess(StringVal("same"), StringVal("same")), false},
+		{"reflexive", StringLessEqual(StringVal("same"), StringVal("same")), true},
+		{"surrogate-before-plane-two", StringLess(StringVal("\xed\xa0\x80"), StringVal("\U00020000")), true},
+	}
+	for _, test := range ground {
+		t.Run(test.name, func(t *testing.T) {
+			got, known := evaluateStringBoolean(test.term, stringModel{}, integerModel{})
+			if !known || got != test.want {
+				t.Fatalf("value=%v known=%v want=%v", got, known, test.want)
+			}
+		})
+	}
+
+	x := StringConst(70, "x")
+	y := StringConst(71, "y")
+	result := Check(Assert(
+		1,
+		New(),
+		And{Values: []Term[BoolSort]{
+			StringLess(x, y),
+			StringLessEqual(y, StringVal("z")),
+		}},
+	))
+	sat, ok := result.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", result)
+	}
+	xValue, xOK := StringModelValue(sat.Value, x)
+	yValue, yOK := StringModelValue(sat.Value, y)
+	if !xOK || !yOK || compareSMTStrings(xValue, yValue) >= 0 ||
+		compareSMTStrings(yValue, "z") > 0 {
+		t.Fatalf("x=%q/%v y=%q/%v", xValue, xOK, yValue, yOK)
+	}
+
+	z := StringConst(72, "z")
+	unsatisfiable := []Term[BoolSort]{
+		StringLess(x, x),
+		Not{Value: StringLessEqual(x, x)},
+		StringLess(x, StringVal("")),
+		Not{Value: StringLessEqual(StringVal(""), x)},
+		And{Values: []Term[BoolSort]{
+			StringLess(x, y),
+			StringLess(y, z),
+			StringLess(z, x),
+		}},
+		And{Values: []Term[BoolSort]{
+			StringLess(StringVal("a"), x),
+			StringLessEqual(x, StringVal("a")),
+		}},
+	}
+	for index, formula := range unsatisfiable {
+		if checked := Check(Assert(index+2, New(), formula)); func() bool {
+			_, ok := checked.(Unsatisfiable)
+			return ok
+		}() == false {
+			t.Fatalf("unsatisfiable case %d result=%T", index, checked)
+		}
+	}
+	betweenResult := Check(Assert(
+		8,
+		New(),
+		And{Values: []Term[BoolSort]{
+			StringLess(x, StringVal("b")),
+			StringLess(StringVal("a"), x),
+		}},
+	))
+	between, ok := betweenResult.(Satisfiable)
+	if !ok {
+		t.Fatalf("between result=%T", betweenResult)
+	}
+	betweenValue, found := StringModelValue(between.Value, x)
+	if !found || compareSMTStrings("a", betweenValue) >= 0 ||
+		compareSMTStrings(betweenValue, "b") >= 0 {
+		t.Fatalf("between=%q/%v", betweenValue, found)
+	}
+}
+
 func TestStringRegexLanguageOperations(t *testing.T) {
 	a := StringToRegex(StringVal("a"))
 	b := StringToRegex(StringVal("b"))
