@@ -91,7 +91,7 @@ func runtimeCheckResult(context int, e *engine) CheckResult {
 		status, booleans, integers, reals, bitVectors, reason := e.check()
 		switch status {
 		case checkSat:
-			e.publicResult = Satisfiable{Value: modelValue{contextID: context, booleans: booleans, integers: integers, reals: reals, bitVectors: bitVectors, strings: e.result.strings, arrays: e.result.arrays, bitVectorArrays: e.result.bitVectorArrays, datatypes: e.result.datatypes}}
+			e.publicResult = Satisfiable{Value: modelValue{contextID: context, booleans: booleans, integers: integers, reals: reals, bitVectors: bitVectors, strings: e.result.strings, integerSequences: e.result.integerSequences, arrays: e.result.arrays, bitVectorArrays: e.result.bitVectorArrays, datatypes: e.result.datatypes}}
 		case checkUnsat:
 			e.publicResult = Unsatisfiable{Value: proofValue{contextID: context, assertions: len(e.assertions)}}
 		default:
@@ -105,16 +105,17 @@ func runtimeCheckResult(context int, e *engine) CheckResult {
 }
 
 type checkOutcome struct {
-	status          int
-	booleans        booleanModel
-	integers        integerModel
-	reals           rationalModel
-	bitVectors      bitVectorModel
-	strings         stringModel
-	arrays          *integerArrayModel
-	bitVectorArrays *bitVectorArrayModel
-	datatypes       *datatypeModel
-	reason          UnknownReason
+	status           int
+	booleans         booleanModel
+	integers         integerModel
+	reals            rationalModel
+	bitVectors       bitVectorModel
+	strings          stringModel
+	integerSequences integerSequenceModel
+	arrays           *integerArrayModel
+	bitVectorArrays  *bitVectorArrayModel
+	datatypes        *datatypeModel
+	reason           UnknownReason
 }
 
 type integerModelEntry struct {
@@ -457,10 +458,10 @@ func unsupportedReason(integerTheory, eufTheory, realTheory, sharedRealEUF bool)
 	return UnsupportedTheory{Name: "unsupported Boolean term"}
 }
 
-func (e *engine) checkAssuming(assumptions []Term[BoolSort]) (int, booleanModel, integerModel, rationalModel, bitVectorModel, stringModel, []int, UnknownReason) {
+func (e *engine) checkAssuming(assumptions []Term[BoolSort]) (int, booleanModel, integerModel, rationalModel, bitVectorModel, stringModel, integerSequenceModel, []int, UnknownReason) {
 	outcome := e.solveAdditional(assumptions)
 	if outcome.status != checkUnsat {
-		return outcome.status, outcome.booleans, outcome.integers, outcome.reals, outcome.bitVectors, outcome.strings, nil, outcome.reason
+		return outcome.status, outcome.booleans, outcome.integers, outcome.reals, outcome.bitVectors, outcome.strings, outcome.integerSequences, nil, outcome.reason
 	}
 	coreTerms := append([]Term[BoolSort](nil), assumptions...)
 	coreIndices := make([]int, len(assumptions))
@@ -478,7 +479,7 @@ func (e *engine) checkAssuming(assumptions []Term[BoolSort]) (int, booleanModel,
 		}
 		index++
 	}
-	return checkUnsat, booleanModel{}, integerModel{}, rationalModel{}, bitVectorModel{}, stringModel{}, coreIndices, nil
+	return checkUnsat, booleanModel{}, integerModel{}, rationalModel{}, bitVectorModel{}, stringModel{}, integerSequenceModel{}, coreIndices, nil
 }
 
 func evaluateBool(term Term[BoolSort], booleans booleanModel, integers integerModel, reals rationalModel) (bool, bool) {

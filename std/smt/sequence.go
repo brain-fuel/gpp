@@ -38,6 +38,52 @@ func AppendCompactIntegerSequence(
 	return left
 }
 
+type integerSequenceModelEntry struct {
+	id    int
+	value IntegerSequenceValue
+}
+
+type integerSequenceModel struct {
+	count    int
+	inline   [4]integerSequenceModelEntry
+	overflow map[int]IntegerSequenceValue
+}
+
+func (model integerSequenceModel) lookup(id int) (IntegerSequenceValue, bool) {
+	for index := 0; index < model.count && index < len(model.inline); index++ {
+		if model.inline[index].id == id {
+			return model.inline[index].value, true
+		}
+	}
+	value, ok := model.overflow[id]
+	return value, ok
+}
+
+func (model *integerSequenceModel) set(id int, value IntegerSequenceValue) bool {
+	for index := 0; index < model.count && index < len(model.inline); index++ {
+		if model.inline[index].id == id {
+			if !equalIntegerSequences(model.inline[index].value, value) {
+				return false
+			}
+			return true
+		}
+	}
+	if existing, ok := model.overflow[id]; ok {
+		return equalIntegerSequences(existing, value)
+	}
+	if model.count < len(model.inline) {
+		model.inline[model.count] = integerSequenceModelEntry{id: id, value: value}
+		model.count++
+		return true
+	}
+	if model.overflow == nil {
+		model.overflow = make(map[int]IntegerSequenceValue)
+	}
+	model.overflow[id] = value
+	model.count++
+	return true
+}
+
 // Len reports the number of elements.
 func (value IntegerSequenceValue) Len() int { return value.count }
 
@@ -82,11 +128,25 @@ func evaluateIntegerSequence(
 	integers integerModel,
 	reals rationalModel,
 ) (IntegerSequenceValue, bool) {
+	return evaluateIntegerSequenceWithModel(
+		term, booleans, integers, reals, integerSequenceModel{},
+	)
+}
+
+func evaluateIntegerSequenceWithModel(
+	term Term[SequenceSort[IntSort]],
+	booleans booleanModel,
+	integers integerModel,
+	reals rationalModel,
+	sequences integerSequenceModel,
+) (IntegerSequenceValue, bool) {
 	switch value := term.(type) {
 	case CompactIntegerSequence:
 		return value.value, true
 	case sequenceEmpty[SequenceSort[IntSort]]:
 		return IntegerSequenceValue{}, true
+	case sequenceSymbol[SequenceSort[IntSort]]:
+		return sequences.lookup(value.iD)
 	case sequenceUnit[SequenceSort[IntSort]]:
 		element, ok := value.value.(Term[IntSort])
 		if !ok {
@@ -106,7 +166,7 @@ func evaluateIntegerSequence(
 		}
 		var result IntegerSequenceValue
 		for _, item := range terms {
-			evaluated, ok := evaluateIntegerSequence(item, booleans, integers, reals)
+			evaluated, ok := evaluateIntegerSequenceWithModel(item, booleans, integers, reals, sequences)
 			if !ok {
 				return IntegerSequenceValue{}, false
 			}
@@ -118,7 +178,7 @@ func evaluateIntegerSequence(
 		if !ok {
 			return IntegerSequenceValue{}, false
 		}
-		evaluated, ok := evaluateIntegerSequence(sequence, booleans, integers, reals)
+		evaluated, ok := evaluateIntegerSequenceWithModel(sequence, booleans, integers, reals, sequences)
 		if !ok {
 			return IntegerSequenceValue{}, false
 		}
@@ -139,7 +199,7 @@ func evaluateIntegerSequence(
 		if !ok {
 			return IntegerSequenceValue{}, false
 		}
-		evaluated, ok := evaluateIntegerSequence(sequence, booleans, integers, reals)
+		evaluated, ok := evaluateIntegerSequenceWithModel(sequence, booleans, integers, reals, sequences)
 		if !ok {
 			return IntegerSequenceValue{}, false
 		}
@@ -165,9 +225,9 @@ func evaluateIntegerSequence(
 		if !sequenceOK || !sourceOK || !replacementOK {
 			return IntegerSequenceValue{}, false
 		}
-		evaluated, valueOK := evaluateIntegerSequence(sequence, booleans, integers, reals)
-		old, oldOK := evaluateIntegerSequence(source, booleans, integers, reals)
-		next, nextOK := evaluateIntegerSequence(replacement, booleans, integers, reals)
+		evaluated, valueOK := evaluateIntegerSequenceWithModel(sequence, booleans, integers, reals, sequences)
+		old, oldOK := evaluateIntegerSequenceWithModel(source, booleans, integers, reals, sequences)
+		next, nextOK := evaluateIntegerSequenceWithModel(replacement, booleans, integers, reals, sequences)
 		if !valueOK || !oldOK || !nextOK {
 			return IntegerSequenceValue{}, false
 		}
@@ -238,6 +298,18 @@ func evaluateIntegerSequenceEquality(
 	integers integerModel,
 	reals rationalModel,
 ) (bool, bool) {
+	return evaluateIntegerSequenceEqualityWithModel(
+		value, booleans, integers, reals, integerSequenceModel{},
+	)
+}
+
+func evaluateIntegerSequenceEqualityWithModel(
+	value Equal,
+	booleans booleanModel,
+	integers integerModel,
+	reals rationalModel,
+	sequences integerSequenceModel,
+) (bool, bool) {
 	left, ok := value.Left.(Term[SequenceSort[IntSort]])
 	if !ok {
 		return false, false
@@ -246,8 +318,8 @@ func evaluateIntegerSequenceEquality(
 	if !ok {
 		return false, false
 	}
-	leftValue, leftOK := evaluateIntegerSequence(left, booleans, integers, reals)
-	rightValue, rightOK := evaluateIntegerSequence(right, booleans, integers, reals)
+	leftValue, leftOK := evaluateIntegerSequenceWithModel(left, booleans, integers, reals, sequences)
+	rightValue, rightOK := evaluateIntegerSequenceWithModel(right, booleans, integers, reals, sequences)
 	return equalIntegerSequences(leftValue, rightValue), leftOK && rightOK
 }
 
@@ -256,6 +328,18 @@ func evaluateIntegerSequencePredicate(
 	booleans booleanModel,
 	integers integerModel,
 	reals rationalModel,
+) (bool, bool) {
+	return evaluateIntegerSequencePredicateWithModel(
+		term, booleans, integers, reals, integerSequenceModel{},
+	)
+}
+
+func evaluateIntegerSequencePredicateWithModel(
+	term Term[BoolSort],
+	booleans booleanModel,
+	integers integerModel,
+	reals rationalModel,
+	sequences integerSequenceModel,
 ) (bool, bool) {
 	var leftTerm, rightTerm any
 	var kind uint8
@@ -274,8 +358,8 @@ func evaluateIntegerSequencePredicate(
 	if !leftOK || !rightOK {
 		return false, false
 	}
-	value, valueOK := evaluateIntegerSequence(left, booleans, integers, reals)
-	part, partOK := evaluateIntegerSequence(right, booleans, integers, reals)
+	value, valueOK := evaluateIntegerSequenceWithModel(left, booleans, integers, reals, sequences)
+	part, partOK := evaluateIntegerSequenceWithModel(right, booleans, integers, reals, sequences)
 	if !valueOK || !partOK {
 		return false, false
 	}
@@ -373,6 +457,281 @@ func containsIntegerSequenceLength(term any) bool {
 	return false
 }
 
+func evaluateIntegerWithSequences(
+	term Term[IntSort],
+	booleans booleanModel,
+	integers integerModel,
+	reals rationalModel,
+	bitVectors bitVectorModel,
+	sequences integerSequenceModel,
+) (IntegerValue, bool) {
+	switch value := term.(type) {
+	case sequenceLength:
+		sequence, ok := value.value.(Term[SequenceSort[IntSort]])
+		if !ok {
+			return IntegerValue{}, false
+		}
+		evaluated, ok := evaluateIntegerSequenceWithModel(
+			sequence, booleans, integers, reals, sequences,
+		)
+		if !ok {
+			return IntegerValue{}, false
+		}
+		return NewIntegerValue(int64(evaluated.Len())), true
+	case sequenceIndexOf:
+		sequence, sequenceOK := value.value.(Term[SequenceSort[IntSort]])
+		subsequence, subsequenceOK := value.subsequence.(Term[SequenceSort[IntSort]])
+		if !sequenceOK || !subsequenceOK {
+			return IntegerValue{}, false
+		}
+		evaluated, valueOK := evaluateIntegerSequenceWithModel(
+			sequence, booleans, integers, reals, sequences,
+		)
+		part, partOK := evaluateIntegerSequenceWithModel(
+			subsequence, booleans, integers, reals, sequences,
+		)
+		offset, offsetOK := evaluateIntegerWithSequences(
+			value.offset, booleans, integers, reals, bitVectors, sequences,
+		)
+		if !valueOK || !partOK || !offsetOK {
+			return IntegerValue{}, false
+		}
+		start, fits := offset.Int64()
+		if !fits || start < 0 || start > int64(evaluated.Len()) {
+			return NewIntegerValue(-1), true
+		}
+		return NewIntegerValue(int64(findIntegerSubsequence(evaluated, part, int(start)))), true
+	case Add:
+		result := IntegerValue{}
+		for _, item := range value.Values {
+			next, ok := evaluateIntegerWithSequences(
+				item, booleans, integers, reals, bitVectors, sequences,
+			)
+			if !ok {
+				return IntegerValue{}, false
+			}
+			result = AddIntegerValue(result, next)
+		}
+		return result, true
+	case Subtract:
+		left, leftOK := evaluateIntegerWithSequences(
+			value.Left, booleans, integers, reals, bitVectors, sequences,
+		)
+		right, rightOK := evaluateIntegerWithSequences(
+			value.Right, booleans, integers, reals, bitVectors, sequences,
+		)
+		return SubIntegerValue(left, right), leftOK && rightOK
+	case IntegerScale:
+		evaluated, ok := evaluateIntegerWithSequences(
+			value.Value, booleans, integers, reals, bitVectors, sequences,
+		)
+		if !ok {
+			return IntegerValue{}, false
+		}
+		return MultiplyIntegerValue(value.Coefficient, evaluated), true
+	case If[IntSort]:
+		condition, ok := evaluateBoolWithIntegerSequences(
+			value.Condition, booleans, integers, reals, sequences,
+		)
+		if !ok {
+			return IntegerValue{}, false
+		}
+		if condition {
+			return evaluateIntegerWithSequences(
+				value.Then, booleans, integers, reals, bitVectors, sequences,
+			)
+		}
+		return evaluateIntegerWithSequences(
+			value.Else, booleans, integers, reals, bitVectors, sequences,
+		)
+	default:
+		return evaluateIntegerWithBitVectors(term, booleans, integers, reals, bitVectors)
+	}
+}
+
+func evaluateBoolWithIntegerSequences(
+	term Term[BoolSort],
+	booleans booleanModel,
+	integers integerModel,
+	reals rationalModel,
+	sequences integerSequenceModel,
+) (bool, bool) {
+	switch value := term.(type) {
+	case Equal:
+		if _, ok := value.Left.(Term[SequenceSort[IntSort]]); ok {
+			return evaluateIntegerSequenceEqualityWithModel(
+				value, booleans, integers, reals, sequences,
+			)
+		}
+		if containsIntegerSequenceLength(value.Left) || containsIntegerSequenceLength(value.Right) {
+			left, leftOK := value.Left.(Term[IntSort])
+			right, rightOK := value.Right.(Term[IntSort])
+			if !leftOK || !rightOK {
+				return false, false
+			}
+			leftValue, leftOK := evaluateIntegerWithSequences(
+				left, booleans, integers, reals, bitVectorModel{}, sequences,
+			)
+			rightValue, rightOK := evaluateIntegerWithSequences(
+				right, booleans, integers, reals, bitVectorModel{}, sequences,
+			)
+			return CompareIntegerValue(leftValue, rightValue) == 0, leftOK && rightOK
+		}
+	case sequenceContains, sequencePrefix, sequenceSuffix:
+		return evaluateIntegerSequencePredicateWithModel(
+			term, booleans, integers, reals, sequences,
+		)
+	case Less:
+		left, leftOK := evaluateIntegerWithSequences(
+			value.Left, booleans, integers, reals, bitVectorModel{}, sequences,
+		)
+		right, rightOK := evaluateIntegerWithSequences(
+			value.Right, booleans, integers, reals, bitVectorModel{}, sequences,
+		)
+		return CompareIntegerValue(left, right) < 0, leftOK && rightOK
+	case LessEqual:
+		left, leftOK := evaluateIntegerWithSequences(
+			value.Left, booleans, integers, reals, bitVectorModel{}, sequences,
+		)
+		right, rightOK := evaluateIntegerWithSequences(
+			value.Right, booleans, integers, reals, bitVectorModel{}, sequences,
+		)
+		return CompareIntegerValue(left, right) <= 0, leftOK && rightOK
+	case Not:
+		result, ok := evaluateBoolWithIntegerSequences(
+			value.Value, booleans, integers, reals, sequences,
+		)
+		return !result, ok
+	case And:
+		for _, item := range value.Values {
+			result, ok := evaluateBoolWithIntegerSequences(
+				item, booleans, integers, reals, sequences,
+			)
+			if !ok || !result {
+				return result, ok
+			}
+		}
+		return true, true
+	case BooleanConjunction:
+		items, negated := value.values()
+		for index, item := range items {
+			result, ok := evaluateBoolWithIntegerSequences(
+				item, booleans, integers, reals, sequences,
+			)
+			if !ok || result == negated[index] {
+				return false, ok
+			}
+		}
+		return true, true
+	case Or:
+		for _, item := range value.Values {
+			result, ok := evaluateBoolWithIntegerSequences(
+				item, booleans, integers, reals, sequences,
+			)
+			if !ok {
+				return false, false
+			}
+			if result {
+				return true, true
+			}
+		}
+		return false, true
+	case Implies:
+		left, leftOK := evaluateBoolWithIntegerSequences(
+			value.Left, booleans, integers, reals, sequences,
+		)
+		right, rightOK := evaluateBoolWithIntegerSequences(
+			value.Right, booleans, integers, reals, sequences,
+		)
+		return !left || right, leftOK && rightOK
+	case Iff:
+		left, leftOK := evaluateBoolWithIntegerSequences(
+			value.Left, booleans, integers, reals, sequences,
+		)
+		right, rightOK := evaluateBoolWithIntegerSequences(
+			value.Right, booleans, integers, reals, sequences,
+		)
+		return left == right, leftOK && rightOK
+	case If[BoolSort]:
+		condition, ok := evaluateBoolWithIntegerSequences(
+			value.Condition, booleans, integers, reals, sequences,
+		)
+		if !ok {
+			return false, false
+		}
+		if condition {
+			return evaluateBoolWithIntegerSequences(
+				value.Then, booleans, integers, reals, sequences,
+			)
+		}
+		return evaluateBoolWithIntegerSequences(
+			value.Else, booleans, integers, reals, sequences,
+		)
+	}
+	return evaluateBool(term, booleans, integers, reals)
+}
+
+func bindGroundIntegerSequenceAssignments(
+	term Term[BoolSort],
+	model *integerSequenceModel,
+) (bool, bool) {
+	switch value := term.(type) {
+	case Equal:
+		left, leftSymbol := integerSequenceSymbolID(value.Left)
+		right, rightSymbol := integerSequenceSymbolID(value.Right)
+		if leftSymbol {
+			sequence, ok := value.Right.(Term[SequenceSort[IntSort]])
+			if !ok || rightSymbol {
+				return false, false
+			}
+			evaluated, ok := evaluateIntegerSequenceWithModel(
+				sequence, booleanModel{}, integerModel{}, rationalModel{}, *model,
+			)
+			if !ok {
+				return false, false
+			}
+			return model.set(left, evaluated), true
+		}
+		if rightSymbol {
+			sequence, ok := value.Left.(Term[SequenceSort[IntSort]])
+			if !ok {
+				return false, false
+			}
+			evaluated, ok := evaluateIntegerSequenceWithModel(
+				sequence, booleanModel{}, integerModel{}, rationalModel{}, *model,
+			)
+			if !ok {
+				return false, false
+			}
+			return model.set(right, evaluated), true
+		}
+	case And:
+		for _, item := range value.Values {
+			consistent, bound := bindGroundIntegerSequenceAssignments(item, model)
+			if bound && !consistent {
+				return false, true
+			}
+		}
+	case BooleanConjunction:
+		items, negated := value.values()
+		for index, item := range items {
+			if negated[index] {
+				continue
+			}
+			consistent, bound := bindGroundIntegerSequenceAssignments(item, model)
+			if bound && !consistent {
+				return false, true
+			}
+		}
+	}
+	return true, false
+}
+
+func integerSequenceSymbolID(term any) (int, bool) {
+	value, ok := term.(sequenceSymbol[SequenceSort[IntSort]])
+	return value.iD, ok
+}
+
 func solveGroundIntegerSequenceAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
 	found := false
 	for _, assertion := range assertions {
@@ -381,25 +740,101 @@ func solveGroundIntegerSequenceAssertions(assertions []Term[BoolSort]) (checkOut
 	if !found {
 		return checkOutcome{}, false
 	}
+	var sequences integerSequenceModel
 	for _, assertion := range assertions {
-		value, ok := evaluateBool(assertion, booleanModel{}, integerModel{}, rationalModel{})
+		consistent, bound := bindGroundIntegerSequenceAssignments(assertion, &sequences)
+		if bound && !consistent {
+			return checkOutcome{status: checkUnsat}, true
+		}
+	}
+	for _, assertion := range assertions {
+		value, ok := evaluateBoolWithIntegerSequences(
+			assertion, booleanModel{}, integerModel{}, rationalModel{}, sequences,
+		)
 		if !ok {
 			return checkOutcome{
 				status: checkUnknown,
-				reason: UnsupportedTheory{Name: "integer sequence expression outside the ground fragment"},
+				reason: UnsupportedTheory{Name: "integer sequence expression outside the ground-assigned fragment"},
 			}, true
 		}
 		if !value {
 			return checkOutcome{status: checkUnsat}, true
 		}
 	}
-	return checkOutcome{status: checkSat}, true
+	return checkOutcome{status: checkSat, integerSequences: sequences}, true
 }
 
-// IntegerSequenceModelValue evaluates a ground integer sequence in model.
+func evaluateBoolWithStringsDatatypesAndSequences(
+	term Term[BoolSort],
+	booleans booleanModel,
+	integers integerModel,
+	reals rationalModel,
+	strings stringModel,
+	sequences integerSequenceModel,
+	datatypes *datatypeModel,
+) (bool, bool) {
+	if containsIntegerSequenceTheory(term) {
+		return evaluateBoolWithIntegerSequences(term, booleans, integers, reals, sequences)
+	}
+	return evaluateBoolWithStringsAndDatatypes(
+		term, booleans, integers, reals, strings, datatypes,
+	)
+}
+
+func evaluateIntWithSequences(
+	term Term[IntSort],
+	booleans booleanModel,
+	integers integerModel,
+	reals rationalModel,
+	sequences integerSequenceModel,
+) (int64, bool) {
+	value, ok := evaluateIntegerWithSequences(
+		term, booleans, integers, reals, bitVectorModel{}, sequences,
+	)
+	if !ok {
+		return 0, false
+	}
+	return value.Int64()
+}
+
+func evaluateIntegerModelWithSequences(
+	term Term[IntSort],
+	booleans booleanModel,
+	integers integerModel,
+	reals rationalModel,
+	bitVectors bitVectorModel,
+	sequences integerSequenceModel,
+) (IntegerValue, bool) {
+	return evaluateIntegerWithSequences(
+		term, booleans, integers, reals, bitVectors, sequences,
+	)
+}
+
+func evaluateIntegerModelTermWithSequences(
+	term Term[IntSort],
+	booleans booleanModel,
+	integers integerModel,
+	reals rationalModel,
+	bitVectors bitVectorModel,
+	sequences integerSequenceModel,
+	arrays *integerArrayModel,
+) (IntegerValue, bool) {
+	if containsIntegerSequenceLength(term) {
+		return evaluateIntegerWithSequences(
+			term, booleans, integers, reals, bitVectors, sequences,
+		)
+	}
+	return evaluateIntegerModelTerm(
+		term, booleans, integers, reals, bitVectors, arrays,
+	)
+}
+
+// IntegerSequenceModelValue evaluates an integer sequence in model.
 func IntegerSequenceModelValue(
 	model Model,
 	term Term[SequenceSort[IntSort]],
 ) (IntegerSequenceValue, bool) {
-	return evaluateIntegerSequence(term, model.booleans, model.integers, model.reals)
+	return evaluateIntegerSequenceWithModel(
+		term, model.booleans, model.integers, model.reals, model.integerSequences,
+	)
 }

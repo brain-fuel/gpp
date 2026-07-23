@@ -1045,6 +1045,14 @@ type sequenceEmpty[S any] struct{}
 
 func (sequenceEmpty[S]) isTerm(S) {}
 
+//goplus:variant (Term[S]) sequenceSymbol(ID int, Name string) Term[S]
+type sequenceSymbol[S any] struct {
+	iD   int
+	name string
+}
+
+func (sequenceSymbol[S]) isTerm(S) {}
+
 //goplus:variant (Term[S]) sequenceUnit(Value any) Term[S]
 type sequenceUnit[S any] struct {
 	value any
@@ -1755,6 +1763,7 @@ type TermCases[S any, R any] struct {
 	stringInRegex                      func(Value Term[StringSort], Expression Regex[StringSort]) R
 	stringSystem                       func(System CompactStringSystem) R
 	sequenceEmpty                      func() R
+	sequenceSymbol                     func(ID int, Name string) R
 	sequenceUnit                       func(Value any) R
 	sequenceConcat                     func(Values any) R
 	sequenceLength                     func(Value any) R
@@ -1934,6 +1943,8 @@ func TermFold[S any, R any](t Term[S], cs TermCases[S, R]) R {
 		return cs.stringSystem(m.system)
 	case sequenceEmpty[S]:
 		return cs.sequenceEmpty()
+	case sequenceSymbol[S]:
+		return cs.sequenceSymbol(m.iD, m.name)
 	case sequenceUnit[S]:
 		return cs.sequenceUnit(m.value)
 	case sequenceConcat[S]:
@@ -2324,17 +2335,18 @@ func (solverValue) isSolver() {}
 //goplus:repr transparent
 type Model = modelValue
 
-//goplus:variant (Model) modelValue(ContextID int, Booleans booleanModel, Integers integerModel, Reals rationalModel, BitVectors bitVectorModel, Strings stringModel, Arrays *integerArrayModel, BitVectorArrays *bitVectorArrayModel, Datatypes *datatypeModel) Model[c]
+//goplus:variant (Model) modelValue(ContextID int, Booleans booleanModel, Integers integerModel, Reals rationalModel, BitVectors bitVectorModel, Strings stringModel, IntegerSequences integerSequenceModel, Arrays *integerArrayModel, BitVectorArrays *bitVectorArrayModel, Datatypes *datatypeModel) Model[c]
 type modelValue struct {
-	contextID       int
-	booleans        booleanModel
-	integers        integerModel
-	reals           rationalModel
-	bitVectors      bitVectorModel
-	strings         stringModel
-	arrays          *integerArrayModel
-	bitVectorArrays *bitVectorArrayModel
-	datatypes       *datatypeModel
+	contextID        int
+	booleans         booleanModel
+	integers         integerModel
+	reals            rationalModel
+	bitVectors       bitVectorModel
+	strings          stringModel
+	integerSequences integerSequenceModel
+	arrays           *integerArrayModel
+	bitVectorArrays  *bitVectorArrayModel
+	datatypes        *datatypeModel
 }
 
 func (modelValue) isModel() {}
@@ -3133,6 +3145,9 @@ func StringInRegex(value Term[StringSort], expression Regex[StringSort]) Term[Bo
 	return makeStringInRegex(value, expression)
 }
 func SequenceEmpty[E any]() Term[SequenceSort[E]] { return sequenceEmpty[SequenceSort[E]]{} }
+func SequenceConst[E any](id int, name string) Term[SequenceSort[E]] {
+	return sequenceSymbol[SequenceSort[E]]{iD: id, name: name}
+}
 func SequenceUnit[E any](value Term[E]) Term[SequenceSort[E]] {
 	return sequenceUnit[SequenceSort[E]]{value: value}
 }
@@ -3599,10 +3614,10 @@ func CheckAssuming(solver Solver, assumptions ...Term[BoolSort]) AssumptionCheck
 		if depth < 0 {
 			panic("smt: invalid depth")
 		}
-		status, booleans, integers, reals, bitVectors, strings, core, reason := state.checkAssuming(assumptions)
+		status, booleans, integers, reals, bitVectors, strings, integerSequences, core, reason := state.checkAssuming(assumptions)
 		switch status {
 		case checkSat:
-			return AssumptionsSatisfiable{Value: modelValue{contextID: context, booleans: booleans, integers: integers, reals: reals, bitVectors: bitVectors, strings: strings, arrays: nil, bitVectorArrays: nil, datatypes: nil}}
+			return AssumptionsSatisfiable{Value: modelValue{contextID: context, booleans: booleans, integers: integers, reals: reals, bitVectors: bitVectors, strings: strings, integerSequences: integerSequences, arrays: nil, bitVectorArrays: nil, datatypes: nil}}
 		case checkUnsat:
 			return AssumptionsUnsatisfiable{Value: proofValue{contextID: context, assertions: len(state.assertions)}, Indices: core}
 		default:
@@ -3621,8 +3636,9 @@ func BoolValue(model Model, term Term[BoolSort]) (bool, bool) {
 		integers := __gp_m42.integers
 		reals := __gp_m42.reals
 		strings := __gp_m42.strings
+		integerSequences := __gp_m42.integerSequences
 		datatypes := __gp_m42.datatypes
-		return evaluateBoolWithStringsAndDatatypes(term, booleans, integers, reals, strings, datatypes)
+		return evaluateBoolWithStringsDatatypesAndSequences(term, booleans, integers, reals, strings, integerSequences, datatypes)
 	default:
 		panic("goplus: impossible enum value in match")
 	}
@@ -3635,7 +3651,8 @@ func IntValue(model Model, term Term[IntSort]) (int64, bool) {
 		booleans := __gp_m43.booleans
 		integers := __gp_m43.integers
 		reals := __gp_m43.reals
-		return evaluateInt(term, booleans, integers, reals)
+		integerSequences := __gp_m43.integerSequences
+		return evaluateIntWithSequences(term, booleans, integers, reals, integerSequences)
 	default:
 		panic("goplus: impossible enum value in match")
 	}
@@ -3649,7 +3666,8 @@ func ExactIntValue(model Model, term Term[IntSort]) (IntegerValue, bool) {
 		integers := __gp_m44.integers
 		reals := __gp_m44.reals
 		bitVectors := __gp_m44.bitVectors
-		return evaluateIntegerWithBitVectors(term, booleans, integers, reals, bitVectors)
+		integerSequences := __gp_m44.integerSequences
+		return evaluateIntegerModelWithSequences(term, booleans, integers, reals, bitVectors, integerSequences)
 	default:
 		panic("goplus: impossible enum value in match")
 	}
@@ -3663,8 +3681,9 @@ func IntegerModelValue(model Model, term Term[IntSort]) (IntegerValue, bool) {
 		integers := __gp_m45.integers
 		reals := __gp_m45.reals
 		bitVectors := __gp_m45.bitVectors
+		integerSequences := __gp_m45.integerSequences
 		arrays := __gp_m45.arrays
-		return evaluateIntegerModelTerm(term, booleans, integers, reals, bitVectors, arrays)
+		return evaluateIntegerModelTermWithSequences(term, booleans, integers, reals, bitVectors, integerSequences, arrays)
 	default:
 		panic("goplus: impossible enum value in match")
 	}

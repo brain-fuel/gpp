@@ -160,3 +160,64 @@ func TestGroundIntegerSequenceIndexedOperations(t *testing.T) {
 		t.Fatalf("replacement len=(%d,%v)", value.Len(), found)
 	}
 }
+
+func TestGroundAssignedSymbolicIntegerSequence(t *testing.T) {
+	unit := func(value int64) Term[SequenceSort[IntSort]] {
+		return SequenceUnit[IntSort](Integer{Value: value})
+	}
+	x := SequenceConst[IntSort](1, "x")
+	ground := SequenceConcat(unit(1), unit(2), unit(3))
+	formula := And{Values: []Term[BoolSort]{
+		Equal{Left: x, Right: ground},
+		SequenceContains(x, SequenceConcat(unit(2), unit(3))),
+		Equal{Left: SequenceLength(x), Right: Integer{Value: 3}},
+		Equal{Left: SequenceAt(x, Integer{Value: 1}), Right: unit(2)},
+		Equal{
+			Left:  SequenceReplace(x, unit(2), unit(9)),
+			Right: SequenceConcat(unit(1), unit(9), unit(3)),
+		},
+	}}
+	checked := Check(Assert(5, New(), formula))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", checked)
+	}
+	value, found := IntegerSequenceModelValue(result.Value, x)
+	if !found || value.Len() != 3 {
+		t.Fatalf("x len=(%d,%v)", value.Len(), found)
+	}
+	if valid, found := BoolValue(result.Value, formula); !found || !valid {
+		t.Fatalf("formula=(%v,%v)", valid, found)
+	}
+	if length, found := IntValue(result.Value, SequenceLength(x)); !found || length != 3 {
+		t.Fatalf("length=(%d,%v)", length, found)
+	}
+
+	conflicting := And{Values: []Term[BoolSort]{
+		Equal{Left: x, Right: ground},
+		Equal{Left: x, Right: SequenceConcat(unit(1), unit(2))},
+	}}
+	checked = Check(Assert(6, New(), conflicting))
+	if _, ok := checked.(Unsatisfiable); !ok {
+		t.Fatalf("conflicting result=%T", checked)
+	}
+
+	unbound := SequenceContains(x, unit(2))
+	unknown := Check(Assert(7, New(), unbound))
+	if _, ok := unknown.(Unknown); !ok {
+		t.Fatalf("unbound result=%T", unknown)
+	}
+
+	assumed := CheckAssuming(
+		New(),
+		Equal{Left: x, Right: ground},
+		SequenceContains(x, unit(2)),
+	)
+	assumptionResult, ok := assumed.(AssumptionsSatisfiable)
+	if !ok {
+		t.Fatalf("assumption result=%T", assumed)
+	}
+	if value, found := IntegerSequenceModelValue(assumptionResult.Value, x); !found || value.Len() != 3 {
+		t.Fatalf("assumption x len=(%d,%v)", value.Len(), found)
+	}
+}
