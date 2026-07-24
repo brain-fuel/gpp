@@ -370,13 +370,19 @@ type compactBitVectorProblem struct {
 	rems              [4]FloatingPointRemRelation
 }
 
-func synthesizeFloatingPointZeroIdentity(
+const (
+	compactFloatingIdentityAdd uint8 = iota
+	compactFloatingIdentitySub
+	compactFloatingIdentityMul
+)
+
+func synthesizeFloatingPointIdentity(
 	assignments *[4]compactBitVectorAssignment,
 	assignmentCount *int,
 	exponentBits, significandBits, leftSymbolID, rightSymbolID int,
 	mode uint8,
 	value BitVectorValue,
-	subtract bool,
+	operation uint8,
 ) bool {
 	if leftSymbolID == rightSymbolID {
 		return false
@@ -387,19 +393,29 @@ func synthesizeFloatingPointZeroIdentity(
 		return false
 	}
 	left := FloatingPointFromBits(exponentBits, significandBits, value)
-	zeros := [2]FloatingPointValue{
+	identities := [2]FloatingPointValue{
 		FloatingPointPositiveZero(exponentBits, significandBits),
 		FloatingPointNegativeZero(exponentBits, significandBits),
 	}
+	identityCount := len(identities)
+	if operation == compactFloatingIdentityMul {
+		identities[0] = floatingPointFromRational(
+			mode, exponentBits, significandBits, NewRational(1, 1),
+		)
+		identityCount = 1
+	}
 	var right BitVectorValue
 	found := false
-	for _, zero := range zeros {
-		result := floatingPointAdd(mode, left, zero)
-		if subtract {
-			result = floatingPointSub(mode, left, zero)
+	for _, identity := range identities[:identityCount] {
+		result := floatingPointAdd(mode, left, identity)
+		switch operation {
+		case compactFloatingIdentitySub:
+			result = floatingPointSub(mode, left, identity)
+		case compactFloatingIdentityMul:
+			result = floatingPointMul(mode, left, identity)
 		}
 		if EqualBitVectorValue(FloatingPointBits(result), value) {
-			right = FloatingPointBits(zero)
+			right = FloatingPointBits(identity)
 			found = true
 			break
 		}
@@ -735,11 +751,11 @@ func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome,
 		if leftFound || rightFound || relation.Negated {
 			continue
 		}
-		if !synthesizeFloatingPointZeroIdentity(
+		if !synthesizeFloatingPointIdentity(
 			&assignments, &assignmentCount,
 			relation.ExponentBits, relation.SignificandBits,
 			relation.LeftSymbolID, relation.RightSymbolID,
-			relation.Mode, relation.Value, false,
+			relation.Mode, relation.Value, compactFloatingIdentityAdd,
 		) {
 			return checkOutcome{}, false
 		}
@@ -756,11 +772,32 @@ func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome,
 		if leftFound || rightFound || relation.Negated {
 			continue
 		}
-		if !synthesizeFloatingPointZeroIdentity(
+		if !synthesizeFloatingPointIdentity(
 			&assignments, &assignmentCount,
 			relation.ExponentBits, relation.SignificandBits,
 			relation.LeftSymbolID, relation.RightSymbolID,
-			relation.Mode, relation.Value, true,
+			relation.Mode, relation.Value, compactFloatingIdentitySub,
+		) {
+			return checkOutcome{}, false
+		}
+	}
+	// Multiplication uses the exact identity witness result * 1.
+	for _, relation := range problem.muls[:problem.mulCount] {
+		leftFound, rightFound := false, false
+		for index := 0; index < assignmentCount; index++ {
+			leftFound = leftFound ||
+				assignments[index].id == relation.LeftSymbolID
+			rightFound = rightFound ||
+				assignments[index].id == relation.RightSymbolID
+		}
+		if leftFound || rightFound || relation.Negated {
+			continue
+		}
+		if !synthesizeFloatingPointIdentity(
+			&assignments, &assignmentCount,
+			relation.ExponentBits, relation.SignificandBits,
+			relation.LeftSymbolID, relation.RightSymbolID,
+			relation.Mode, relation.Value, compactFloatingIdentityMul,
 		) {
 			return checkOutcome{}, false
 		}

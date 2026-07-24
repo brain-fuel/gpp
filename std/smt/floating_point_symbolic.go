@@ -193,7 +193,8 @@ type FloatingPointSubRelation struct {
 func (FloatingPointSubRelation) isTerm(BoolSort) {}
 
 // FloatingPointMulRelation constrains the exact rounded IEEE bits of fp.mul
-// over two assigned same-format symbols.
+// over two same-format symbols. Distinct unconstrained operands can use a
+// validated result-times-one canonical model.
 type FloatingPointMulRelation struct {
 	ExponentBits    int
 	SignificandBits int
