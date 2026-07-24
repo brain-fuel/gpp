@@ -86,6 +86,27 @@ type IntegerAffineCubeSystem struct {
 
 func (IntegerAffineCubeSystem) isTerm(BoolSort) {}
 
+// IntegerAffineCubeBound represents (a*x+b)^3 <(=) k when Lower is false
+// and k <(=) (a*x+b)^3 when Lower is true.
+type IntegerAffineCubeBound struct {
+	Factor IntegerAffineFactor
+	Bound  IntegerValue
+	Lower  bool
+	Strict bool
+}
+
+func (IntegerAffineCubeBound) isTerm(BoolSort) {}
+
+// IntegerAffineCubeBoundSystem is an allocation-free conjunction of affine
+// cube bounds.
+type IntegerAffineCubeBoundSystem struct {
+	Count    int
+	Inline   [4]IntegerAffineCubeBound
+	Overflow []IntegerAffineCubeBound
+}
+
+func (IntegerAffineCubeBoundSystem) isTerm(BoolSort) {}
+
 // IntegerSquareBound represents x² <(=) k when Lower is false and
 // k <(=) x² when Lower is true.
 type IntegerSquareBound struct {
@@ -201,6 +222,12 @@ type nonlinearIntegerProblem struct {
 	productBounds     [nonlinearIntegerRelationLimit]IntegerAffineProductBound
 	cubeCount         int
 	cubes             [nonlinearIntegerRelationLimit]IntegerAffineCubeRelation
+	cubeBoundCount    int
+	cubeBounds        [nonlinearIntegerRelationLimit]IntegerAffineCubeBound
+	cubeHasLower      [nonlinearIntegerSymbolLimit]bool
+	cubeHasUpper      [nonlinearIntegerSymbolLimit]bool
+	cubeLower         [nonlinearIntegerSymbolLimit]IntegerValue
+	cubeUpper         [nonlinearIntegerSymbolLimit]IntegerValue
 	impossible        bool
 }
 
@@ -214,7 +241,8 @@ func solveNonlinearIntegerAssertions(
 		}
 	}
 	if problem.relationCount == 0 && problem.boundCount == 0 &&
-		problem.productBoundCount == 0 && problem.cubeCount == 0 {
+		problem.productBoundCount == 0 && problem.cubeCount == 0 &&
+		problem.cubeBoundCount == 0 {
 		return checkOutcome{}, false
 	}
 	if problem.impossible {
@@ -343,6 +371,28 @@ func (problem *nonlinearIntegerProblem) boolean(
 			}
 		}
 		return true
+	case IntegerAffineCubeBound:
+		if negated {
+			value.Lower = !value.Lower
+			value.Strict = !value.Strict
+		}
+		return problem.addAffineCubeBound(value)
+	case IntegerAffineCubeBoundSystem:
+		if negated || value.Count < 0 {
+			return false
+		}
+		bounds := value.Overflow
+		if value.Count <= len(value.Inline) {
+			bounds = value.Inline[:value.Count]
+		} else if len(bounds) != value.Count {
+			return false
+		}
+		for _, bound := range bounds {
+			if !problem.addAffineCubeBound(bound) {
+				return false
+			}
+		}
+		return true
 	case IntegerSquareBound:
 		if negated {
 			value.Lower = !value.Lower
@@ -439,8 +489,23 @@ func (problem *nonlinearIntegerProblem) boolean(
 func (problem *nonlinearIntegerProblem) squareComparison(
 	left, right Term[IntSort], strict, negated bool,
 ) bool {
-	product, target, ok := nonlinearIntegerProductEquality(left, right)
+	factor, target, ok := nonlinearIntegerAffineCubeEquality(left, right)
 	lower := false
+	if !ok {
+		factor, target, ok = nonlinearIntegerAffineCubeEquality(right, left)
+		lower = true
+	}
+	if ok {
+		if negated {
+			lower = !lower
+			strict = !strict
+		}
+		return problem.addAffineCubeBound(IntegerAffineCubeBound{
+			Factor: factor, Bound: target, Lower: lower, Strict: strict,
+		})
+	}
+	product, target, ok := nonlinearIntegerProductEquality(left, right)
+	lower = false
 	if !ok {
 		product, target, ok = nonlinearIntegerProductEquality(right, left)
 		lower = true
@@ -728,6 +793,164 @@ func (problem *nonlinearIntegerProblem) addAffineCubeRelation(
 	return true
 }
 
+func (problem *nonlinearIntegerProblem) addAffineCubeBound(
+	bound IntegerAffineCubeBound,
+) bool {
+	if problem.cubeBoundCount == len(problem.cubeBounds) {
+		return false
+	}
+	position, added := problem.ensureSymbol(bound.Factor.SymbolID)
+	if !added {
+		return false
+	}
+	floor := integerCubeFloor(bound.Bound)
+	exact := CompareIntegerValue(
+		MultiplyIntegerValue(MultiplyIntegerValue(floor, floor), floor),
+		bound.Bound,
+	) == 0
+	factorBoundary := floor
+	if bound.Lower {
+		if bound.Strict || !exact {
+			factorBoundary = AddIntegerValue(
+				factorBoundary, NewIntegerValue(1),
+			)
+		}
+		problem.addAffineCubeVariableBound(
+			position, bound.Factor, factorBoundary, true,
+		)
+	} else {
+		if bound.Strict && exact {
+			factorBoundary = AddIntegerValue(
+				factorBoundary, NewIntegerValue(-1),
+			)
+		}
+		problem.addAffineCubeVariableBound(
+			position, bound.Factor, factorBoundary, false,
+		)
+	}
+	problem.cubeBounds[problem.cubeBoundCount] = bound
+	problem.cubeBoundCount++
+	return true
+}
+
+func (problem *nonlinearIntegerProblem) addAffineCubeVariableBound(
+	position int,
+	factor IntegerAffineFactor,
+	factorBoundary IntegerValue,
+	lower bool,
+) {
+	numerator := AddIntegerValue(
+		factorBoundary, NegateIntegerValue(factor.Offset),
+	)
+	coefficientPositive := CompareIntegerValue(
+		factor.Coefficient, IntegerValue{},
+	) > 0
+	var variableBoundary IntegerValue
+	if lower == coefficientPositive {
+		variableBoundary = ceilDivideIntegerValue(
+			numerator, factor.Coefficient,
+		)
+		if !problem.cubeHasLower[position] ||
+			CompareIntegerValue(
+				variableBoundary, problem.cubeLower[position],
+			) > 0 {
+			problem.cubeLower[position] = variableBoundary
+			problem.cubeHasLower[position] = true
+		}
+	} else {
+		variableBoundary = floorDivideIntegerValue(
+			numerator, factor.Coefficient,
+		)
+		if !problem.cubeHasUpper[position] ||
+			CompareIntegerValue(
+				variableBoundary, problem.cubeUpper[position],
+			) < 0 {
+			problem.cubeUpper[position] = variableBoundary
+			problem.cubeHasUpper[position] = true
+		}
+	}
+	problem.candidates[position].add(variableBoundary)
+	problem.candidates[position].add(AddIntegerValue(
+		variableBoundary, NewIntegerValue(1),
+	))
+	problem.candidates[position].add(AddIntegerValue(
+		variableBoundary, NewIntegerValue(-1),
+	))
+	problem.completeAffineCubeInterval(position)
+}
+
+func (problem *nonlinearIntegerProblem) completeAffineCubeInterval(
+	position int,
+) {
+	if !problem.cubeHasLower[position] || !problem.cubeHasUpper[position] {
+		return
+	}
+	lower, upper := problem.cubeLower[position], problem.cubeUpper[position]
+	if CompareIntegerValue(lower, upper) > 0 {
+		problem.impossible = true
+		return
+	}
+	difference := AddIntegerValue(upper, NegateIntegerValue(lower))
+	width, ok := difference.Int64()
+	if !ok || width >= nonlinearIntegerCandidateLimit {
+		return
+	}
+	for offset := int64(0); offset <= width; offset++ {
+		problem.candidates[position].add(AddIntegerValue(
+			lower, NewIntegerValue(offset),
+		))
+	}
+	problem.domainComplete[position] = true
+}
+
+func floorDivideIntegerValue(
+	numerator, denominator IntegerValue,
+) IntegerValue {
+	if left, leftOK := numerator.Int64(); leftOK {
+		if right, rightOK := denominator.Int64(); rightOK &&
+			right != 0 && (left != math.MinInt64 || right != -1) {
+			quotient, remainder := left/right, left%right
+			if remainder != 0 && (left < 0) != (right < 0) {
+				quotient--
+			}
+			return NewIntegerValue(quotient)
+		}
+	}
+	quotient := new(big.Int)
+	remainder := new(big.Int)
+	quotient.QuoRem(numerator.big(), denominator.big(), remainder)
+	if remainder.Sign() != 0 &&
+		(CompareIntegerValue(numerator, IntegerValue{}) < 0) !=
+			(CompareIntegerValue(denominator, IntegerValue{}) < 0) {
+		quotient.Sub(quotient, big.NewInt(1))
+	}
+	return integerValueFromBig(quotient)
+}
+
+func ceilDivideIntegerValue(
+	numerator, denominator IntegerValue,
+) IntegerValue {
+	if left, leftOK := numerator.Int64(); leftOK {
+		if right, rightOK := denominator.Int64(); rightOK &&
+			right != 0 && (left != math.MinInt64 || right != -1) {
+			quotient, remainder := left/right, left%right
+			if remainder != 0 && (left < 0) == (right < 0) {
+				quotient++
+			}
+			return NewIntegerValue(quotient)
+		}
+	}
+	quotient := new(big.Int)
+	remainder := new(big.Int)
+	quotient.QuoRem(numerator.big(), denominator.big(), remainder)
+	if remainder.Sign() != 0 &&
+		(CompareIntegerValue(numerator, IntegerValue{}) < 0) ==
+			(CompareIntegerValue(denominator, IntegerValue{}) < 0) {
+		quotient.Add(quotient, big.NewInt(1))
+	}
+	return integerValueFromBig(quotient)
+}
+
 func integerCubeRoot(value IntegerValue) IntegerValue {
 	negative := CompareIntegerValue(value, IntegerValue{}) < 0
 	magnitude := absoluteIntegerValue(value)
@@ -763,6 +986,17 @@ func integerCubeRoot(value IntegerValue) IntegerValue {
 		low.Neg(low)
 	}
 	return integerValueFromBig(low)
+}
+
+func integerCubeFloor(value IntegerValue) IntegerValue {
+	root := integerCubeRoot(value)
+	cube := MultiplyIntegerValue(
+		MultiplyIntegerValue(root, root), root,
+	)
+	if CompareIntegerValue(cube, value) > 0 {
+		root = AddIntegerValue(root, NewIntegerValue(-1))
+	}
+	return root
 }
 
 func (problem *nonlinearIntegerProblem) addRelation(
@@ -1185,6 +1419,32 @@ func (problem *nonlinearIntegerProblem) valid(
 		)
 		holds := CompareIntegerValue(cube, relation.Target) == 0
 		if holds == relation.Negated {
+			return false
+		}
+	}
+	for _, bound := range problem.cubeBounds[:problem.cubeBoundCount] {
+		position := problem.symbolPosition(bound.Factor.SymbolID)
+		if position < 0 || !assigned[position] {
+			continue
+		}
+		factor := evaluateIntegerAffineFactor(
+			bound.Factor, values[position],
+		)
+		cube := MultiplyIntegerValue(
+			MultiplyIntegerValue(factor, factor), factor,
+		)
+		comparison := CompareIntegerValue(cube, bound.Bound)
+		holds := comparison <= 0
+		if bound.Strict {
+			holds = comparison < 0
+		}
+		if bound.Lower {
+			holds = comparison >= 0
+			if bound.Strict {
+				holds = comparison > 0
+			}
+		}
+		if !holds {
 			return false
 		}
 	}

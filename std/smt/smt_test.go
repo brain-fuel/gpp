@@ -531,6 +531,123 @@ func TestNonlinearIntegerAffineCubeRelations(t *testing.T) {
 	}
 }
 
+func TestNonlinearIntegerAffineCubeBounds(t *testing.T) {
+	x := IntSymbol{ID: 116, Name: "x"}
+	factor := Add{Values: []Term[IntSort]{
+		ScaleInteger(NewIntegerValue(2), x),
+		IntegerTerm(NewIntegerValue(1)),
+	}}
+	cube := MultiplyInteger(MultiplyInteger(factor, factor), factor)
+	interval := And{Values: []Term[BoolSort]{
+		Less{Left: IntegerTerm(NewIntegerValue(-125)), Right: cube},
+		LessEqual{Left: cube, Right: IntegerTerm(NewIntegerValue(343))},
+	}}
+	checked := Check(Assert(1, New(), interval))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("affine cube interval=%#v", checked)
+	}
+	value, found := IntegerModelValue(result.Value, x)
+	factorValue := AddIntegerValue(
+		MultiplyIntegerValue(NewIntegerValue(2), value),
+		NewIntegerValue(1),
+	)
+	cubeValue := MultiplyIntegerValue(
+		MultiplyIntegerValue(factorValue, factorValue), factorValue,
+	)
+	if !found ||
+		CompareIntegerValue(cubeValue, NewIntegerValue(-125)) <= 0 ||
+		CompareIntegerValue(cubeValue, NewIntegerValue(343)) > 0 {
+		t.Fatalf("affine cube interval model=%v/%v", value, found)
+	}
+
+	congruenceConflict := And{Values: []Term[BoolSort]{
+		LessEqual{Left: IntegerTerm(NewIntegerValue(8)), Right: cube},
+		LessEqual{Left: cube, Right: IntegerTerm(NewIntegerValue(26))},
+	}}
+	conflictResult := Check(Assert(2, New(), congruenceConflict))
+	if _, ok := conflictResult.(Unsatisfiable); !ok {
+		t.Fatalf("affine cube congruence=%#v", conflictResult)
+	}
+
+	negativeFactor := Add{Values: []Term[IntSort]{
+		ScaleInteger(NewIntegerValue(-3), x),
+		IntegerTerm(NewIntegerValue(2)),
+	}}
+	negativeCube := MultiplyInteger(
+		negativeFactor, MultiplyInteger(negativeFactor, negativeFactor),
+	)
+	negativeInterval := And{Values: []Term[BoolSort]{
+		LessEqual{
+			Left: IntegerTerm(NewIntegerValue(-64)), Right: negativeCube,
+		},
+		Less{
+			Left: negativeCube, Right: IntegerTerm(NewIntegerValue(27)),
+		},
+	}}
+	checked = Check(Assert(3, New(), negativeInterval))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("negative affine cube interval=%#v", checked)
+	}
+	value, found = IntegerModelValue(result.Value, x)
+	if !found || CompareIntegerValue(value, IntegerValue{}) < 0 ||
+		CompareIntegerValue(value, NewIntegerValue(2)) > 0 {
+		t.Fatalf("negative affine cube model=%v/%v", value, found)
+	}
+
+	negated := Not{Value: LessEqual{
+		Left: cube, Right: IntegerTerm(NewIntegerValue(343)),
+	}}
+	checked = Check(Assert(4, New(), negated))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("negated affine cube bound=%#v", checked)
+	}
+	value, found = IntegerModelValue(result.Value, x)
+	factorValue = AddIntegerValue(
+		MultiplyIntegerValue(NewIntegerValue(2), value),
+		NewIntegerValue(1),
+	)
+	cubeValue = MultiplyIntegerValue(
+		MultiplyIntegerValue(factorValue, factorValue), factorValue,
+	)
+	if !found || CompareIntegerValue(
+		cubeValue, NewIntegerValue(343),
+	) <= 0 {
+		t.Fatalf("negated affine cube model=%v/%v", value, found)
+	}
+
+	wideRoot, err := ParseIntegerValue("1267650600228229401496703205376")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wideBound := MultiplyIntegerValue(
+		MultiplyIntegerValue(wideRoot, wideRoot), wideRoot,
+	)
+	wideFactor := Add{Values: []Term[IntSort]{
+		x, IntegerTerm(NewIntegerValue(2)),
+	}}
+	wideCube := MultiplyInteger(
+		MultiplyInteger(wideFactor, wideFactor), wideFactor,
+	)
+	wideInterval := And{Values: []Term[BoolSort]{
+		LessEqual{Left: IntegerTerm(wideBound), Right: wideCube},
+		LessEqual{Left: wideCube, Right: IntegerTerm(wideBound)},
+	}}
+	checked = Check(Assert(5, New(), wideInterval))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("wide affine cube interval=%#v", checked)
+	}
+	value, found = IntegerModelValue(result.Value, x)
+	if !found || CompareIntegerValue(
+		AddIntegerValue(value, NewIntegerValue(2)), wideRoot,
+	) != 0 {
+		t.Fatalf("wide affine cube model=%v/%v", value, found)
+	}
+}
+
 func TestNonlinearIntegerAffineFactorProducts(t *testing.T) {
 	x := IntSymbol{ID: 110, Name: "x"}
 	y := IntSymbol{ID: 111, Name: "y"}
