@@ -301,6 +301,78 @@ func TestNonlinearIntegerSelfSquareBounds(t *testing.T) {
 	}
 }
 
+func TestNonlinearIntegerProductBounds(t *testing.T) {
+	x := IntSymbol{ID: 108, Name: "x"}
+	y := IntSymbol{ID: 109, Name: "y"}
+	product := MultiplyInteger(x, y)
+	interval := And{Values: []Term[BoolSort]{
+		Less{Left: IntegerTerm(NewIntegerValue(20)), Right: product},
+		LessEqual{Left: product, Right: IntegerTerm(NewIntegerValue(30))},
+	}}
+	checked := Check(Assert(1, New(), interval))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("product interval=%#v", checked)
+	}
+	xValue, xFound := IntegerModelValue(result.Value, x)
+	yValue, yFound := IntegerModelValue(result.Value, y)
+	productValue := MultiplyIntegerValue(xValue, yValue)
+	if !xFound || !yFound ||
+		CompareIntegerValue(productValue, NewIntegerValue(20)) <= 0 ||
+		CompareIntegerValue(productValue, NewIntegerValue(30)) > 0 {
+		t.Fatalf("product model x=%v/%v y=%v/%v", xValue, xFound, yValue, yFound)
+	}
+
+	negated := Not{Value: LessEqual{
+		Left: product, Right: IntegerTerm(NewIntegerValue(20)),
+	}}
+	checked = Check(Assert(2, New(), negated))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("negated product bound=%#v", checked)
+	}
+	xValue, xFound = IntegerModelValue(result.Value, x)
+	yValue, yFound = IntegerModelValue(result.Value, y)
+	if !xFound || !yFound || CompareIntegerValue(
+		MultiplyIntegerValue(xValue, yValue), NewIntegerValue(20),
+	) <= 0 {
+		t.Fatalf("negated product model x=%v y=%v", xValue, yValue)
+	}
+
+	squareX := MultiplyInteger(x, x)
+	squareY := MultiplyInteger(y, y)
+	boundedConflict := And{Values: []Term[BoolSort]{
+		LessEqual{Left: squareX, Right: IntegerTerm(NewIntegerValue(4))},
+		LessEqual{Left: squareY, Right: IntegerTerm(NewIntegerValue(4))},
+		Less{Left: IntegerTerm(NewIntegerValue(4)), Right: product},
+	}}
+	conflictResult := Check(Assert(3, New(), boundedConflict))
+	if _, ok := conflictResult.(Unsatisfiable); !ok {
+		t.Fatalf("bounded product contradiction=%#v", conflictResult)
+	}
+
+	wide, err := ParseIntegerValue("1267650600228229401496703205376")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wideInterval := And{Values: []Term[BoolSort]{
+		LessEqual{Left: IntegerTerm(wide), Right: product},
+		LessEqual{Left: product, Right: IntegerTerm(wide)},
+	}}
+	checked = Check(Assert(4, New(), wideInterval))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("wide product interval=%#v", checked)
+	}
+	xValue, xFound = IntegerModelValue(result.Value, x)
+	yValue, yFound = IntegerModelValue(result.Value, y)
+	if !xFound || !yFound || CompareIntegerValue(
+		MultiplyIntegerValue(xValue, yValue), wide,
+	) != 0 {
+		t.Fatalf("wide product model x=%v y=%v", xValue, yValue)
+	}
+}
+
 func TestLinearIntegerArithmeticIntegralityUnsat(t *testing.T) {
 	x := IntSymbol{ID: 1, Name: "x"}
 	twoX := ScaleInteger(NewIntegerValue(2), x)

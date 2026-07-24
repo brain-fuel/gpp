@@ -861,6 +861,52 @@ func TestExecuteNonlinearIntegerSquareBounds(t *testing.T) {
 	}
 }
 
+func TestExecuteNonlinearIntegerProductBounds(t *testing.T) {
+	script := `(set-logic QF_NIA)
+(declare-const x Int)
+(declare-const y Int)
+(assert (< 20 (* x y)))
+(assert (<= (* x y) 30))
+(check-sat)
+(get-value (x y (* x y)))`
+	result := Execute(script).(Executed)
+	if _, ok := result.Responses[5].(Satisfiable); !ok {
+		t.Fatalf("product interval=%T", result.Responses[5])
+	}
+	values := result.Responses[6].(ValuesAvailable)
+	product := values.Values[2].(IntegerValue).Value
+	if product <= 20 || product > 30 {
+		t.Fatalf("product model=%d", product)
+	}
+
+	contradiction := `(set-logic QF_NIA)
+(declare-const x Int)
+(declare-const y Int)
+(assert (<= (* x x) 4))
+(assert (<= (* y y) 4))
+(assert (< 4 (* x y)))
+(check-sat)`
+	unsat := Execute(contradiction).(Executed)
+	if _, ok := unsat.Responses[6].(Unsatisfiable); !ok {
+		t.Fatalf("bounded product contradiction=%T", unsat.Responses[6])
+	}
+
+	negated := `(set-logic QF_NIA)
+(declare-const x Int)
+(declare-const y Int)
+(assert (not (<= (* x y) 20)))
+(check-sat)
+(get-value ((* x y)))`
+	negatedResult := Execute(negated).(Executed)
+	if _, ok := negatedResult.Responses[4].(Satisfiable); !ok {
+		t.Fatalf("negated product=%T", negatedResult.Responses[4])
+	}
+	negatedValues := negatedResult.Responses[5].(ValuesAvailable)
+	if negatedValues.Values[0].(IntegerValue).Value <= 20 {
+		t.Fatalf("negated product model=%#v", negatedValues)
+	}
+}
+
 func TestExecuteBooleanLinearIntegerArithmetic(t *testing.T) {
 	script := `(set-logic QF_LIA)
 (declare-const x Int)

@@ -60,6 +60,27 @@ type IntegerSquareSystem struct {
 
 func (IntegerSquareSystem) isTerm(BoolSort) {}
 
+// IntegerProductBound represents x*y <(=) k when Lower is false and
+// k <(=) x*y when Lower is true.
+type IntegerProductBound struct {
+	LeftID, RightID int
+	Bound           IntegerValue
+	Lower           bool
+	Strict          bool
+}
+
+func (IntegerProductBound) isTerm(BoolSort) {}
+
+// IntegerProductBoundSystem is an allocation-free conjunction of bilinear
+// product bounds for the bounded nonlinear integer fragment.
+type IntegerProductBoundSystem struct {
+	Count    int
+	Inline   [4]IntegerProductBound
+	Overflow []IntegerProductBound
+}
+
+func (IntegerProductBoundSystem) isTerm(BoolSort) {}
+
 type nonlinearIntegerCandidates struct {
 	count  int
 	values [nonlinearIntegerCandidateLimit]IntegerValue
@@ -80,15 +101,17 @@ func (values *nonlinearIntegerCandidates) add(value IntegerValue) bool {
 }
 
 type nonlinearIntegerProblem struct {
-	symbolCount    int
-	symbols        [nonlinearIntegerSymbolLimit]int
-	candidates     [nonlinearIntegerSymbolLimit]nonlinearIntegerCandidates
-	domainComplete [nonlinearIntegerSymbolLimit]bool
-	relationCount  int
-	relations      [nonlinearIntegerRelationLimit]nonlinearIntegerProductRelation
-	boundCount     int
-	bounds         [nonlinearIntegerRelationLimit]IntegerSquareBound
-	impossible     bool
+	symbolCount       int
+	symbols           [nonlinearIntegerSymbolLimit]int
+	candidates        [nonlinearIntegerSymbolLimit]nonlinearIntegerCandidates
+	domainComplete    [nonlinearIntegerSymbolLimit]bool
+	relationCount     int
+	relations         [nonlinearIntegerRelationLimit]nonlinearIntegerProductRelation
+	boundCount        int
+	bounds            [nonlinearIntegerRelationLimit]IntegerSquareBound
+	productBoundCount int
+	productBounds     [nonlinearIntegerRelationLimit]IntegerProductBound
+	impossible        bool
 }
 
 func solveNonlinearIntegerAssertions(
@@ -100,7 +123,8 @@ func solveNonlinearIntegerAssertions(
 			return checkOutcome{}, false
 		}
 	}
-	if problem.relationCount == 0 && problem.boundCount == 0 {
+	if problem.relationCount == 0 && problem.boundCount == 0 &&
+		problem.productBoundCount == 0 {
 		return checkOutcome{}, false
 	}
 	if problem.impossible {
@@ -213,6 +237,28 @@ func (problem *nonlinearIntegerProblem) boolean(
 			}
 		}
 		return true
+	case IntegerProductBound:
+		if negated {
+			value.Lower = !value.Lower
+			value.Strict = !value.Strict
+		}
+		return problem.addProductBound(value)
+	case IntegerProductBoundSystem:
+		if negated || value.Count < 0 {
+			return false
+		}
+		bounds := value.Overflow
+		if value.Count <= len(value.Inline) {
+			bounds = value.Inline[:value.Count]
+		} else if len(bounds) != value.Count {
+			return false
+		}
+		for _, bound := range bounds {
+			if !problem.addProductBound(bound) {
+				return false
+			}
+		}
+		return true
 	default:
 		return false
 	}
@@ -233,7 +279,17 @@ func (problem *nonlinearIntegerProblem) squareComparison(
 	leftID, leftOK := directIntegerSymbolID(product.Left)
 	rightID, rightOK := directIntegerSymbolID(product.Right)
 	if !leftOK || !rightOK || leftID != rightID {
-		return false
+		if !leftOK || !rightOK {
+			return false
+		}
+		if negated {
+			lower = !lower
+			strict = !strict
+		}
+		return problem.addProductBound(IntegerProductBound{
+			LeftID: leftID, RightID: rightID,
+			Bound: target, Lower: lower, Strict: strict,
+		})
 	}
 	if negated {
 		lower = !lower
@@ -242,6 +298,36 @@ func (problem *nonlinearIntegerProblem) squareComparison(
 	return problem.addSquareBound(IntegerSquareBound{
 		SymbolID: leftID, Bound: target, Lower: lower, Strict: strict,
 	})
+}
+
+func (problem *nonlinearIntegerProblem) addProductBound(
+	bound IntegerProductBound,
+) bool {
+	if problem.productBoundCount == len(problem.productBounds) {
+		return false
+	}
+	left, leftAdded := problem.ensureSymbol(bound.LeftID)
+	right, rightAdded := problem.ensureSymbol(bound.RightID)
+	if !leftAdded || !rightAdded {
+		return false
+	}
+	witness := bound.Bound
+	if bound.Strict {
+		offset := int64(-1)
+		if bound.Lower {
+			offset = 1
+		}
+		witness = AddIntegerValue(witness, NewIntegerValue(offset))
+	}
+	problem.candidates[left].add(NewIntegerValue(1))
+	problem.candidates[right].add(witness)
+	problem.candidates[left].add(NewIntegerValue(-1))
+	problem.candidates[right].add(NegateIntegerValue(witness))
+	problem.candidates[left].add(IntegerValue{})
+	problem.candidates[right].add(IntegerValue{})
+	problem.productBounds[problem.productBoundCount] = bound
+	problem.productBoundCount++
+	return true
 }
 
 func (problem *nonlinearIntegerProblem) addSquareBound(
@@ -578,6 +664,29 @@ func (problem *nonlinearIntegerProblem) valid(
 		comparison := CompareIntegerValue(
 			MultiplyIntegerValue(values[position], values[position]),
 			bound.Bound,
+		)
+		holds := comparison <= 0
+		if bound.Strict {
+			holds = comparison < 0
+		}
+		if bound.Lower {
+			holds = comparison >= 0
+			if bound.Strict {
+				holds = comparison > 0
+			}
+		}
+		if !holds {
+			return false
+		}
+	}
+	for _, bound := range problem.productBounds[:problem.productBoundCount] {
+		left := problem.symbolPosition(bound.LeftID)
+		right := problem.symbolPosition(bound.RightID)
+		if left < 0 || right < 0 || !assigned[left] || !assigned[right] {
+			continue
+		}
+		comparison := CompareIntegerValue(
+			MultiplyIntegerValue(values[left], values[right]), bound.Bound,
 		)
 		holds := comparison <= 0
 		if bound.Strict {
