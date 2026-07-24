@@ -109,6 +109,67 @@ func TestLinearIntegerArithmeticSatModel(t *testing.T) {
 	}
 }
 
+func TestNonlinearIntegerProductModels(t *testing.T) {
+	x := IntSymbol{ID: 101, Name: "x"}
+	y := IntSymbol{ID: 102, Name: "y"}
+	z := IntSymbol{ID: 103, Name: "z"}
+	formula := And{Values: []Term[BoolSort]{
+		Equal{Left: MultiplyInteger(x, y), Right: IntegerTerm(NewIntegerValue(6))},
+		Equal{Left: MultiplyInteger(x, z), Right: IntegerTerm(NewIntegerValue(10))},
+		Equal{Left: MultiplyInteger(y, z), Right: IntegerTerm(NewIntegerValue(15))},
+	}}
+	checked := Check(Assert(1, New(), formula))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("expected coupled nonlinear model, got %#v", checked)
+	}
+	xValue, xOK := IntegerModelValue(result.Value, x)
+	yValue, yOK := IntegerModelValue(result.Value, y)
+	zValue, zOK := IntegerModelValue(result.Value, z)
+	if !xOK || !yOK || !zOK ||
+		CompareIntegerValue(MultiplyIntegerValue(xValue, yValue), NewIntegerValue(6)) != 0 ||
+		CompareIntegerValue(MultiplyIntegerValue(xValue, zValue), NewIntegerValue(10)) != 0 ||
+		CompareIntegerValue(MultiplyIntegerValue(yValue, zValue), NewIntegerValue(15)) != 0 {
+		t.Fatalf("x=%v/%v y=%v/%v z=%v/%v", xValue, xOK, yValue, yOK, zValue, zOK)
+	}
+}
+
+func TestNonlinearIntegerSelfSquareImage(t *testing.T) {
+	x := IntSymbol{ID: 104, Name: "x"}
+	for _, test := range []struct {
+		name   string
+		target int64
+		sat    bool
+	}{
+		{"square", 49, true},
+		{"nonsquare", 50, false},
+		{"negative", -1, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			formula := Equal{
+				Left:  MultiplyInteger(x, x),
+				Right: IntegerTerm(NewIntegerValue(test.target)),
+			}
+			result := Check(Assert(1, New(), formula))
+			if test.sat {
+				sat, ok := result.(Satisfiable)
+				if !ok {
+					t.Fatalf("result=%#v", result)
+				}
+				value, found := IntegerModelValue(sat.Value, x)
+				if !found || CompareIntegerValue(
+					MultiplyIntegerValue(value, value),
+					NewIntegerValue(test.target),
+				) != 0 {
+					t.Fatalf("value=%v/%v", value, found)
+				}
+			} else if _, ok := result.(Unsatisfiable); !ok {
+				t.Fatalf("result=%#v", result)
+			}
+		})
+	}
+}
+
 func TestLinearIntegerArithmeticIntegralityUnsat(t *testing.T) {
 	x := IntSymbol{ID: 1, Name: "x"}
 	twoX := ScaleInteger(NewIntegerValue(2), x)

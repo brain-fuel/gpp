@@ -427,6 +427,11 @@ func (e *engine) solveAdditional(assumptions []Term[BoolSort]) checkOutcome {
 		}
 	}
 	if integerTheory {
+		if outcome, recognized := solveNonlinearIntegerAssertions(
+			allAssertions,
+		); recognized {
+			return outcome
+		}
 		if outcome, recognized := solveCompactIntegerDivModAssertions(allAssertions); recognized {
 			return outcome
 		}
@@ -802,6 +807,17 @@ func evaluateIntegerWithBitVectors(term Term[IntSort], booleans booleanModel, in
 		left, leftOK := evaluateIntegerWithBitVectors(value.Left, booleans, integers, reals, bitVectors)
 		right, rightOK := evaluateIntegerWithBitVectors(value.Right, booleans, integers, reals, bitVectors)
 		return SubIntegerValue(left, right), leftOK && rightOK
+	case IntegerMultiply:
+		left, leftOK := evaluateIntegerWithBitVectors(
+			value.Left, booleans, integers, reals, bitVectors,
+		)
+		right, rightOK := evaluateIntegerWithBitVectors(
+			value.Right, booleans, integers, reals, bitVectors,
+		)
+		if !leftOK || !rightOK {
+			return IntegerValue{}, false
+		}
+		return MultiplyIntegerValue(left, right), true
 	case IntegerScale:
 		operand, ok := evaluateIntegerWithBitVectors(value.Value, booleans, integers, reals, bitVectors)
 		if !ok {

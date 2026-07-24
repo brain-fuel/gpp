@@ -818,6 +818,14 @@ type Subtract struct {
 
 func (Subtract) isTerm(IntSort) {}
 
+//goplus:variant (Term[S]) IntegerMultiply(Left Term[IntSort], Right Term[IntSort]) Term[IntSort]
+type IntegerMultiply struct {
+	Left  Term[IntSort]
+	Right Term[IntSort]
+}
+
+func (IntegerMultiply) isTerm(IntSort) {}
+
 //goplus:variant (Term[S]) IntegerScale(Coefficient IntegerValue, Value Term[IntSort]) Term[IntSort]
 type IntegerScale struct {
 	Coefficient IntegerValue
@@ -1798,6 +1806,7 @@ type TermCases[S any, R any] struct {
 	integerVariable                    func(ID int) R
 	Add                                func(Values []Term[IntSort]) R
 	Subtract                           func(Left Term[IntSort], Right Term[IntSort]) R
+	IntegerMultiply                    func(Left Term[IntSort], Right Term[IntSort]) R
 	IntegerScale                       func(Coefficient IntegerValue, Value Term[IntSort]) R
 	IntegerDiv                         func(Dividend Term[IntSort], Divisor IntegerValue) R
 	IntegerMod                         func(Dividend Term[IntSort], Divisor IntegerValue) R
@@ -1952,6 +1961,8 @@ func TermFold[S any, R any](t Term[S], cs TermCases[S, R]) R {
 		return cs.Add(m.Values)
 	case Subtract:
 		return cs.Subtract(m.Left, m.Right)
+	case IntegerMultiply:
+		return cs.IntegerMultiply(m.Left, m.Right)
 	case IntegerScale:
 		return cs.IntegerScale(m.Coefficient, m.Value)
 	case IntegerDiv:
@@ -2582,6 +2593,9 @@ func New() Solver { return solverValue{contextID: 0, depth: 0, state: newEngine(
 
 func IntegerTerm(value IntegerValue) Term[IntSort] { return integerExact[IntSort]{value: value} }
 func IntegerVariable(id int) Term[IntSort]         { return integerVariable[IntSort]{iD: id} }
+func MultiplyInteger(left Term[IntSort], right Term[IntSort]) Term[IntSort] {
+	return IntegerMultiply{Left: left, Right: right}
+}
 func ScaleInteger(coefficient IntegerValue, value Term[IntSort]) Term[IntSort] {
 	return IntegerScale{Coefficient: coefficient, Value: value}
 }

@@ -159,6 +159,7 @@ type Term[S any] enum {
 	integerVariable(ID int) Term[S]
 	Add(Values []Term[IntSort]) Term[IntSort]
 	Subtract(Left Term[IntSort], Right Term[IntSort]) Term[IntSort]
+	IntegerMultiply(Left Term[IntSort], Right Term[IntSort]) Term[IntSort]
 	IntegerScale(Coefficient IntegerValue, Value Term[IntSort]) Term[IntSort]
 	IntegerDiv(Dividend Term[IntSort], Divisor IntegerValue) Term[IntSort]
 	IntegerMod(Dividend Term[IntSort], Divisor IntegerValue) Term[IntSort]
@@ -340,6 +341,9 @@ func New() Solver[0, 0] { return solverValue(0, 0, newEngine()) }
 
 func IntegerTerm(value IntegerValue) Term[IntSort] { return Term[IntSort].integerExact(value) }
 func IntegerVariable(id int) Term[IntSort] { return Term[IntSort].integerVariable(id) }
+func MultiplyInteger(left Term[IntSort], right Term[IntSort]) Term[IntSort] {
+	return IntegerMultiply(left, right)
+}
 func ScaleInteger(coefficient IntegerValue, value Term[IntSort]) Term[IntSort] {
 	return IntegerScale(coefficient, value)
 }

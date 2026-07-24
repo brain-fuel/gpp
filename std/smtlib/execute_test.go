@@ -752,6 +752,44 @@ func TestExecuteLinearIntegerArithmetic(t *testing.T) {
 	}
 }
 
+func TestExecuteNonlinearIntegerArithmetic(t *testing.T) {
+	script := `(set-logic QF_NIA)
+(declare-const x Int)
+(declare-const y Int)
+(declare-const z Int)
+(assert (= (* x y) 6))
+(assert (= (* x z) 10))
+(assert (= (* y z) 15))
+(check-sat)
+(get-value (x y z (* x y) (* x z) (* y z)))`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("result=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[7].(Satisfiable); !ok {
+		t.Fatalf("check=%T", result.Responses[7])
+	}
+	values, ok := result.Responses[8].(ValuesAvailable)
+	if !ok || len(values.Values) != 6 {
+		t.Fatalf("values=%#v", result.Responses[8])
+	}
+	for index, want := range []int64{6, 10, 15} {
+		value, ok := values.Values[index+3].(IntegerValue)
+		if !ok || value.Value != want {
+			t.Fatalf("product %d=%#v", index, values.Values[index+3])
+		}
+	}
+
+	unsat := `(set-logic QF_NIA)
+(declare-const x Int)
+(assert (= (* x x) 50))
+(check-sat)`
+	unsatResult := Execute(unsat).(Executed)
+	if _, ok := unsatResult.Responses[3].(Unsatisfiable); !ok {
+		t.Fatalf("square image=%T", unsatResult.Responses[3])
+	}
+}
+
 func TestExecuteBooleanLinearIntegerArithmetic(t *testing.T) {
 	script := `(set-logic QF_LIA)
 (declare-const x Int)
@@ -6035,7 +6073,6 @@ func TestExecuteStrictLinearRealContradiction(t *testing.T) {
 
 func TestExecuteRejectsUnsupportedTermAndScope(t *testing.T) {
 	for _, script := range []string{
-		`(declare-const x Int) (assert (= (* x x) 4))`,
 		`(pop 1)`,
 	} {
 		result, ok := Execute(script).(ExecutionFailed)

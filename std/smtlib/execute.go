@@ -3828,6 +3828,14 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 			if coefficient, ok := integerConstant(terms[1]); ok && terms[0].sort == sortInt {
 				return dynamicTerm{sort: sortInt, integer: smt.ScaleInteger(coefficient, terms[0].integer)}, nil
 			}
+			if terms[0].sort == sortInt && terms[1].sort == sortInt {
+				return dynamicTerm{
+					sort: sortInt,
+					integer: smt.MultiplyInteger(
+						terms[0].integer, terms[1].integer,
+					),
+				}, nil
+			}
 			if coefficient, ok := rationalConstant(terms[0]); ok && terms[1].sort == sortReal {
 				return dynamicTerm{sort: sortReal, real: smt.RealScale{Coefficient: coefficient, Value: terms[1].real}}, nil
 			}
