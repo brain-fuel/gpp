@@ -2927,6 +2927,59 @@ func TestRejectIllSortedFloatingPointFormatConversion(t *testing.T) {
 	}
 }
 
+func TestExecuteFloatingPointFromReal(t *testing.T) {
+	script := `(set-logic ALL)
+(assert (= (fp.to_ieee_bv
+  ((_ to_fp 8 24) RNE (/ 16777217.0 16777216.0))) #x3f800000))
+(assert (= (fp.to_ieee_bv
+  ((_ to_fp 8 24) RNA (/ 16777217.0 16777216.0))) #x3f800001))
+(assert (= (fp.to_ieee_bv
+  ((_ to_fp 8 24) RTZ (- (/ 3.0 2.0)))) #xbfc00000))
+(check-sat)`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("execute=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+		t.Fatalf("check-sat=%#v", result.Responses[len(result.Responses)-1])
+	}
+}
+
+func TestExecuteSymbolicFloatingPointFromReal(t *testing.T) {
+	script := `(set-logic ALL)
+(declare-const x Real)
+(assert (= x (/ 16777217.0 16777216.0)))
+(assert (= (fp.to_ieee_bv ((_ to_fp 8 24) RNE x)) #x3f800000))
+(check-sat)`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("execute=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+		t.Fatalf("check-sat=%#v", result.Responses[len(result.Responses)-1])
+	}
+}
+
+func TestStreamFloatingPointFromReal(t *testing.T) {
+	script := `(set-logic QF_FP)
+(assert (= (fp.to_ieee_bv
+  ((_ to_fp 8 24) RNE 1.000000059604644775390625)) #x3f800000))
+(assert (= (fp.to_ieee_bv
+  ((_ to_fp 8 24) RNA 1.000000059604644775390625)) #x3f800001))
+(check-sat)`
+	result, ok := executeFloatingPointFast(script)
+	if !ok {
+		t.Fatal("streaming executor rejected exact Real conversion")
+	}
+	executed, ok := result.(Executed)
+	if !ok {
+		t.Fatalf("execute=%#v", result)
+	}
+	if _, ok := executed.Responses[len(executed.Responses)-1].(Satisfiable); !ok {
+		t.Fatalf("check-sat=%#v", executed.Responses[len(executed.Responses)-1])
+	}
+}
+
 func TestExecuteSymbolicFloatingPointFromBitVector(t *testing.T) {
 	script := `(set-logic QF_FP)
 (declare-const x (_ BitVec 8))
@@ -3642,6 +3695,43 @@ func BenchmarkExecuteFloatingPointFormatConversion(b *testing.B) {
 (assert (= (fp.to_ieee_bv x) #x3f801000))
 (assert (= (fp.to_ieee_bv ((_ to_fp 5 11) RNE x)) #x3c00))
 (assert (= (fp.to_ieee_bv ((_ to_fp 5 11) RNA x)) #x3c01))
+(check-sat)`
+	b.Run("stream", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			result, ok := Execute(script).(Executed)
+			if !ok {
+				b.Fatal("stream execution failed")
+			}
+			if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+	b.Run("general", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			parsed, ok := Parse(script).(Parsed)
+			if !ok {
+				b.Fatal("parse failed")
+			}
+			responses, errors := executeCommands(parsed.Commands)
+			if len(errors) != 0 {
+				b.Fatal("general executor rejected script")
+			}
+			if _, ok := responses[len(responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+}
+
+func BenchmarkExecuteFloatingPointFromReal(b *testing.B) {
+	script := `(set-logic QF_FP)
+(assert (= (fp.to_ieee_bv
+  ((_ to_fp 8 24) RNE 1.000000059604644775390625)) #x3f800000))
+(assert (= (fp.to_ieee_bv
+  ((_ to_fp 8 24) RNA 1.000000059604644775390625)) #x3f800001))
 (check-sat)`
 	b.Run("stream", func(b *testing.B) {
 		b.ReportAllocs()

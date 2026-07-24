@@ -310,6 +310,9 @@ func (e *engine) solveAdditional(assumptions []Term[BoolSort]) checkOutcome {
 	if outcome, recognized := solveCompactBitVectorArrayExchange(allAssertions); recognized {
 		return outcome
 	}
+	if outcome, recognized := solveCompactRealToFloatingPointAssertions(allAssertions); recognized {
+		return outcome
+	}
 	if outcome, recognized := solveCompactArrayIntegerExchange(allAssertions); recognized {
 		return outcome
 	}
@@ -665,6 +668,9 @@ func evaluateBool(term Term[BoolSort], booleans booleanModel, integers integerMo
 		return rationalCmp(left, right) < 0, leftOK && rightOK
 	case LinearRealConstraint:
 		return evaluateLinearRealConstraint(value, reals)
+	case RealValueAssignment:
+		actual, found := reals.lookup(value.ID)
+		return CompareRational(actual, value.Value) == 0, found
 	case LinearRealSystem:
 		for _, constraint := range value.values() {
 			result, ok := evaluateLinearRealConstraint(constraint, reals)

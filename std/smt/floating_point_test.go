@@ -901,6 +901,66 @@ func TestFloatingPointConvertFormat(t *testing.T) {
 	}
 }
 
+func TestFloatingPointFromRational(t *testing.T) {
+	// 1 + 2^-24 is exactly halfway between binary32 1.0 and its successor.
+	value := NewRational(16777217, 16777216)
+	tests := []struct {
+		mode FloatingPointRoundingMode
+		want uint64
+	}{
+		{RoundNearestTiesToEven(), 0x3f800000},
+		{RoundNearestTiesToAway(), 0x3f800001},
+		{RoundTowardPositive(), 0x3f800001},
+		{RoundTowardNegative(), 0x3f800000},
+		{RoundTowardZero(), 0x3f800000},
+	}
+	for _, test := range tests {
+		got := FloatingPointFromRational(8, 24, test.mode, value)
+		if bits := floatingPointTestBits64(t, got); bits != test.want {
+			t.Fatalf("mode %#v = %#x, want %#x", test.mode, bits, test.want)
+		}
+	}
+	negative := FloatingPointFromRational(
+		8, 24, RoundTowardZero(), NewRational(-3, 2),
+	)
+	if bits := floatingPointTestBits64(t, negative); bits != 0xbfc00000 {
+		t.Fatalf("-3/2 = %#x", bits)
+	}
+	wide := FloatingPointFromRational(
+		15, 113, RoundNearestTiesToEven(),
+		MustParseRational(
+			"340282366920938463463374607431768211457/340282366920938463463374607431768211456",
+		),
+	)
+	if !FloatingPointIsNormal(wide) {
+		t.Fatal("arbitrary-precision rational did not produce a normal value")
+	}
+}
+
+func TestFloatingPointFromRealRelation(t *testing.T) {
+	real := RealSymbol{ID: 1}
+	assignment := Equal{
+		Left: real, Right: Real{Value: NewRational(16777217, 16777216)},
+	}
+	relation := NewFloatingPointFromRealRelation(
+		8, 24, 1, RoundNearestTiesToEven(),
+		NewBitVectorUint64(32, 0x3f800000),
+	)
+	result := Check(AssertFloatingPointFromRealRelation(
+		2, Assert(1, New(), assignment), relation,
+	))
+	if _, ok := result.(Satisfiable); !ok {
+		t.Fatalf("result=%T", result)
+	}
+	relation.Value = NewBitVectorUint64(32, 0x3f800001)
+	result = Check(AssertFloatingPointFromRealRelation(
+		2, Assert(1, New(), assignment), relation,
+	))
+	if _, ok := result.(Unsatisfiable); !ok {
+		t.Fatalf("contradictory result=%T", result)
+	}
+}
+
 func TestFloatingPointFromSignedBitVectorArbitraryWidth(t *testing.T) {
 	value := IntegerToBitVectorValue(
 		130,

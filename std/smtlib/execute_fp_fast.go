@@ -653,9 +653,25 @@ func (scanner *fpFastScanner) operand(
 			modeToken, modeOK := scanner.atom()
 			symbolToken, symbolOK := scanner.atom()
 			mode, modeFound := fpFastRoundingMode(scanner.text(modeToken))
+			rational, rationalError := smt.ParseRational(
+				scanner.text(symbolToken),
+			)
 			symbol, symbolFound := fpFastFindSymbol(
 				scanner.text(symbolToken), symbols,
 			)
+			if modeOK && symbolOK && modeFound &&
+				scanner.text(name) == "to_fp" && rationalError == nil &&
+				scanner.right() && scanner.right() {
+				converted := smt.FloatingPointFromRational(
+					exponentBits, significandBits, mode, rational,
+				)
+				return fpFastOperand{
+					kind:            fpFastExactFloatingBits,
+					exponentBits:    exponentBits,
+					significandBits: significandBits,
+					value:           smt.FloatingPointBits(converted),
+				}, true
+			}
 			if modeOK && symbolOK && modeFound && symbolFound &&
 				symbol.bitWidth > 0 && scanner.right() && scanner.right() {
 				return fpFastOperand{

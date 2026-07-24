@@ -22,6 +22,14 @@ type RealSymbolEquality struct {
 
 func (RealSymbolEquality) isTerm(BoolSort) {}
 
+// RealValueAssignment is the compact exact assignment of a named Real symbol.
+type RealValueAssignment struct {
+	ID    int
+	Value Rational
+}
+
+func (RealValueAssignment) isTerm(BoolSort) {}
+
 // RealUnaryComparison compares one Real->Real application with an exact
 // constant. When ApplicationOnLeft is true it denotes f(x) op Bound;
 // otherwise it denotes Bound op f(x). Strict selects < instead of <=.
@@ -268,7 +276,7 @@ func containsRealTheory(term Term[BoolSort]) bool {
 		return true
 	case RealUnaryEquality:
 		return true
-	case RealSymbolEquality, RealUnaryComparison, RealBinaryComparison, RealTernaryComparison:
+	case RealSymbolEquality, RealValueAssignment, RealUnaryComparison, RealBinaryComparison, RealTernaryComparison:
 		return true
 	}
 	return false
@@ -390,6 +398,11 @@ func (problem *rationalProblem) boolean(term Term[BoolSort]) bool {
 		left := RealSymbol{ID: value.LeftID}
 		right := RealSymbol{ID: value.RightID}
 		return problem.constraint(left, right, false) && problem.constraint(right, left, false)
+	case RealValueAssignment:
+		symbol := RealSymbol{ID: value.ID}
+		constant := Real{Value: value.Value}
+		return problem.constraint(symbol, constant, false) &&
+			problem.constraint(constant, symbol, false)
 	case LinearRealConstraint:
 		return problem.compactConstraint(value)
 	case LinearRealSystem:

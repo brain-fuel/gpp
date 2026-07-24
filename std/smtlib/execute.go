@@ -43,6 +43,7 @@ type dynamicTerm struct {
 	floatingPointConversion *dynamicFloatingPointConversion
 	floatingPointFromBV     *dynamicFloatingPointFromBV
 	floatingPointFormat     *dynamicFloatingPointFormat
+	floatingPointFromReal   *dynamicFloatingPointFromReal
 	floatingPointMinMax     *dynamicFloatingPointMinMax
 	floatingPointAdd        *dynamicFloatingPointAdd
 	floatingPointSub        *dynamicFloatingPointSub
@@ -92,6 +93,12 @@ type dynamicFloatingPointFormat struct {
 	targetExponentBits, targetSignificandBits int
 	symbolID                                  int
 	mode                                      smt.FloatingPointRoundingMode
+}
+
+type dynamicFloatingPointFromReal struct {
+	exponentBits, significandBits int
+	symbolID                      int
+	mode                          smt.FloatingPointRoundingMode
 }
 
 type dynamicFloatingPointMinMax struct {
@@ -2401,21 +2408,22 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 		terms[0].sort == sortFloatingPoint {
 		return dynamicTerm{
 			sort: sortBitVector, bitWidth: terms[0].bitWidth,
-			bitVector:           terms[0].bitVector,
-			bitVectorExact:      terms[0].bitVectorExact,
-			bitVectorValue:      terms[0].bitVectorValue,
-			floatingPointRound:  terms[0].floatingPointRound,
-			floatingPointFromBV: terms[0].floatingPointFromBV,
-			floatingPointFormat: terms[0].floatingPointFormat,
-			floatingPointMinMax: terms[0].floatingPointMinMax,
-			floatingPointAdd:    terms[0].floatingPointAdd,
-			floatingPointSub:    terms[0].floatingPointSub,
-			floatingPointMul:    terms[0].floatingPointMul,
-			floatingPointDiv:    terms[0].floatingPointDiv,
-			floatingPointFMA:    terms[0].floatingPointFMA,
-			floatingPointSqrt:   terms[0].floatingPointSqrt,
-			floatingPointRem:    terms[0].floatingPointRem,
-			bitVectorSymbol:     terms[0].floatingPointSymbol,
+			bitVector:             terms[0].bitVector,
+			bitVectorExact:        terms[0].bitVectorExact,
+			bitVectorValue:        terms[0].bitVectorValue,
+			floatingPointRound:    terms[0].floatingPointRound,
+			floatingPointFromBV:   terms[0].floatingPointFromBV,
+			floatingPointFormat:   terms[0].floatingPointFormat,
+			floatingPointFromReal: terms[0].floatingPointFromReal,
+			floatingPointMinMax:   terms[0].floatingPointMinMax,
+			floatingPointAdd:      terms[0].floatingPointAdd,
+			floatingPointSub:      terms[0].floatingPointSub,
+			floatingPointMul:      terms[0].floatingPointMul,
+			floatingPointDiv:      terms[0].floatingPointDiv,
+			floatingPointFMA:      terms[0].floatingPointFMA,
+			floatingPointSqrt:     terms[0].floatingPointSqrt,
+			floatingPointRem:      terms[0].floatingPointRem,
+			bitVectorSymbol:       terms[0].floatingPointSymbol,
 		}, nil
 	}
 	if operator == "fp.add" && len(terms) == 3 &&
@@ -3326,6 +3334,24 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 					),
 				}, nil
 			}
+			fromReal, exact := terms[0], terms[1]
+			if fromReal.floatingPointFromReal == nil {
+				fromReal, exact = terms[1], terms[0]
+			}
+			if fromReal.floatingPointFromReal != nil &&
+				exact.bitVectorExact &&
+				fromReal.bitWidth == exact.bitWidth &&
+				fromReal.floatingPointFromReal.symbolID != 0 {
+				relation := fromReal.floatingPointFromReal
+				return dynamicTerm{
+					sort: sortBool,
+					boolean: smt.NewFloatingPointFromRealRelation(
+						relation.exponentBits, relation.significandBits,
+						relation.symbolID, relation.mode,
+						exact.bitVectorValue,
+					),
+				}, nil
+			}
 			selected, exact := terms[0], terms[1]
 			if selected.floatingPointMinMax == nil {
 				selected, exact = terms[1], terms[0]
@@ -3936,6 +3962,14 @@ func buildIndexedBitVectorApplication(operator string, parameters []int, terms [
 	if operator == "to_fp" {
 		if len(parameters) == 2 && parameters[0] >= 2 && parameters[1] >= 2 &&
 			len(terms) == 2 && terms[0].sort == sortRoundingMode &&
+			(terms[1].sort == sortReal ||
+				terms[1].sort == sortNumber && terms[1].real != nil) {
+			return buildFloatingPointFromRealApplication(
+				parameters[0], parameters[1], terms[0], terms[1],
+			)
+		}
+		if len(parameters) == 2 && parameters[0] >= 2 && parameters[1] >= 2 &&
+			len(terms) == 2 && terms[0].sort == sortRoundingMode &&
 			terms[1].sort == sortFloatingPoint {
 			return buildFloatingPointFormatConversionApplication(
 				parameters[0], parameters[1], terms[0], terms[1],
@@ -4009,6 +4043,40 @@ func buildIndexedBitVectorApplication(operator string, parameters []int, terms [
 		}
 	}
 	return dynamicTerm{}, fmt.Errorf("unsupported indexed bit-vector application %s", operator)
+}
+
+func buildFloatingPointFromRealApplication(
+	exponentBits, significandBits int,
+	mode, value dynamicTerm,
+) (dynamicTerm, error) {
+	if rational, exact := smt.ExactRealConstant(value.real); exact {
+		converted := smt.FloatingPointFromRational(
+			exponentBits, significandBits, mode.roundingMode, rational,
+		)
+		bits := smt.FloatingPointBits(converted)
+		return dynamicTerm{
+			sort:         sortFloatingPoint,
+			bitWidth:     exponentBits + significandBits,
+			exponentBits: exponentBits, significandBits: significandBits,
+			bitVector:      smt.BitVectorTerm(bits),
+			bitVectorExact: true, bitVectorValue: bits,
+		}, nil
+	}
+	symbol, direct := value.real.(smt.RealSymbol)
+	if !direct {
+		return dynamicTerm{}, fmt.Errorf(
+			"real to floating-point conversion currently requires an exact value or direct symbol",
+		)
+	}
+	return dynamicTerm{
+		sort:         sortFloatingPoint,
+		bitWidth:     exponentBits + significandBits,
+		exponentBits: exponentBits, significandBits: significandBits,
+		floatingPointFromReal: &dynamicFloatingPointFromReal{
+			exponentBits: exponentBits, significandBits: significandBits,
+			symbolID: symbol.ID, mode: mode.roundingMode,
+		},
+	}, nil
 }
 
 func buildFloatingPointFormatConversionApplication(

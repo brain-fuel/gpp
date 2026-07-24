@@ -58,6 +58,15 @@ func FloatingPointConvertFormat(targetExponentBits nat, targetSignificandBits na
 	)
 }
 
+// FloatingPointFromRational implements SMT-LIB's ((_ to_fp e s) rm Real)
+// overload without passing through host floating point.
+func FloatingPointFromRational(exponentBits nat, significandBits nat, mode FloatingPointRoundingMode, value Rational) FloatingPointValue[exponentBits, significandBits] {
+	return floatingPointFromRational(
+		floatingPointRoundingModeCode(mode),
+		int(exponentBits), int(significandBits), value,
+	)
+}
+
 // FloatingPointFromComponents implements SMT-LIB's native
 // (fp sign exponent significand) constructor. The significand argument contains
 // the s-1 explicitly encoded trailing bits, not the hidden leading bit.
