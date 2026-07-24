@@ -665,6 +665,94 @@ func synthesizeFloatingPointSelfOperation(
 	return false, !FloatingPointIsNaN(target)
 }
 
+func synthesizeFloatingPointSelfAdd(
+	assignments *[4]compactBitVectorAssignment,
+	assignmentCount *int,
+	relation FloatingPointAddRelation,
+) bool {
+	total := relation.ExponentBits + relation.SignificandBits
+	if relation.Value.Width() != total ||
+		*assignmentCount == len(assignments) {
+		return false
+	}
+	target := FloatingPointFromBits(
+		relation.ExponentBits, relation.SignificandBits, relation.Value,
+	)
+	commit := func(candidate FloatingPointValue) bool {
+		actual := floatingPointAdd(relation.Mode, candidate, candidate)
+		if !EqualBitVectorValue(FloatingPointBits(actual), relation.Value) {
+			return false
+		}
+		assignments[*assignmentCount] = compactBitVectorAssignment{
+			id: relation.LeftSymbolID, value: FloatingPointBits(candidate),
+			fixed: NotBitVectorValue(NewBitVectorUint64(total, 0)),
+		}
+		*assignmentCount++
+		return true
+	}
+	if commit(target) {
+		return true
+	}
+	rational, finite := floatingPointToRational(target)
+	if !finite {
+		return false
+	}
+	half := DivideRational(rational, NewRational(2, 1))
+	for mode := uint8(1); mode <= 5; mode++ {
+		candidate := floatingPointFromRational(
+			mode, relation.ExponentBits, relation.SignificandBits, half,
+		)
+		if commit(candidate) ||
+			commit(floatingPointNextDown(candidate)) ||
+			commit(floatingPointNextUp(candidate)) {
+			return true
+		}
+	}
+	return false
+}
+
+func synthesizeFloatingPointSelfMul(
+	assignments *[4]compactBitVectorAssignment,
+	assignmentCount *int,
+	relation FloatingPointMulRelation,
+) (bool, bool) {
+	total := relation.ExponentBits + relation.SignificandBits
+	if relation.Value.Width() != total ||
+		*assignmentCount == len(assignments) {
+		return false, false
+	}
+	target := FloatingPointFromBits(
+		relation.ExponentBits, relation.SignificandBits, relation.Value,
+	)
+	commit := func(candidate FloatingPointValue) bool {
+		actual := floatingPointMul(relation.Mode, candidate, candidate)
+		if !EqualBitVectorValue(FloatingPointBits(actual), relation.Value) {
+			return false
+		}
+		assignments[*assignmentCount] = compactBitVectorAssignment{
+			id: relation.LeftSymbolID, value: FloatingPointBits(candidate),
+			fixed: NotBitVectorValue(NewBitVectorUint64(total, 0)),
+		}
+		*assignmentCount++
+		return true
+	}
+	if commit(target) {
+		return true, false
+	}
+	if FloatingPointIsNegative(target) && !FloatingPointIsNaN(target) {
+		return false, true
+	}
+	for mode := uint8(1); mode <= 5; mode++ {
+		candidate := floatingPointSqrt(mode, target)
+		if commit(candidate) ||
+			commit(floatingPointNextDown(candidate)) ||
+			commit(floatingPointNextUp(candidate)) {
+			return true, false
+		}
+	}
+	return false, false
+}
+
 func synthesizeFloatingPointToRealPreimage(
 	relation FloatingPointToRealRelation,
 ) (int, BitVectorValue, bool) {
@@ -1717,6 +1805,14 @@ func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome,
 		if leftFound || rightFound || relation.Negated {
 			continue
 		}
+		if relation.LeftSymbolID == relation.RightSymbolID {
+			if !synthesizeFloatingPointSelfAdd(
+				&assignments, &assignmentCount, relation,
+			) {
+				return checkOutcome{}, false
+			}
+			continue
+		}
 		if !synthesizeFloatingPointIdentity(
 			&assignments, &assignmentCount,
 			relation.ExponentBits, relation.SignificandBits,
@@ -1772,6 +1868,18 @@ func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome,
 				assignments[index].id == relation.RightSymbolID
 		}
 		if leftFound || rightFound || relation.Negated {
+			continue
+		}
+		if relation.LeftSymbolID == relation.RightSymbolID {
+			synthesized, impossible := synthesizeFloatingPointSelfMul(
+				&assignments, &assignmentCount, relation,
+			)
+			if impossible {
+				return checkOutcome{status: checkUnsat}, true
+			}
+			if !synthesized {
+				return checkOutcome{}, false
+			}
 			continue
 		}
 		if !synthesizeFloatingPointIdentity(

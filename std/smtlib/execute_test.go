@@ -2570,19 +2570,24 @@ func TestExecuteRepeatedOperandFloatingPointImages(t *testing.T) {
 	}{
 		{
 			name: "canonical images",
-			body: `(assert (= (fp.to_ieee_bv (fp.sub RNE subSource subSource)) #x00000000))
-(assert (= (fp.to_ieee_bv (fp.div RNE divSource divSource)) #x3f800000))
-(assert (= (fp.to_ieee_bv (fp.rem remSource remSource)) #x00000000))`,
+			body: `(assert (= (fp.to_ieee_bv (fp.add RNE addSource addSource)) #x40000000))
+(assert (= (fp.to_ieee_bv (fp.mul RNE mulSource mulSource)) #x3f800000))`,
 			wantSat: true,
 		},
 		{
 			name: "outside subtraction image",
 			body: `(assert (= (fp.to_ieee_bv (fp.sub RNE subSource subSource)) #x3f800000))`,
 		},
+		{
+			name: "outside multiplication image",
+			body: `(assert (= (fp.to_ieee_bv (fp.mul RNE mulSource mulSource)) #xbf800000))`,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			script := `(set-logic QF_FP)
+(declare-const addSource (_ FloatingPoint 8 24))
 (declare-const subSource (_ FloatingPoint 8 24))
+(declare-const mulSource (_ FloatingPoint 8 24))
 (declare-const divSource (_ FloatingPoint 8 24))
 (declare-const remSource (_ FloatingPoint 8 24))
 ` + test.body + `
@@ -4188,14 +4193,12 @@ func BenchmarkExecuteSharedFloatingPointEqualityGraph(b *testing.B) {
 	})
 }
 
-func BenchmarkExecuteRepeatedOperandFloatingPointImages(b *testing.B) {
+func BenchmarkExecuteRepeatedOperandFloatingPointAddMul(b *testing.B) {
 	script := `(set-logic QF_FP)
-(declare-const subSource (_ FloatingPoint 8 24))
-(declare-const divSource (_ FloatingPoint 8 24))
-(declare-const remSource (_ FloatingPoint 8 24))
-(assert (= (fp.to_ieee_bv (fp.sub RNE subSource subSource)) #x00000000))
-(assert (= (fp.to_ieee_bv (fp.div RNE divSource divSource)) #x3f800000))
-(assert (= (fp.to_ieee_bv (fp.rem remSource remSource)) #x00000000))
+(declare-const addSource (_ FloatingPoint 8 24))
+(declare-const mulSource (_ FloatingPoint 8 24))
+(assert (= (fp.to_ieee_bv (fp.add RNE addSource addSource)) #x40000000))
+(assert (= (fp.to_ieee_bv (fp.mul RNE mulSource mulSource)) #x3f800000))
 (check-sat)`
 	b.Run("stream", func(b *testing.B) {
 		b.ReportAllocs()

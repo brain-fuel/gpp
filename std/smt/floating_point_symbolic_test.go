@@ -1161,6 +1161,20 @@ func TestRepeatedOperandFloatingPointImages(t *testing.T) {
 		eval   func(FloatingPointValue) FloatingPointValue
 	}{
 		{
+			"add",
+			floatingPointAdd(mode, one, one),
+			func(target BitVectorValue) CheckResult {
+				return Check(AssertFloatingPointAddRelation(
+					1, New(), NewFloatingPointAddRelation(
+						exponentBits, significandBits, 1, 1, modeValue, target,
+					),
+				))
+			},
+			func(value FloatingPointValue) FloatingPointValue {
+				return floatingPointAdd(mode, value, value)
+			},
+		},
+		{
 			"subtract",
 			floatingPointSub(mode, one, one),
 			func(target BitVectorValue) CheckResult {
@@ -1172,6 +1186,20 @@ func TestRepeatedOperandFloatingPointImages(t *testing.T) {
 			},
 			func(value FloatingPointValue) FloatingPointValue {
 				return floatingPointSub(mode, value, value)
+			},
+		},
+		{
+			"multiply",
+			floatingPointMul(mode, negativeOne, negativeOne),
+			func(target BitVectorValue) CheckResult {
+				return Check(AssertFloatingPointMulRelation(
+					1, New(), NewFloatingPointMulRelation(
+						exponentBits, significandBits, 1, 1, modeValue, target,
+					),
+				))
+			},
+			func(value FloatingPointValue) FloatingPointValue {
+				return floatingPointMul(mode, value, value)
 			},
 		},
 		{
@@ -1241,6 +1269,16 @@ func TestRepeatedOperandFloatingPointRejectsOutsideImages(t *testing.T) {
 		),
 	)).(Unsatisfiable); !ok {
 		t.Fatal("x/x cannot equal zero")
+	}
+	negativeOne := FloatingPointBits(floatingPointFromRational(
+		1, 8, 24, NewRational(-1, 1),
+	))
+	if _, ok := Check(AssertFloatingPointMulRelation(
+		1, New(), NewFloatingPointMulRelation(
+			8, 24, 1, 1, RoundNearestTiesToEven(), negativeOne,
+		),
+	)).(Unsatisfiable); !ok {
+		t.Fatal("x*x cannot equal a negative value")
 	}
 	if _, ok := Check(AssertFloatingPointRemRelation(
 		1, New(), NewFloatingPointRemRelation(8, 24, 1, 1, one),
