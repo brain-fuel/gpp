@@ -370,6 +370,55 @@ type compactBitVectorProblem struct {
 	rems              [4]FloatingPointRemRelation
 }
 
+func synthesizeFloatingPointZeroIdentity(
+	assignments *[4]compactBitVectorAssignment,
+	assignmentCount *int,
+	exponentBits, significandBits, leftSymbolID, rightSymbolID int,
+	mode uint8,
+	value BitVectorValue,
+	subtract bool,
+) bool {
+	if leftSymbolID == rightSymbolID {
+		return false
+	}
+	total := exponentBits + significandBits
+	if value.Width() != total ||
+		*assignmentCount+2 > len(assignments) {
+		return false
+	}
+	left := FloatingPointFromBits(exponentBits, significandBits, value)
+	zeros := [2]FloatingPointValue{
+		FloatingPointPositiveZero(exponentBits, significandBits),
+		FloatingPointNegativeZero(exponentBits, significandBits),
+	}
+	var right BitVectorValue
+	found := false
+	for _, zero := range zeros {
+		result := floatingPointAdd(mode, left, zero)
+		if subtract {
+			result = floatingPointSub(mode, left, zero)
+		}
+		if EqualBitVectorValue(FloatingPointBits(result), value) {
+			right = FloatingPointBits(zero)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return false
+	}
+	fixed := NotBitVectorValue(NewBitVectorUint64(total, 0))
+	assignments[*assignmentCount] = compactBitVectorAssignment{
+		id: leftSymbolID, value: value, fixed: fixed,
+	}
+	*assignmentCount++
+	assignments[*assignmentCount] = compactBitVectorAssignment{
+		id: rightSymbolID, value: right, fixed: fixed,
+	}
+	*assignmentCount++
+	return true
+}
+
 func (problem *compactBitVectorProblem) add(term Term[BoolSort], negated bool) bool {
 	switch value := term.(type) {
 	case And:
@@ -686,47 +735,35 @@ func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome,
 		if leftFound || rightFound || relation.Negated {
 			continue
 		}
-		if relation.LeftSymbolID == relation.RightSymbolID {
+		if !synthesizeFloatingPointZeroIdentity(
+			&assignments, &assignmentCount,
+			relation.ExponentBits, relation.SignificandBits,
+			relation.LeftSymbolID, relation.RightSymbolID,
+			relation.Mode, relation.Value, false,
+		) {
 			return checkOutcome{}, false
 		}
-		total := relation.ExponentBits + relation.SignificandBits
-		if relation.Value.Width() != total ||
-			assignmentCount+2 > len(assignments) {
+	}
+	// Subtraction has the same exact identity witness: result - signed-zero.
+	for _, relation := range problem.subs[:problem.subCount] {
+		leftFound, rightFound := false, false
+		for index := 0; index < assignmentCount; index++ {
+			leftFound = leftFound ||
+				assignments[index].id == relation.LeftSymbolID
+			rightFound = rightFound ||
+				assignments[index].id == relation.RightSymbolID
+		}
+		if leftFound || rightFound || relation.Negated {
+			continue
+		}
+		if !synthesizeFloatingPointZeroIdentity(
+			&assignments, &assignmentCount,
+			relation.ExponentBits, relation.SignificandBits,
+			relation.LeftSymbolID, relation.RightSymbolID,
+			relation.Mode, relation.Value, true,
+		) {
 			return checkOutcome{}, false
 		}
-		left := FloatingPointFromBits(
-			relation.ExponentBits, relation.SignificandBits, relation.Value,
-		)
-		zeros := [2]FloatingPointValue{
-			FloatingPointPositiveZero(
-				relation.ExponentBits, relation.SignificandBits,
-			),
-			FloatingPointNegativeZero(
-				relation.ExponentBits, relation.SignificandBits,
-			),
-		}
-		var right BitVectorValue
-		found := false
-		for _, zero := range zeros {
-			sum := floatingPointAdd(relation.Mode, left, zero)
-			if EqualBitVectorValue(FloatingPointBits(sum), relation.Value) {
-				right = FloatingPointBits(zero)
-				found = true
-				break
-			}
-		}
-		if !found {
-			return checkOutcome{}, false
-		}
-		fixed := NotBitVectorValue(NewBitVectorUint64(total, 0))
-		assignments[assignmentCount] = compactBitVectorAssignment{
-			id: relation.LeftSymbolID, value: relation.Value, fixed: fixed,
-		}
-		assignmentCount++
-		assignments[assignmentCount] = compactBitVectorAssignment{
-			id: relation.RightSymbolID, value: right, fixed: fixed,
-		}
-		assignmentCount++
 	}
 	// Width-changing extract relations can constrain a symbol without first
 	// assigning its entire source value. Synthesize a deterministic source

@@ -366,6 +366,66 @@ func TestSymbolicFloatingPointSubRelation(t *testing.T) {
 	}
 }
 
+func TestSymbolicFloatingPointSubSynthesizesUnconstrainedOperands(t *testing.T) {
+	tests := []struct {
+		name          string
+		target, right uint64
+	}{
+		{"finite", 0x3fc00000, 0x00000000},
+		{"negative-zero", 0x80000000, 0x00000000},
+		{"negative-infinity", 0xff800000, 0x00000000},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			relation := NewFloatingPointSubRelation(
+				8, 24, 1, 2, RoundNearestTiesToEven(),
+				NewBitVectorUint64(32, test.target),
+			)
+			result, ok := Check(AssertFloatingPointSubRelation(
+				1, New(), relation,
+			)).(Satisfiable)
+			if !ok {
+				t.Fatalf("expected synthesized fp.sub model, got %#v", Check(
+					AssertFloatingPointSubRelation(1, New(), relation),
+				))
+			}
+			left, leftFound := FloatingPointSymbolModelBits(result.Value, 1)
+			right, rightFound := FloatingPointSymbolModelBits(result.Value, 2)
+			leftValue, leftInline := left.Uint64()
+			rightValue, rightInline := right.Uint64()
+			if !leftFound || !rightFound || !leftInline || !rightInline ||
+				leftValue != test.target || rightValue != test.right {
+				t.Fatalf(
+					"unexpected operands: left=%#x/%v right=%#x/%v",
+					leftValue, leftFound, rightValue, rightFound,
+				)
+			}
+		})
+	}
+}
+
+func TestSymbolicFloatingPointSubSynthesizesBinary128Operands(t *testing.T) {
+	target := FloatingPointBits(FloatingPointFromRational(
+		15, 113, RoundNearestTiesToEven(), NewRational(-3, 2),
+	))
+	relation := NewFloatingPointSubRelation(
+		15, 113, 1, 2, RoundNearestTiesToEven(), target,
+	)
+	result, ok := Check(AssertFloatingPointSubRelation(
+		1, New(), relation,
+	)).(Satisfiable)
+	if !ok {
+		t.Fatal("expected synthesized binary128 fp.sub model")
+	}
+	left, leftFound := FloatingPointSymbolModelBits(result.Value, 1)
+	right, rightFound := FloatingPointSymbolModelBits(result.Value, 2)
+	if !leftFound || !rightFound ||
+		!EqualBitVectorValue(left, target) ||
+		!EqualBitVectorValue(right, NewBitVectorUint64(128, 0)) {
+		t.Fatalf("unexpected binary128 operands: left=%v right=%v", left, right)
+	}
+}
+
 func TestSymbolicFloatingPointMulRelation(t *testing.T) {
 	leftBits := NewBitVectorUint64(32, 0x3fc00000)
 	rightBits := NewBitVectorUint64(32, 0x40100000)

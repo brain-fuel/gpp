@@ -178,7 +178,8 @@ type FloatingPointAddRelation struct {
 func (FloatingPointAddRelation) isTerm(BoolSort) {}
 
 // FloatingPointSubRelation constrains the exact rounded IEEE bits of fp.sub
-// over two assigned same-format symbols.
+// over two same-format symbols. Distinct unconstrained operands can use a
+// validated result-minus-signed-zero canonical model.
 type FloatingPointSubRelation struct {
 	ExponentBits    int
 	SignificandBits int
