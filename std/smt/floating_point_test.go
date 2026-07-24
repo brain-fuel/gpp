@@ -433,6 +433,94 @@ func TestFloatingPointMulSpecialValues(t *testing.T) {
 	}
 }
 
+func TestFloatingPointDivBinary32(t *testing.T) {
+	modes := []FloatingPointRoundingMode{
+		RoundNearestTiesToEven(),
+		RoundNearestTiesToAway(),
+		RoundTowardPositive(),
+		RoundTowardNegative(),
+		RoundTowardZero(),
+	}
+	tests := []struct {
+		name        string
+		left, right uint64
+		want        [5]uint64
+	}{
+		{"exact", 0x40400000, 0x40000000, [5]uint64{0x3fc00000, 0x3fc00000, 0x3fc00000, 0x3fc00000, 0x3fc00000}},
+		{"positive third", 0x3f800000, 0x40400000, [5]uint64{0x3eaaaaab, 0x3eaaaaab, 0x3eaaaaab, 0x3eaaaaaa, 0x3eaaaaaa}},
+		{"negative third", 0xbf800000, 0x40400000, [5]uint64{0xbeaaaaab, 0xbeaaaaab, 0xbeaaaaaa, 0xbeaaaaab, 0xbeaaaaaa}},
+		{"positive underflow tie", 0x00000001, 0x40000000, [5]uint64{0, 1, 1, 0, 0}},
+		{"overflow", 0x7f7fffff, 0x3f000000, [5]uint64{0x7f800000, 0x7f800000, 0x7f800000, 0x7f7fffff, 0x7f7fffff}},
+	}
+	for _, test := range tests {
+		for modeIndex, mode := range modes {
+			quotient := FloatingPointDiv(
+				mode,
+				FloatingPointFromUint64(8, 24, test.left),
+				FloatingPointFromUint64(8, 24, test.right),
+			)
+			got, ok := FloatingPointBits(quotient).Uint64()
+			if !ok || got != test.want[modeIndex] {
+				t.Fatalf("%s mode %d bits=%#08x,%v, want %#08x,true", test.name, modeIndex, got, ok, test.want[modeIndex])
+			}
+		}
+	}
+}
+
+func TestFloatingPointDivSpecialValues(t *testing.T) {
+	positiveInfinity := FloatingPointPositiveInfinity(8, 24)
+	positiveZero := FloatingPointPositiveZero(8, 24)
+	negativeZero := FloatingPointNegativeZero(8, 24)
+	one := FloatingPointFromUint64(8, 24, 0x3f800000)
+	if !FloatingPointIsNaN(FloatingPointDiv(
+		RoundNearestTiesToEven(), positiveInfinity, positiveInfinity,
+	)) {
+		t.Fatal("infinity divided by infinity must produce NaN")
+	}
+	if !FloatingPointIsNaN(FloatingPointDiv(
+		RoundNearestTiesToEven(), positiveZero, negativeZero,
+	)) {
+		t.Fatal("zero divided by zero must produce NaN")
+	}
+	infinite := FloatingPointDiv(
+		RoundNearestTiesToEven(), one, negativeZero,
+	)
+	if !FloatingPointIsInfinite(infinite) || !FloatingPointIsNegative(infinite) {
+		t.Fatal("positive finite divided by negative zero must be negative infinity")
+	}
+	zero := FloatingPointDiv(
+		RoundNearestTiesToEven(), one, positiveInfinity,
+	)
+	if !FloatingPointIsZero(zero) || FloatingPointIsNegative(zero) {
+		t.Fatal("positive finite divided by positive infinity must be positive zero")
+	}
+}
+
+func TestFloatingPointDivBinary128(t *testing.T) {
+	one := FloatingPointFromComponents(
+		15, 113,
+		NewBitVectorUint64(1, 0),
+		NewBitVectorUint64(15, 0x3fff),
+		NewBitVectorUint64(112, 0),
+	)
+	two := FloatingPointFromComponents(
+		15, 113,
+		NewBitVectorUint64(1, 0),
+		NewBitVectorUint64(15, 0x4000),
+		NewBitVectorUint64(112, 0),
+	)
+	half := FloatingPointFromComponents(
+		15, 113,
+		NewBitVectorUint64(1, 0),
+		NewBitVectorUint64(15, 0x3ffe),
+		NewBitVectorUint64(112, 0),
+	)
+	quotient := FloatingPointDiv(RoundNearestTiesToEven(), one, two)
+	if !EqualBitVectorValue(FloatingPointBits(quotient), FloatingPointBits(half)) {
+		t.Fatalf("binary128 fp.div=%v, want %v", FloatingPointBits(quotient), FloatingPointBits(half))
+	}
+}
+
 func TestFloatingPointGroundAbsAndNeg(t *testing.T) {
 	tests := []struct {
 		name string

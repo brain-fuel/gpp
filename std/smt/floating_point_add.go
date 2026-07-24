@@ -196,6 +196,86 @@ func floatingPointMulUint64(
 	)
 }
 
+func floatingPointDiv(
+	mode uint8,
+	left, right FloatingPointValue,
+) FloatingPointValue {
+	if mode < 1 || mode > 5 {
+		panic("smt: invalid floating-point rounding mode")
+	}
+	exponentBits := FloatingPointExponentBits(left)
+	significandBits := FloatingPointSignificandBits(left)
+	if exponentBits != FloatingPointExponentBits(right) ||
+		significandBits != FloatingPointSignificandBits(right) {
+		panic("smt: floating-point division format mismatch")
+	}
+	if FloatingPointIsNaN(left) || FloatingPointIsNaN(right) {
+		return FloatingPointNaN(exponentBits, significandBits)
+	}
+	total := exponentBits + significandBits
+	negative := FloatingPointBits(left).Bit(total-1) !=
+		FloatingPointBits(right).Bit(total-1)
+	leftInfinite, rightInfinite :=
+		FloatingPointIsInfinite(left), FloatingPointIsInfinite(right)
+	leftZero, rightZero := FloatingPointIsZero(left), FloatingPointIsZero(right)
+	if leftInfinite && rightInfinite || leftZero && rightZero {
+		return FloatingPointNaN(exponentBits, significandBits)
+	}
+	if leftInfinite || rightZero {
+		if negative {
+			return FloatingPointNegativeInfinity(exponentBits, significandBits)
+		}
+		return FloatingPointPositiveInfinity(exponentBits, significandBits)
+	}
+	if leftZero || rightInfinite {
+		return floatingPointZero(exponentBits, significandBits, negative)
+	}
+	if significandBits <= 31 && total <= 64 {
+		leftRaw, leftInline := FloatingPointBits(left).Uint64()
+		rightRaw, rightInline := FloatingPointBits(right).Uint64()
+		if leftInline && rightInline {
+			return floatingPointDivUint64(
+				mode, exponentBits, significandBits,
+				leftRaw, rightRaw, negative,
+			)
+		}
+	}
+	leftFinite := decodeFloatingPointFinite(left)
+	rightFinite := decodeFloatingPointFinite(right)
+	scale := new(big.Int).Sub(leftFinite.scale, rightFinite.scale)
+	return floatingPointRoundExactRational(
+		mode, exponentBits, significandBits, negative,
+		leftFinite.magnitude, rightFinite.magnitude, scale,
+	)
+}
+
+func floatingPointDivUint64(
+	mode uint8,
+	exponentBits, significandBits int,
+	leftRaw, rightRaw uint64,
+	negative bool,
+) FloatingPointValue {
+	fractionBits := significandBits - 1
+	exponentMask := uint64(1)<<exponentBits - 1
+	fractionMask := uint64(1)<<fractionBits - 1
+	bias := int64(uint64(1)<<(exponentBits-1) - 1)
+	decode := func(raw uint64) (uint64, int64) {
+		exponent := raw >> fractionBits & exponentMask
+		fraction := raw & fractionMask
+		if exponent == 0 {
+			return fraction, 1 - bias - int64(fractionBits)
+		}
+		return fraction | uint64(1)<<fractionBits,
+			int64(exponent) - bias - int64(fractionBits)
+	}
+	numerator, leftScale := decode(leftRaw)
+	denominator, rightScale := decode(rightRaw)
+	return floatingPointRoundExactRationalUint64(
+		mode, exponentBits, significandBits, negative,
+		numerator, denominator, leftScale-rightScale,
+	)
+}
+
 type floatingPointFiniteUint64 struct {
 	negative  bool
 	magnitude uint64
@@ -581,6 +661,274 @@ func floatingPointRoundExactBinary(
 		exponentBits, significandBits, negative,
 		exponentField, significand,
 	)
+}
+
+// floatingPointRoundExactRational rounds
+//
+//	numerator / denominator * 2^scale
+//
+// directly from integers. It never passes through a host floating-point
+// format, so arbitrary SMT-LIB formats retain exact tie and boundary behavior.
+func floatingPointRoundExactRational(
+	mode uint8,
+	exponentBits, significandBits int,
+	negative bool,
+	numerator, denominator, scale *big.Int,
+) FloatingPointValue {
+	fractionBits := significandBits - 1
+	bias := floatingPointBias(exponentBits)
+	minimumNormal := new(big.Int).Sub(big.NewInt(1), bias)
+	maximumNormal := new(big.Int).Set(bias)
+	ratioExponent := numerator.BitLen() - denominator.BitLen()
+	if compareRatioWithPowerOfTwo(numerator, denominator, ratioExponent) < 0 {
+		ratioExponent--
+	}
+	topExponent := new(big.Int).Add(
+		scale, big.NewInt(int64(ratioExponent)),
+	)
+	if topExponent.Cmp(minimumNormal) < 0 {
+		quantum := new(big.Int).Sub(
+			minimumNormal, big.NewInt(int64(fractionBits)),
+		)
+		power := new(big.Int).Sub(scale, quantum)
+		units := floatingPointRoundedRatio(
+			mode, negative, numerator, denominator, power,
+		)
+		if units.Sign() == 0 {
+			return floatingPointZero(exponentBits, significandBits, negative)
+		}
+		if units.BitLen() >= significandBits {
+			return floatingPointEncode(
+				exponentBits, significandBits, negative,
+				big.NewInt(1), new(big.Int),
+			)
+		}
+		return floatingPointEncode(
+			exponentBits, significandBits, negative,
+			new(big.Int), units,
+		)
+	}
+	power := new(big.Int).Sub(scale, topExponent)
+	power.Add(power, big.NewInt(int64(fractionBits)))
+	significand := floatingPointRoundedRatio(
+		mode, negative, numerator, denominator, power,
+	)
+	if significand.BitLen() > significandBits {
+		significand.Rsh(significand, 1)
+		topExponent.Add(topExponent, big.NewInt(1))
+	}
+	if topExponent.Cmp(maximumNormal) > 0 {
+		return floatingPointOverflow(
+			mode, exponentBits, significandBits, negative,
+		)
+	}
+	exponentField := new(big.Int).Add(topExponent, bias)
+	significand.SetBit(significand, fractionBits, 0)
+	return floatingPointEncode(
+		exponentBits, significandBits, negative,
+		exponentField, significand,
+	)
+}
+
+func floatingPointRoundExactRationalUint64(
+	mode uint8,
+	exponentBits, significandBits int,
+	negative bool,
+	numerator, denominator uint64,
+	scale int64,
+) FloatingPointValue {
+	fractionBits := significandBits - 1
+	bias := int64(uint64(1)<<(exponentBits-1) - 1)
+	minimumNormal, maximumNormal := int64(1)-bias, bias
+	ratioExponent := bits.Len64(numerator) - bits.Len64(denominator)
+	if compareRatioWithPowerOfTwoUint64(
+		numerator, denominator, ratioExponent,
+	) < 0 {
+		ratioExponent--
+	}
+	topExponent := scale + int64(ratioExponent)
+	if topExponent < minimumNormal {
+		quantum := minimumNormal - int64(fractionBits)
+		units := floatingPointRoundedRatioUint64(
+			mode, negative, numerator, denominator, scale-quantum,
+		)
+		if units == 0 {
+			return floatingPointZero(exponentBits, significandBits, negative)
+		}
+		if bits.Len64(units) >= significandBits {
+			return FloatingPointFromUint64(
+				exponentBits, significandBits, uint64(1)<<fractionBits,
+			)
+		}
+		raw := units
+		if negative {
+			raw |= uint64(1) << (exponentBits + significandBits - 1)
+		}
+		return FloatingPointFromUint64(exponentBits, significandBits, raw)
+	}
+	significand := floatingPointRoundedRatioUint64(
+		mode, negative, numerator, denominator,
+		scale-topExponent+int64(fractionBits),
+	)
+	if bits.Len64(significand) > significandBits {
+		significand >>= 1
+		topExponent++
+	}
+	if topExponent > maximumNormal {
+		return floatingPointOverflow(
+			mode, exponentBits, significandBits, negative,
+		)
+	}
+	exponentField := uint64(topExponent + bias)
+	fraction := significand & (uint64(1)<<fractionBits - 1)
+	raw := exponentField<<fractionBits | fraction
+	if negative {
+		raw |= uint64(1) << (exponentBits + significandBits - 1)
+	}
+	return FloatingPointFromUint64(exponentBits, significandBits, raw)
+}
+
+func compareRatioWithPowerOfTwoUint64(
+	numerator, denominator uint64,
+	exponent int,
+) int {
+	if exponent >= 0 {
+		scaled := denominator << uint(exponent)
+		if numerator < scaled {
+			return -1
+		}
+		if numerator > scaled {
+			return 1
+		}
+		return 0
+	}
+	scaled := numerator << uint(-exponent)
+	if scaled < denominator {
+		return -1
+	}
+	if scaled > denominator {
+		return 1
+	}
+	return 0
+}
+
+func floatingPointRoundedRatioUint64(
+	mode uint8,
+	negative bool,
+	numerator, denominator uint64,
+	power int64,
+) uint64 {
+	var result, remainder uint64
+	if power >= 0 {
+		result, remainder = numerator/denominator, numerator%denominator
+		if power > 63 {
+			panic("smt: inline floating-point quotient shift exceeds limits")
+		}
+		for step := int64(0); step < power; step++ {
+			remainder <<= 1
+			result <<= 1
+			if remainder >= denominator {
+				remainder -= denominator
+				result++
+			}
+		}
+	} else {
+		count := -power
+		if count >= 63 ||
+			denominator > ^uint64(0)>>uint(count) {
+			result, remainder = 0, numerator
+			if floatingPointDirectedIncrement(mode, negative) {
+				return 1
+			}
+			return 0
+		}
+		scaledDenominator := denominator << uint(count)
+		result, remainder = numerator/scaledDenominator,
+			numerator%scaledDenominator
+		denominator = scaledDenominator
+	}
+	if remainder == 0 {
+		return result
+	}
+	increment := floatingPointDirectedIncrement(mode, negative)
+	if mode == 1 || mode == 2 {
+		comparison := -1
+		if remainder > denominator-remainder {
+			comparison = 1
+		} else if remainder == denominator-remainder {
+			comparison = 0
+		}
+		increment = comparison > 0 ||
+			comparison == 0 && (mode == 2 || result&1 != 0)
+	}
+	if increment {
+		result++
+	}
+	return result
+}
+
+func compareRatioWithPowerOfTwo(
+	numerator, denominator *big.Int,
+	exponent int,
+) int {
+	if exponent >= 0 {
+		return numerator.Cmp(
+			new(big.Int).Lsh(new(big.Int).Set(denominator), uint(exponent)),
+		)
+	}
+	return new(big.Int).Lsh(
+		new(big.Int).Set(numerator), uint(-exponent),
+	).Cmp(denominator)
+}
+
+func floatingPointRoundedRatio(
+	mode uint8,
+	negative bool,
+	numerator, denominator, power *big.Int,
+) *big.Int {
+	if !power.IsInt64() {
+		if power.Sign() > 0 {
+			panic("smt: floating-point quotient shift exceeds implementation limits")
+		}
+		result := new(big.Int)
+		if floatingPointDirectedIncrement(mode, negative) {
+			result.SetInt64(1)
+		}
+		return result
+	}
+	shift := power.Int64()
+	scaledNumerator := new(big.Int).Set(numerator)
+	scaledDenominator := new(big.Int).Set(denominator)
+	if shift >= 0 {
+		scaledNumerator.Lsh(scaledNumerator, uint(shift))
+	} else {
+		count := -shift
+		if count > int64(numerator.BitLen()+2) {
+			result := new(big.Int)
+			if floatingPointDirectedIncrement(mode, negative) {
+				result.SetInt64(1)
+			}
+			return result
+		}
+		scaledDenominator.Lsh(scaledDenominator, uint(count))
+	}
+	remainder := new(big.Int)
+	result, _ := new(big.Int).QuoRem(
+		scaledNumerator, scaledDenominator, remainder,
+	)
+	if remainder.Sign() == 0 {
+		return result
+	}
+	increment := floatingPointDirectedIncrement(mode, negative)
+	if mode == 1 || mode == 2 {
+		comparison := new(big.Int).Lsh(remainder, 1).Cmp(scaledDenominator)
+		increment = comparison > 0 ||
+			comparison == 0 && (mode == 2 || result.Bit(0) != 0)
+	}
+	if increment {
+		result.Add(result, big.NewInt(1))
+	}
+	return result
 }
 
 func floatingPointRoundedShift(

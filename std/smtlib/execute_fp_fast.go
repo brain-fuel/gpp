@@ -16,6 +16,7 @@ const (
 	fpFastAdd
 	fpFastSub
 	fpFastMul
+	fpFastDiv
 	fpFastPredicate
 	fpFastComparison
 	fpFastEquality
@@ -77,6 +78,7 @@ const (
 	fpFastAddBits
 	fpFastSubBits
 	fpFastMulBits
+	fpFastDivBits
 	fpFastExactFloatingBits
 	fpFastLiteralBits
 )
@@ -234,6 +236,18 @@ func executeFloatingPointFast(source string) (ExecutionResult, bool) {
 			)
 			relation.Negated = command.negated
 			solver = smt.AssertFloatingPointMulRelation(
+				nextAssertion, solver, relation,
+			)
+			nextAssertion++
+			responses = append(responses, Acknowledged{CommandIndex: command.commandIndex})
+		case fpFastDiv:
+			relation := smt.NewFloatingPointDivRelation(
+				command.exponentBits, command.significandBits,
+				command.symbolID, command.secondSymbolID,
+				command.mode, command.value,
+			)
+			relation.Negated = command.negated
+			solver = smt.AssertFloatingPointDivRelation(
 				nextAssertion, solver, relation,
 			)
 			nextAssertion++
@@ -409,6 +423,8 @@ func (scanner *fpFastScanner) formula(
 		command.kind = fpFastSub
 	case fpFastMulBits:
 		command.kind = fpFastMul
+	case fpFastDivBits:
+		command.kind = fpFastDiv
 	default:
 		return fpFastCommand{}, false
 	}
@@ -548,7 +564,7 @@ func (scanner *fpFastScanner) operand(
 			significandBits: left.significandBits,
 			operation:       selectedOperation,
 		}, true
-	case "fp.add", "fp.sub", "fp.mul":
+	case "fp.add", "fp.sub", "fp.mul", "fp.div":
 		modeToken, modeOK := scanner.atom()
 		leftToken, leftOK := scanner.atom()
 		rightToken, rightOK := scanner.atom()
@@ -569,6 +585,8 @@ func (scanner *fpFastScanner) operand(
 			kind = fpFastSubBits
 		} else if scanner.text(operation) == "fp.mul" {
 			kind = fpFastMulBits
+		} else if scanner.text(operation) == "fp.div" {
+			kind = fpFastDivBits
 		}
 		return fpFastOperand{
 			kind:     kind,

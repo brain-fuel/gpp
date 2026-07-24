@@ -130,6 +130,20 @@ type FloatingPointMulRelation struct {
 
 func (FloatingPointMulRelation) isTerm(BoolSort) {}
 
+// FloatingPointDivRelation constrains the exact rounded IEEE bits of fp.div
+// over two assigned same-format symbols.
+type FloatingPointDivRelation struct {
+	ExponentBits    int
+	SignificandBits int
+	LeftSymbolID    int
+	RightSymbolID   int
+	Mode            uint8
+	Value           BitVectorValue
+	Negated         bool
+}
+
+func (FloatingPointDivRelation) isTerm(BoolSort) {}
+
 type floatingPointRoundToIntegralBitVector struct {
 	exponentBits    int
 	significandBits int
@@ -250,6 +264,25 @@ func NewFloatingPointMulRelation(
 		panic("smt: floating-point multiplication result width mismatch")
 	}
 	return FloatingPointMulRelation{
+		ExponentBits: exponentBits, SignificandBits: significandBits,
+		LeftSymbolID: leftSymbolID, RightSymbolID: rightSymbolID,
+		Mode: modeCode, Value: value,
+	}
+}
+
+func NewFloatingPointDivRelation(
+	exponentBits, significandBits, leftSymbolID, rightSymbolID int,
+	mode FloatingPointRoundingMode,
+	value BitVectorValue,
+) FloatingPointDivRelation {
+	modeCode := floatingPointRoundingModeCode(mode)
+	if exponentBits < 2 || significandBits < 2 {
+		panic("smt: invalid floating-point format")
+	}
+	if value.Width() != exponentBits+significandBits {
+		panic("smt: floating-point division result width mismatch")
+	}
+	return FloatingPointDivRelation{
 		ExponentBits: exponentBits, SignificandBits: significandBits,
 		LeftSymbolID: leftSymbolID, RightSymbolID: rightSymbolID,
 		Mode: modeCode, Value: value,
@@ -550,6 +583,22 @@ func AssertFloatingPointMulRelation(
 	assertion int,
 	solver Solver,
 	relation FloatingPointMulRelation,
+) Solver {
+	if assertion < 0 {
+		panic("smt: negative assertion identity")
+	}
+	nextContext := runtimeContextID(solver.contextID, assertion)
+	return solverValue{
+		contextID: nextContext,
+		depth:     solver.depth,
+		state:     solver.state.asserted(relation),
+	}
+}
+
+func AssertFloatingPointDivRelation(
+	assertion int,
+	solver Solver,
+	relation FloatingPointDivRelation,
 ) Solver {
 	if assertion < 0 {
 		panic("smt: negative assertion identity")
