@@ -907,6 +907,47 @@ func TestExecuteNonlinearIntegerProductBounds(t *testing.T) {
 	}
 }
 
+func TestExecuteNonlinearIntegerAffineFactorProducts(t *testing.T) {
+	script := `(set-logic QF_NIA)
+(declare-const x Int)
+(declare-const y Int)
+(assert (= (* (+ x 2) (- y 3)) 20))
+(check-sat)
+(get-value (x y (* (+ x 2) (- y 3))))`
+	result := Execute(script).(Executed)
+	if _, ok := result.Responses[4].(Satisfiable); !ok {
+		t.Fatalf("affine product=%T", result.Responses[4])
+	}
+	values := result.Responses[5].(ValuesAvailable)
+	if values.Values[2].(IntegerValue).Value != 20 {
+		t.Fatalf("affine product model=%#v", values)
+	}
+
+	unsat := `(set-logic QF_NIA)
+(declare-const x Int)
+(declare-const y Int)
+(assert (= (* (+ (* 2 x) 1) (+ (* 2 y) 1)) 2))
+(check-sat)`
+	unsatResult := Execute(unsat).(Executed)
+	if _, ok := unsatResult.Responses[4].(Unsatisfiable); !ok {
+		t.Fatalf("odd affine product=%T", unsatResult.Responses[4])
+	}
+
+	shiftedSquare := `(set-logic QF_NIA)
+(declare-const x Int)
+(assert (= (* (+ x 2) (+ x 2)) 49))
+(check-sat)
+(get-value (x (* (+ x 2) (+ x 2))))`
+	squareResult := Execute(shiftedSquare).(Executed)
+	if _, ok := squareResult.Responses[3].(Satisfiable); !ok {
+		t.Fatalf("shifted square=%T", squareResult.Responses[3])
+	}
+	squareValues := squareResult.Responses[4].(ValuesAvailable)
+	if squareValues.Values[1].(IntegerValue).Value != 49 {
+		t.Fatalf("shifted square model=%#v", squareValues)
+	}
+}
+
 func TestExecuteBooleanLinearIntegerArithmetic(t *testing.T) {
 	script := `(set-logic QF_LIA)
 (declare-const x Int)

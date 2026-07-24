@@ -373,6 +373,94 @@ func TestNonlinearIntegerProductBounds(t *testing.T) {
 	}
 }
 
+func TestNonlinearIntegerAffineFactorProducts(t *testing.T) {
+	x := IntSymbol{ID: 110, Name: "x"}
+	y := IntSymbol{ID: 111, Name: "y"}
+	left := Add{Values: []Term[IntSort]{x, IntegerTerm(NewIntegerValue(2))}}
+	right := Subtract{
+		Left: y, Right: IntegerTerm(NewIntegerValue(3)),
+	}
+	formula := Equal{
+		Left:  MultiplyInteger(left, right),
+		Right: IntegerTerm(NewIntegerValue(20)),
+	}
+	checked := Check(Assert(1, New(), formula))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("affine product=%#v", checked)
+	}
+	xValue, xFound := IntegerModelValue(result.Value, x)
+	yValue, yFound := IntegerModelValue(result.Value, y)
+	leftValue := AddIntegerValue(xValue, NewIntegerValue(2))
+	rightValue := AddIntegerValue(yValue, NewIntegerValue(-3))
+	if !xFound || !yFound || CompareIntegerValue(
+		MultiplyIntegerValue(leftValue, rightValue),
+		NewIntegerValue(20),
+	) != 0 {
+		t.Fatalf("affine product model x=%v/%v y=%v/%v", xValue, xFound, yValue, yFound)
+	}
+
+	oddLeft := Add{Values: []Term[IntSort]{
+		ScaleInteger(NewIntegerValue(2), x),
+		IntegerTerm(NewIntegerValue(1)),
+	}}
+	oddRight := Add{Values: []Term[IntSort]{
+		ScaleInteger(NewIntegerValue(2), y),
+		IntegerTerm(NewIntegerValue(1)),
+	}}
+	oddProduct := Equal{
+		Left:  MultiplyInteger(oddLeft, oddRight),
+		Right: IntegerTerm(NewIntegerValue(2)),
+	}
+	oddResult := Check(Assert(2, New(), oddProduct))
+	if _, ok := oddResult.(Unsatisfiable); !ok {
+		t.Fatalf("odd affine product=%#v", oddResult)
+	}
+
+	shifted := Add{Values: []Term[IntSort]{
+		x, IntegerTerm(NewIntegerValue(2)),
+	}}
+	shiftedSquare := Equal{
+		Left:  MultiplyInteger(shifted, shifted),
+		Right: IntegerTerm(NewIntegerValue(49)),
+	}
+	checked = Check(Assert(3, New(), shiftedSquare))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("shifted square=%#v", checked)
+	}
+	xValue, xFound = IntegerModelValue(result.Value, x)
+	shiftedValue := AddIntegerValue(xValue, NewIntegerValue(2))
+	if !xFound || CompareIntegerValue(
+		MultiplyIntegerValue(shiftedValue, shiftedValue),
+		NewIntegerValue(49),
+	) != 0 {
+		t.Fatalf("shifted square model=%v/%v", xValue, xFound)
+	}
+
+	wide, err := ParseIntegerValue("1267650600228229401496703205376")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wideProduct := Equal{
+		Left: MultiplyInteger(left, right), Right: IntegerTerm(wide),
+	}
+	checked = Check(Assert(4, New(), wideProduct))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("wide affine product=%#v", checked)
+	}
+	xValue, xFound = IntegerModelValue(result.Value, x)
+	yValue, yFound = IntegerModelValue(result.Value, y)
+	leftValue = AddIntegerValue(xValue, NewIntegerValue(2))
+	rightValue = AddIntegerValue(yValue, NewIntegerValue(-3))
+	if !xFound || !yFound || CompareIntegerValue(
+		MultiplyIntegerValue(leftValue, rightValue), wide,
+	) != 0 {
+		t.Fatalf("wide affine model x=%v y=%v", xValue, yValue)
+	}
+}
+
 func TestLinearIntegerArithmeticIntegralityUnsat(t *testing.T) {
 	x := IntSymbol{ID: 1, Name: "x"}
 	twoX := ScaleInteger(NewIntegerValue(2), x)

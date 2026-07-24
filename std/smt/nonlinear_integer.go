@@ -11,10 +11,10 @@ const (
 )
 
 type nonlinearIntegerProductRelation struct {
-	leftID, rightID int
-	target          IntegerValue
-	negated         bool
-	complete        bool
+	left, right IntegerAffineFactor
+	target      IntegerValue
+	negated     bool
+	complete    bool
 }
 
 // IntegerProductRelation is the compact form of x*y = k (or x*y != k).
@@ -38,6 +38,31 @@ type IntegerProductSystem struct {
 }
 
 func (IntegerProductSystem) isTerm(BoolSort) {}
+
+// IntegerAffineFactor is coefficient*x + offset with one integer symbol.
+type IntegerAffineFactor struct {
+	SymbolID    int
+	Coefficient IntegerValue
+	Offset      IntegerValue
+}
+
+// IntegerAffineProductRelation is the compact form
+// (a*x+b)*(c*y+d) = k (or != k).
+type IntegerAffineProductRelation struct {
+	Left, Right IntegerAffineFactor
+	Target      IntegerValue
+	Negated     bool
+}
+
+func (IntegerAffineProductRelation) isTerm(BoolSort) {}
+
+type IntegerAffineProductSystem struct {
+	Count    int
+	Inline   [4]IntegerAffineProductRelation
+	Overflow []IntegerAffineProductRelation
+}
+
+func (IntegerAffineProductSystem) isTerm(BoolSort) {}
 
 // IntegerSquareBound represents x² <(=) k when Lower is false and
 // k <(=) x² when Lower is true.
@@ -211,6 +236,25 @@ func (problem *nonlinearIntegerProblem) boolean(
 		}
 		for _, relation := range relations {
 			if !problem.addRelation(relation) {
+				return false
+			}
+		}
+		return true
+	case IntegerAffineProductRelation:
+		value.Negated = value.Negated != negated
+		return problem.addAffineRelation(value)
+	case IntegerAffineProductSystem:
+		if negated || value.Count < 0 {
+			return false
+		}
+		relations := value.Overflow
+		if value.Count <= len(value.Inline) {
+			relations = value.Inline[:value.Count]
+		} else if len(relations) != value.Count {
+			return false
+		}
+		for _, relation := range relations {
+			if !problem.addAffineRelation(relation) {
 				return false
 			}
 		}
@@ -421,26 +465,43 @@ func (problem *nonlinearIntegerProblem) equality(
 	if !ok {
 		return false
 	}
-	leftID, leftOK := directIntegerSymbolID(product.Left)
-	rightID, rightOK := directIntegerSymbolID(product.Right)
+	leftFactor, leftOK := nonlinearIntegerAffineFactor(product.Left)
+	rightFactor, rightOK := nonlinearIntegerAffineFactor(product.Right)
 	if !leftOK || !rightOK {
 		return false
 	}
-	return problem.addRelation(IntegerProductRelation{
-		LeftID: leftID, RightID: rightID, Target: target, Negated: negated,
+	return problem.addAffineRelation(IntegerAffineProductRelation{
+		Left: leftFactor, Right: rightFactor, Target: target, Negated: negated,
 	})
 }
 
 func (problem *nonlinearIntegerProblem) addRelation(
 	value IntegerProductRelation,
 ) bool {
+	one := NewIntegerValue(1)
+	return problem.addAffineRelation(IntegerAffineProductRelation{
+		Left: IntegerAffineFactor{
+			SymbolID: value.LeftID, Coefficient: one,
+		},
+		Right: IntegerAffineFactor{
+			SymbolID: value.RightID, Coefficient: one,
+		},
+		Target: value.Target, Negated: value.Negated,
+	})
+}
+
+func (problem *nonlinearIntegerProblem) addAffineRelation(
+	value IntegerAffineProductRelation,
+) bool {
 	if problem.relationCount == len(problem.relations) {
 		return false
 	}
-	leftID, rightID := value.LeftID, value.RightID
+	leftFactor, rightFactor := value.Left, value.Right
 	for _, existing := range problem.relations[:problem.relationCount] {
-		samePair := existing.leftID == leftID && existing.rightID == rightID ||
-			existing.leftID == rightID && existing.rightID == leftID
+		samePair := equalIntegerAffineFactor(existing.left, leftFactor) &&
+			equalIntegerAffineFactor(existing.right, rightFactor) ||
+			equalIntegerAffineFactor(existing.left, rightFactor) &&
+				equalIntegerAffineFactor(existing.right, leftFactor)
 		if !samePair {
 			continue
 		}
@@ -451,16 +512,16 @@ func (problem *nonlinearIntegerProblem) addRelation(
 			return true
 		}
 	}
-	leftPosition, leftAdded := problem.ensureSymbol(leftID)
-	rightPosition, rightAdded := problem.ensureSymbol(rightID)
+	leftPosition, leftAdded := problem.ensureSymbol(leftFactor.SymbolID)
+	rightPosition, rightAdded := problem.ensureSymbol(rightFactor.SymbolID)
 	if !leftAdded || !rightAdded {
 		return false
 	}
 	relation := nonlinearIntegerProductRelation{
-		leftID: leftID, rightID: rightID, target: value.Target,
+		left: leftFactor, right: rightFactor, target: value.Target,
 		negated: value.Negated, complete: true,
 	}
-	if leftID == rightID && !value.Negated {
+	if equalIntegerAffineFactor(leftFactor, rightFactor) && !value.Negated {
 		if CompareIntegerValue(value.Target, IntegerValue{}) < 0 {
 			problem.impossible = true
 		} else {
@@ -472,16 +533,18 @@ func (problem *nonlinearIntegerProblem) addRelation(
 			) != 0 {
 				problem.impossible = true
 			} else {
-				problem.candidates[leftPosition].add(root)
-				problem.candidates[leftPosition].add(
-					NegateIntegerValue(root),
+				problem.addAffineFactorCandidate(
+					leftPosition, leftFactor, root,
+				)
+				problem.addAffineFactorCandidate(
+					leftPosition, leftFactor, NegateIntegerValue(root),
 				)
 				problem.domainComplete[leftPosition] = true
 			}
 		}
 	} else {
 		relation.complete = problem.addFactorCandidates(
-			leftPosition, rightPosition, value.Target,
+			leftPosition, rightPosition, leftFactor, rightFactor, value.Target,
 		)
 		if !value.Negated &&
 			CompareIntegerValue(value.Target, IntegerValue{}) != 0 &&
@@ -499,6 +562,36 @@ func (problem *nonlinearIntegerProblem) addRelation(
 	problem.relations[problem.relationCount] = relation
 	problem.relationCount++
 	return true
+}
+
+func equalIntegerAffineFactor(left, right IntegerAffineFactor) bool {
+	return left.SymbolID == right.SymbolID &&
+		CompareIntegerValue(left.Coefficient, right.Coefficient) == 0 &&
+		CompareIntegerValue(left.Offset, right.Offset) == 0
+}
+
+func nonlinearIntegerAffineFactor(
+	term Term[IntSort],
+) (IntegerAffineFactor, bool) {
+	form := integerAffine{valid: true}
+	accumulateIntegerAffine(term, NewIntegerValue(1), &form)
+	form.coefficients.compact()
+	if !form.valid || form.coefficients.count != 1 {
+		return IntegerAffineFactor{}, false
+	}
+	coefficient := form.coefficients.values()[0]
+	return IntegerAffineFactor{
+		SymbolID: coefficient.id, Coefficient: coefficient.value,
+		Offset: form.constant,
+	}, true
+}
+
+// CompactIntegerAffineFactor normalizes a one-symbol affine integer term for
+// allocation-conscious solver frontends.
+func CompactIntegerAffineFactor(
+	term Term[IntSort],
+) (IntegerAffineFactor, bool) {
+	return nonlinearIntegerAffineFactor(term)
 }
 
 func (problem *nonlinearIntegerProblem) addEscapeCandidates() {
@@ -565,12 +658,18 @@ func (problem *nonlinearIntegerProblem) ensureSymbol(id int) (int, bool) {
 }
 
 func (problem *nonlinearIntegerProblem) addFactorCandidates(
-	left, right int, target IntegerValue,
+	left, right int,
+	leftFactor, rightFactor IntegerAffineFactor,
+	target IntegerValue,
 ) bool {
-	problem.candidates[left].add(target)
-	problem.candidates[left].add(NegateIntegerValue(target))
-	problem.candidates[right].add(target)
-	problem.candidates[right].add(NegateIntegerValue(target))
+	problem.addAffineFactorCandidate(left, leftFactor, target)
+	problem.addAffineFactorCandidate(
+		left, leftFactor, NegateIntegerValue(target),
+	)
+	problem.addAffineFactorCandidate(right, rightFactor, target)
+	problem.addAffineFactorCandidate(
+		right, rightFactor, NegateIntegerValue(target),
+	)
 	inline, ok := target.Int64()
 	if !ok || inline == -1<<63 {
 		return false
@@ -595,13 +694,32 @@ func (problem *nonlinearIntegerProblem) addFactorCandidates(
 		for _, factor := range [4]int64{
 			divisor, -divisor, quotient, -quotient,
 		} {
-			if !problem.candidates[left].add(NewIntegerValue(factor)) ||
-				!problem.candidates[right].add(NewIntegerValue(factor)) {
+			value := NewIntegerValue(factor)
+			if !problem.addAffineFactorCandidate(left, leftFactor, value) ||
+				!problem.addAffineFactorCandidate(
+					right, rightFactor, value,
+				) {
 				return false
 			}
 		}
 	}
 	return complete
+}
+
+func (problem *nonlinearIntegerProblem) addAffineFactorCandidate(
+	position int, factor IntegerAffineFactor, value IntegerValue,
+) bool {
+	numerator := AddIntegerValue(value, NegateIntegerValue(factor.Offset))
+	quotient, remainder, ok := DivModIntegerValue(
+		numerator, factor.Coefficient,
+	)
+	if !ok {
+		return false
+	}
+	if CompareIntegerValue(remainder, IntegerValue{}) != 0 {
+		return true
+	}
+	return problem.candidates[position].add(quotient)
 }
 
 func (problem *nonlinearIntegerProblem) symbolPosition(id int) int {
@@ -643,13 +761,16 @@ func (problem *nonlinearIntegerProblem) valid(
 	values *[nonlinearIntegerSymbolLimit]IntegerValue,
 ) bool {
 	for _, relation := range problem.relations[:problem.relationCount] {
-		left := problem.symbolPosition(relation.leftID)
-		right := problem.symbolPosition(relation.rightID)
+		left := problem.symbolPosition(relation.left.SymbolID)
+		right := problem.symbolPosition(relation.right.SymbolID)
 		if left < 0 || right < 0 || !assigned[left] || !assigned[right] {
 			continue
 		}
 		holds := CompareIntegerValue(
-			MultiplyIntegerValue(values[left], values[right]),
+			MultiplyIntegerValue(
+				evaluateIntegerAffineFactor(relation.left, values[left]),
+				evaluateIntegerAffineFactor(relation.right, values[right]),
+			),
 			relation.target,
 		) == 0
 		if holds == relation.negated {
@@ -703,4 +824,12 @@ func (problem *nonlinearIntegerProblem) valid(
 		}
 	}
 	return true
+}
+
+func evaluateIntegerAffineFactor(
+	factor IntegerAffineFactor, value IntegerValue,
+) IntegerValue {
+	return AddIntegerValue(
+		MultiplyIntegerValue(factor.Coefficient, value), factor.Offset,
+	)
 }
