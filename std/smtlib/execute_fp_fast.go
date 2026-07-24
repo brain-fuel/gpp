@@ -19,6 +19,7 @@ const (
 	fpFastDiv
 	fpFastFMA
 	fpFastSqrt
+	fpFastRem
 	fpFastPredicate
 	fpFastComparison
 	fpFastEquality
@@ -85,6 +86,7 @@ const (
 	fpFastDivBits
 	fpFastFMABits
 	fpFastSqrtBits
+	fpFastRemBits
 	fpFastExactFloatingBits
 	fpFastLiteralBits
 )
@@ -281,6 +283,17 @@ func executeFloatingPointFast(source string) (ExecutionResult, bool) {
 			)
 			nextAssertion++
 			responses = append(responses, Acknowledged{CommandIndex: command.commandIndex})
+		case fpFastRem:
+			relation := smt.NewFloatingPointRemRelation(
+				command.exponentBits, command.significandBits,
+				command.symbolID, command.secondSymbolID, command.value,
+			)
+			relation.Negated = command.negated
+			solver = smt.AssertFloatingPointRemRelation(
+				nextAssertion, solver, relation,
+			)
+			nextAssertion++
+			responses = append(responses, Acknowledged{CommandIndex: command.commandIndex})
 		case fpFastPredicate:
 			relation := smt.NewFloatingPointRelation(
 				command.exponentBits, command.significandBits,
@@ -459,6 +472,8 @@ func (scanner *fpFastScanner) formula(
 		command.kind = fpFastFMA
 	case fpFastSqrtBits:
 		command.kind = fpFastSqrt
+	case fpFastRemBits:
+		command.kind = fpFastRem
 	default:
 		return fpFastCommand{}, false
 	}
@@ -674,6 +689,26 @@ func (scanner *fpFastScanner) operand(
 			exponentBits:    left.exponentBits,
 			significandBits: left.significandBits,
 			mode:            mode,
+		}, true
+	case "fp.rem":
+		leftToken, leftOK := scanner.atom()
+		rightToken, rightOK := scanner.atom()
+		if !leftOK || !rightOK {
+			return fpFastOperand{}, false
+		}
+		left, leftFound := fpFastFindSymbol(scanner.text(leftToken), symbols)
+		right, rightFound := fpFastFindSymbol(scanner.text(rightToken), symbols)
+		if !leftFound || !rightFound ||
+			left.exponentBits != right.exponentBits ||
+			left.significandBits != right.significandBits ||
+			!scanner.right() || !scanner.right() {
+			return fpFastOperand{}, false
+		}
+		return fpFastOperand{
+			kind:     fpFastRemBits,
+			symbolID: left.id, secondSymbolID: right.id,
+			exponentBits:    left.exponentBits,
+			significandBits: left.significandBits,
 		}, true
 	default:
 		return fpFastOperand{}, false

@@ -569,6 +569,14 @@ func FloatingPointSqrt(mode FloatingPointRoundingMode, value FloatingPointValue)
 	return floatingPointSqrt(floatingPointRoundingModeCode(mode), value)
 }
 
+// FloatingPointRem implements SMT-LIB fp.rem / IEEE remainder using the
+// nearest integer quotient with ties to even.
+//
+//goplus:dep FloatingPointRem(0 e nat, 0 s nat, left FloatingPointValue[e, s], right FloatingPointValue[e, s]) FloatingPointValue[e, s]
+func FloatingPointRem(left FloatingPointValue, right FloatingPointValue) FloatingPointValue {
+	return floatingPointRem(left, right)
+}
+
 func floatingPointSignificandNonzero(bits BitVectorValue, significandBits int) bool {
 	for index := 0; index < significandBits-1; index++ {
 		if bits.Bit(index) {

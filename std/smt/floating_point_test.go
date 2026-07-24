@@ -667,6 +667,69 @@ func TestFloatingPointSqrtBinary128(t *testing.T) {
 	}
 }
 
+func TestFloatingPointRemBinary32(t *testing.T) {
+	tests := []struct {
+		name        string
+		left, right uint64
+		want        uint64
+	}{
+		{"three by two tie", 0x40400000, 0x40000000, 0xbf800000},
+		{"five by two tie", 0x40a00000, 0x40000000, 0x3f800000},
+		{"negative five by two", 0xc0a00000, 0x40000000, 0xbf800000},
+		{"smaller dividend", 0x3f000000, 0x40000000, 0x3f000000},
+		{"exact multiple", 0x40800000, 0x40000000, 0x00000000},
+	}
+	for _, test := range tests {
+		remainder := FloatingPointRem(
+			FloatingPointFromUint64(8, 24, test.left),
+			FloatingPointFromUint64(8, 24, test.right),
+		)
+		got, inline := FloatingPointBits(remainder).Uint64()
+		if !inline || got != test.want {
+			t.Fatalf("%s=%#x,%v, want %#x,true", test.name, got, inline, test.want)
+		}
+	}
+}
+
+func TestFloatingPointRemSpecialValues(t *testing.T) {
+	one := FloatingPointFromUint64(8, 24, 0x3f800000)
+	zero := FloatingPointPositiveZero(8, 24)
+	infinity := FloatingPointPositiveInfinity(8, 24)
+	if !FloatingPointIsNaN(FloatingPointRem(infinity, one)) {
+		t.Fatal("infinite dividend remainder must be NaN")
+	}
+	if !FloatingPointIsNaN(FloatingPointRem(one, zero)) {
+		t.Fatal("remainder by zero must be NaN")
+	}
+	if remainder := FloatingPointRem(one, infinity); !EqualBitVectorValue(
+		FloatingPointBits(remainder), FloatingPointBits(one),
+	) {
+		t.Fatal("finite remainder by infinity must preserve the dividend")
+	}
+	negativeZero := FloatingPointNegativeZero(8, 24)
+	if remainder := FloatingPointRem(negativeZero, one); !EqualBitVectorValue(
+		FloatingPointBits(remainder), FloatingPointBits(negativeZero),
+	) {
+		t.Fatal("zero remainder must preserve the dividend sign")
+	}
+}
+
+func TestFloatingPointRemBinary128HugeGap(t *testing.T) {
+	one := FloatingPointFromComponents(
+		15, 113,
+		NewBitVectorUint64(1, 0),
+		NewBitVectorUint64(15, 0x3fff),
+		NewBitVectorUint64(112, 0),
+	)
+	minimumSubnormal := FloatingPointFromBits(
+		15, 113, NewBitVectorUint64(128, 1),
+	)
+	remainder := FloatingPointRem(one, minimumSubnormal)
+	if !FloatingPointIsZero(remainder) || FloatingPointIsNegative(remainder) {
+		t.Fatalf("1 rem minimum binary128 subnormal=%v, want +zero", FloatingPointBits(remainder))
+	}
+}
+
 func TestFloatingPointGroundAbsAndNeg(t *testing.T) {
 	tests := []struct {
 		name string

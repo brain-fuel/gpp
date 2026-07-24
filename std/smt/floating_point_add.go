@@ -440,6 +440,166 @@ func floatingPointSqrt(
 	)
 }
 
+func floatingPointRem(
+	left, right FloatingPointValue,
+) FloatingPointValue {
+	exponentBits := FloatingPointExponentBits(left)
+	significandBits := FloatingPointSignificandBits(left)
+	if exponentBits != FloatingPointExponentBits(right) ||
+		significandBits != FloatingPointSignificandBits(right) {
+		panic("smt: floating-point remainder format mismatch")
+	}
+	if FloatingPointIsNaN(left) || FloatingPointIsNaN(right) ||
+		FloatingPointIsInfinite(left) || FloatingPointIsZero(right) {
+		return FloatingPointNaN(exponentBits, significandBits)
+	}
+	if FloatingPointIsZero(left) || FloatingPointIsInfinite(right) {
+		return left
+	}
+	total := exponentBits + significandBits
+	if significandBits <= 31 && total <= 64 {
+		leftRaw, leftInline := FloatingPointBits(left).Uint64()
+		rightRaw, rightInline := FloatingPointBits(right).Uint64()
+		if leftInline && rightInline {
+			if remainder, ok := floatingPointRemUint64(
+				exponentBits, significandBits, leftRaw, rightRaw,
+			); ok {
+				return remainder
+			}
+		}
+	}
+	leftFinite := decodeFloatingPointFinite(left)
+	rightFinite := decodeFloatingPointFinite(right)
+	scaleDifference := new(big.Int).Sub(
+		leftFinite.scale, rightFinite.scale,
+	)
+	var residual, residualScale *big.Int
+	residualNegative := false
+	if scaleDifference.Sign() >= 0 {
+		modulus := new(big.Int).Lsh(
+			new(big.Int).Set(rightFinite.magnitude), 1,
+		)
+		power := new(big.Int).Exp(
+			big.NewInt(2), scaleDifference, modulus,
+		)
+		residue := new(big.Int).Mod(
+			new(big.Int).Mul(leftFinite.magnitude, power), modulus,
+		)
+		quotientOdd := residue.Cmp(rightFinite.magnitude) >= 0
+		residual = new(big.Int).Mod(
+			new(big.Int).Set(residue), rightFinite.magnitude,
+		)
+		comparison := new(big.Int).Lsh(
+			new(big.Int).Set(residual), 1,
+		).Cmp(rightFinite.magnitude)
+		increment := comparison > 0 ||
+			comparison == 0 && quotientOdd
+		if increment && residual.Sign() != 0 {
+			residual.Sub(rightFinite.magnitude, residual)
+			residualNegative = true
+		}
+		residualScale = rightFinite.scale
+	} else {
+		count := new(big.Int).Neg(scaleDifference)
+		denominatorBits := new(big.Int).Add(
+			big.NewInt(int64(rightFinite.magnitude.BitLen())), count,
+		)
+		if denominatorBits.Cmp(
+			big.NewInt(int64(leftFinite.magnitude.BitLen()+1)),
+		) > 0 {
+			return left
+		}
+		if !count.IsInt64() {
+			return left
+		}
+		denominator := new(big.Int).Lsh(
+			new(big.Int).Set(rightFinite.magnitude), uint(count.Int64()),
+		)
+		quotient := new(big.Int)
+		residual = new(big.Int)
+		quotient.QuoRem(leftFinite.magnitude, denominator, residual)
+		comparison := new(big.Int).Lsh(
+			new(big.Int).Set(residual), 1,
+		).Cmp(denominator)
+		increment := comparison > 0 ||
+			comparison == 0 && quotient.Bit(0) != 0
+		if increment && residual.Sign() != 0 {
+			residual.Sub(denominator, residual)
+			residualNegative = true
+		}
+		residualScale = leftFinite.scale
+	}
+	if residual.Sign() == 0 {
+		return floatingPointZero(
+			exponentBits, significandBits, leftFinite.negative,
+		)
+	}
+	return floatingPointRoundExactBinary(
+		1, exponentBits, significandBits,
+		leftFinite.negative != residualNegative,
+		residual, residualScale,
+	)
+}
+
+func floatingPointRemUint64(
+	exponentBits, significandBits int,
+	leftRaw, rightRaw uint64,
+) (FloatingPointValue, bool) {
+	fractionBits := significandBits - 1
+	exponentMask := uint64(1)<<exponentBits - 1
+	fractionMask := uint64(1)<<fractionBits - 1
+	signBit := uint64(1) << (exponentBits + significandBits - 1)
+	bias := int64(uint64(1)<<(exponentBits-1) - 1)
+	decode := func(raw uint64) (uint64, int64) {
+		exponent := raw >> fractionBits & exponentMask
+		fraction := raw & fractionMask
+		if exponent == 0 {
+			return fraction, 1 - bias - int64(fractionBits)
+		}
+		return fraction | uint64(1)<<fractionBits,
+			int64(exponent) - bias - int64(fractionBits)
+	}
+	leftMagnitude, leftScale := decode(leftRaw)
+	rightMagnitude, rightScale := decode(rightRaw)
+	difference := leftScale - rightScale
+	numerator, denominator := leftMagnitude, rightMagnitude
+	residualScale := leftScale
+	if difference >= 0 {
+		if difference >= 64 ||
+			bits.Len64(leftMagnitude)+int(difference) > 64 {
+			return FloatingPointValue{}, false
+		}
+		numerator <<= uint(difference)
+		residualScale = rightScale
+	} else {
+		count := -difference
+		if count >= 64 ||
+			bits.Len64(rightMagnitude)+int(count) > 64 {
+			return FloatingPointValue{}, false
+		}
+		denominator <<= uint(count)
+	}
+	quotient, residual := numerator/denominator, numerator%denominator
+	increment := residual > denominator-residual ||
+		residual == denominator-residual && quotient&1 != 0
+	residualNegative := false
+	if increment && residual != 0 {
+		residual = denominator - residual
+		residualNegative = true
+	}
+	leftNegative := leftRaw&signBit != 0
+	if residual == 0 {
+		return floatingPointZero(
+			exponentBits, significandBits, leftNegative,
+		), true
+	}
+	return floatingPointRoundExactBinaryUint64(
+		1, exponentBits, significandBits,
+		leftNegative != residualNegative,
+		residual, residualScale,
+	), true
+}
+
 func floatingPointSqrtUint64(
 	mode uint8,
 	exponentBits, significandBits int,

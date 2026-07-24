@@ -2773,6 +2773,58 @@ func TestRejectIllSortedFloatingPointSqrt(t *testing.T) {
 	}
 }
 
+func TestExecuteFloatingPointRem(t *testing.T) {
+	script := `(set-logic QF_FP)
+(assert (= (fp.to_ieee_bv
+  (fp.rem ((_ to_fp 8 24) #x40400000)
+          ((_ to_fp 8 24) #x40000000))) #xbf800000))
+(assert (fp.isNaN
+  (fp.rem (_ +oo 8 24) ((_ to_fp 8 24) #x3f800000))))
+(check-sat)`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("execute=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+		t.Fatalf("result=%#v", result)
+	}
+}
+
+func TestExecuteAndStreamSymbolicFloatingPointRem(t *testing.T) {
+	script := `(set-logic QF_FP)
+(declare-const left (_ FloatingPoint 8 24))
+(declare-const right (_ FloatingPoint 8 24))
+(assert (= (fp.to_ieee_bv left) #x40400000))
+(assert (= (fp.to_ieee_bv right) #x40000000))
+(assert (= (fp.to_ieee_bv (fp.rem left right)) #xbf800000))
+(check-sat)`
+	fast, recognized := executeFloatingPointFast(script)
+	if !recognized {
+		t.Fatal("fp.rem script did not use streaming execution")
+	}
+	for name, execution := range map[string]ExecutionResult{
+		"stream": fast,
+		"public": Execute(script),
+	} {
+		result, ok := execution.(Executed)
+		if !ok {
+			t.Fatalf("%s=%#v", name, execution)
+		}
+		if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+			t.Fatalf("%s result=%#v", name, result)
+		}
+	}
+}
+
+func TestRejectIllSortedFloatingPointRem(t *testing.T) {
+	script := `(assert (= (fp.to_ieee_bv
+  (fp.rem ((_ to_fp 8 24) #x3f800000)
+          ((_ to_fp 5 11) #x3c00))) #x00000000))`
+	if _, ok := Execute(script).(ExecutionFailed); !ok {
+		t.Fatalf("mixed fp.rem formats unexpectedly succeeded")
+	}
+}
+
 func TestExecuteFloatingPointNativeConstructorAndSpecialValues(t *testing.T) {
 	script := `
 (set-logic QF_FP)
@@ -3257,6 +3309,44 @@ func BenchmarkExecuteFloatingPointSqrt(b *testing.B) {
 (declare-const value (_ FloatingPoint 8 24))
 (assert (= (fp.to_ieee_bv value) #x40000000))
 (assert (= (fp.to_ieee_bv (fp.sqrt RNE value)) #x3fb504f3))
+(check-sat)`
+	b.Run("stream", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			result, ok := Execute(script).(Executed)
+			if !ok {
+				b.Fatal("stream execution failed")
+			}
+			if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+	b.Run("general", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			parsed, ok := Parse(script).(Parsed)
+			if !ok {
+				b.Fatal("parse failed")
+			}
+			responses, errors := executeCommands(parsed.Commands)
+			if len(errors) != 0 {
+				b.Fatal("general execution failed")
+			}
+			if _, ok := responses[len(responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+}
+
+func BenchmarkExecuteFloatingPointRem(b *testing.B) {
+	script := `(set-logic QF_FP)
+(declare-const left (_ FloatingPoint 8 24))
+(declare-const right (_ FloatingPoint 8 24))
+(assert (= (fp.to_ieee_bv left) #x40400000))
+(assert (= (fp.to_ieee_bv right) #x40000000))
+(assert (= (fp.to_ieee_bv (fp.rem left right)) #xbf800000))
 (check-sat)`
 	b.Run("stream", func(b *testing.B) {
 		b.ReportAllocs()

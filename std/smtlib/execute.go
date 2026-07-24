@@ -47,6 +47,7 @@ type dynamicTerm struct {
 	floatingPointDiv     *dynamicFloatingPointDiv
 	floatingPointFMA     *dynamicFloatingPointFMA
 	floatingPointSqrt    *dynamicFloatingPointSqrt
+	floatingPointRem     *dynamicFloatingPointRem
 	floatingPointSymbol  int
 	uninterpreted        smt.Term[smt.UninterpretedSort]
 	arrayIntInt          smt.Term[smt.ArraySort[smt.IntSort, smt.IntSort]]
@@ -109,6 +110,11 @@ type dynamicFloatingPointSqrt struct {
 	exponentBits, significandBits int
 	symbolID                      int
 	mode                          smt.FloatingPointRoundingMode
+}
+
+type dynamicFloatingPointRem struct {
+	exponentBits, significandBits int
+	leftSymbolID, rightSymbolID   int
 }
 
 type dynamicDatatypeMatch struct {
@@ -2382,6 +2388,7 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 			floatingPointDiv:    terms[0].floatingPointDiv,
 			floatingPointFMA:    terms[0].floatingPointFMA,
 			floatingPointSqrt:   terms[0].floatingPointSqrt,
+			floatingPointRem:    terms[0].floatingPointRem,
 			bitVectorSymbol:     terms[0].floatingPointSymbol,
 		}, nil
 	}
@@ -2621,6 +2628,43 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 				significandBits: value.significandBits,
 				symbolID:        value.floatingPointSymbol,
 				mode:            terms[0].roundingMode,
+			},
+		}, nil
+	}
+	if operator == "fp.rem" && len(terms) == 2 &&
+		terms[0].sort == sortFloatingPoint &&
+		terms[1].sort == sortFloatingPoint &&
+		terms[0].exponentBits == terms[1].exponentBits &&
+		terms[0].significandBits == terms[1].significandBits {
+		left, right := terms[0], terms[1]
+		if left.bitVectorExact && right.bitVectorExact {
+			remainder := smt.FloatingPointRem(
+				smt.FloatingPointFromBits(
+					left.exponentBits, left.significandBits, left.bitVectorValue,
+				),
+				smt.FloatingPointFromBits(
+					right.exponentBits, right.significandBits, right.bitVectorValue,
+				),
+			)
+			bits := smt.FloatingPointBits(remainder)
+			return dynamicTerm{
+				sort: sortFloatingPoint, bitWidth: left.bitWidth,
+				exponentBits: left.exponentBits, significandBits: left.significandBits,
+				bitVector:      smt.BitVectorTerm(bits),
+				bitVectorExact: true, bitVectorValue: bits,
+			}, nil
+		}
+		if left.floatingPointSymbol == 0 || right.floatingPointSymbol == 0 {
+			return dynamicTerm{}, fmt.Errorf("fp.rem currently requires ground values or direct symbols")
+		}
+		return dynamicTerm{
+			sort: sortFloatingPoint, bitWidth: left.bitWidth,
+			exponentBits: left.exponentBits, significandBits: left.significandBits,
+			floatingPointRem: &dynamicFloatingPointRem{
+				exponentBits:    left.exponentBits,
+				significandBits: left.significandBits,
+				leftSymbolID:    left.floatingPointSymbol,
+				rightSymbolID:   right.floatingPointSymbol,
 			},
 		}, nil
 	}
@@ -3308,6 +3352,22 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 					boolean: smt.NewFloatingPointSqrtRelation(
 						relation.exponentBits, relation.significandBits,
 						relation.symbolID, relation.mode, exact.bitVectorValue,
+					),
+				}, nil
+			}
+			remainder, exact := terms[0], terms[1]
+			if remainder.floatingPointRem == nil {
+				remainder, exact = terms[1], terms[0]
+			}
+			if remainder.floatingPointRem != nil && exact.bitVectorExact &&
+				remainder.bitWidth == exact.bitWidth {
+				relation := remainder.floatingPointRem
+				return dynamicTerm{
+					sort: sortBool,
+					boolean: smt.NewFloatingPointRemRelation(
+						relation.exponentBits, relation.significandBits,
+						relation.leftSymbolID, relation.rightSymbolID,
+						exact.bitVectorValue,
 					),
 				}, nil
 			}

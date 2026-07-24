@@ -363,6 +363,25 @@ func TestSymbolicFloatingPointSqrtRelation(t *testing.T) {
 	}
 }
 
+func TestSymbolicFloatingPointRemRelation(t *testing.T) {
+	leftBits := NewBitVectorUint64(32, 0x40400000)
+	rightBits := NewBitVectorUint64(32, 0x40000000)
+	wantBits := NewBitVectorUint64(32, 0xbf800000)
+	solver := Assert(1, New(), BitVectorRelation{
+		Width: 32, SymbolID: 1, Value: leftBits,
+	})
+	solver = Assert(2, solver, BitVectorRelation{
+		Width: 32, SymbolID: 2, Value: rightBits,
+	})
+	solver = AssertFloatingPointRemRelation(
+		3, solver,
+		NewFloatingPointRemRelation(8, 24, 1, 2, wantBits),
+	)
+	if _, ok := Check(solver).(Satisfiable); !ok {
+		t.Fatalf("expected satisfiable fp.rem, got %#v", Check(solver))
+	}
+}
+
 func TestFloatingPointMinMaxBitBlastFallback(t *testing.T) {
 	expected := NewBitVectorUint64(32, 0xbf800000)
 	relation := NewFloatingPointMinMaxRelation(
