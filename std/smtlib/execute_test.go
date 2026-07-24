@@ -948,6 +948,34 @@ func TestExecuteNonlinearIntegerAffineFactorProducts(t *testing.T) {
 	}
 }
 
+func TestExecuteNonlinearIntegerAffineSquareBounds(t *testing.T) {
+	script := `(set-logic QF_NIA)
+(declare-const x Int)
+(assert (<= 9 (* (+ (* 2 x) 1) (+ (* 2 x) 1))))
+(assert (<= (* (+ (* 2 x) 1) (+ (* 2 x) 1)) 25))
+(check-sat)
+(get-value (x (* (+ (* 2 x) 1) (+ (* 2 x) 1))))`
+	result := Execute(script).(Executed)
+	if _, ok := result.Responses[4].(Satisfiable); !ok {
+		t.Fatalf("affine square interval=%T", result.Responses[4])
+	}
+	values := result.Responses[5].(ValuesAvailable)
+	square := values.Values[1].(IntegerValue).Value
+	if square < 9 || square > 25 {
+		t.Fatalf("affine square model=%d", square)
+	}
+
+	unsat := `(set-logic QF_NIA)
+(declare-const x Int)
+(assert (<= 4 (* (+ (* 2 x) 1) (+ (* 2 x) 1))))
+(assert (<= (* (+ (* 2 x) 1) (+ (* 2 x) 1)) 4))
+(check-sat)`
+	unsatResult := Execute(unsat).(Executed)
+	if _, ok := unsatResult.Responses[4].(Unsatisfiable); !ok {
+		t.Fatalf("affine square congruence=%T", unsatResult.Responses[4])
+	}
+}
+
 func TestExecuteBooleanLinearIntegerArithmetic(t *testing.T) {
 	script := `(set-logic QF_LIA)
 (declare-const x Int)

@@ -461,6 +461,98 @@ func TestNonlinearIntegerAffineFactorProducts(t *testing.T) {
 	}
 }
 
+func TestNonlinearIntegerAffineSquareBounds(t *testing.T) {
+	x := IntSymbol{ID: 112, Name: "x"}
+	factor := Add{Values: []Term[IntSort]{
+		ScaleInteger(NewIntegerValue(2), x),
+		IntegerTerm(NewIntegerValue(1)),
+	}}
+	square := MultiplyInteger(factor, factor)
+	interval := And{Values: []Term[BoolSort]{
+		LessEqual{Left: IntegerTerm(NewIntegerValue(9)), Right: square},
+		LessEqual{Left: square, Right: IntegerTerm(NewIntegerValue(25))},
+	}}
+	checked := Check(Assert(1, New(), interval))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("affine square interval=%#v", checked)
+	}
+	xValue, found := IntegerModelValue(result.Value, x)
+	factorValue := AddIntegerValue(
+		MultiplyIntegerValue(NewIntegerValue(2), xValue),
+		NewIntegerValue(1),
+	)
+	squareValue := MultiplyIntegerValue(factorValue, factorValue)
+	if !found ||
+		CompareIntegerValue(squareValue, NewIntegerValue(9)) < 0 ||
+		CompareIntegerValue(squareValue, NewIntegerValue(25)) > 0 {
+		t.Fatalf("affine square model=%v/%v", xValue, found)
+	}
+
+	congruenceConflict := And{Values: []Term[BoolSort]{
+		LessEqual{Left: IntegerTerm(NewIntegerValue(4)), Right: square},
+		LessEqual{Left: square, Right: IntegerTerm(NewIntegerValue(4))},
+	}}
+	conflictResult := Check(Assert(2, New(), congruenceConflict))
+	if _, ok := conflictResult.(Unsatisfiable); !ok {
+		t.Fatalf("affine square congruence=%#v", conflictResult)
+	}
+
+	negated := Not{Value: LessEqual{
+		Left: square, Right: IntegerTerm(NewIntegerValue(25)),
+	}}
+	checked = Check(Assert(3, New(), negated))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("negated affine square=%#v", checked)
+	}
+	xValue, found = IntegerModelValue(result.Value, x)
+	factorValue = AddIntegerValue(
+		MultiplyIntegerValue(NewIntegerValue(2), xValue),
+		NewIntegerValue(1),
+	)
+	if !found || CompareIntegerValue(
+		MultiplyIntegerValue(factorValue, factorValue),
+		NewIntegerValue(25),
+	) <= 0 {
+		t.Fatalf("negated affine square model=%v/%v", xValue, found)
+	}
+
+	largeConflict := And{Values: []Term[BoolSort]{
+		LessEqual{Left: IntegerTerm(NewIntegerValue(10001)), Right: square},
+		LessEqual{Left: square, Right: IntegerTerm(NewIntegerValue(10000))},
+	}}
+	largeResult := Check(Assert(4, New(), largeConflict))
+	if _, ok := largeResult.(Unknown); !ok {
+		t.Fatalf("large affine square domain=%#v", largeResult)
+	}
+
+	wide, err := ParseIntegerValue("1267650600228229401496703205376")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shifted := Add{Values: []Term[IntSort]{
+		x, IntegerTerm(NewIntegerValue(2)),
+	}}
+	wideSquare := MultiplyInteger(shifted, shifted)
+	wideInterval := And{Values: []Term[BoolSort]{
+		LessEqual{Left: IntegerTerm(wide), Right: wideSquare},
+		LessEqual{Left: wideSquare, Right: IntegerTerm(wide)},
+	}}
+	checked = Check(Assert(5, New(), wideInterval))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("wide affine square=%#v", checked)
+	}
+	xValue, found = IntegerModelValue(result.Value, x)
+	shiftedValue := AddIntegerValue(xValue, NewIntegerValue(2))
+	if !found || CompareIntegerValue(
+		MultiplyIntegerValue(shiftedValue, shiftedValue), wide,
+	) != 0 {
+		t.Fatalf("wide affine square model=%v/%v", xValue, found)
+	}
+}
+
 func TestLinearIntegerArithmeticIntegralityUnsat(t *testing.T) {
 	x := IntSymbol{ID: 1, Name: "x"}
 	twoX := ScaleInteger(NewIntegerValue(2), x)
