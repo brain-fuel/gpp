@@ -509,6 +509,9 @@ type sharedIntegerPurifier struct {
 }
 
 func solveSharedIntegerEUF(assertions []Term[BoolSort]) (checkOutcome, bool) {
+	if outcome, recognized := solveSharedIntegerConditionalEUF(assertions); recognized {
+		return outcome, true
+	}
 	purifier := sharedIntegerPurifier{}
 	for _, assertion := range assertions {
 		purifier.collectBooleanSymbols(assertion)

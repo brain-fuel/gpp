@@ -1606,6 +1606,62 @@ func TestSharedBinaryIntegerPredicateCongruence(t *testing.T) {
 	}
 }
 
+func TestSharedIntegerEUFConditionalApplications(t *testing.T) {
+	x := IntegerVariable(1)
+	y := IntegerVariable(2)
+	zero := Integer{Value: 0}
+	function := DeclareIntUnaryFunction(3, "f")
+	for name, condition := range map[string]Term[BoolSort]{
+		"then": LessEqual{Left: x, Right: y},
+		"else": Less{Left: x, Right: y},
+	} {
+		thenTerm, elseTerm := Term[IntSort](ApplySortedUnary(function, x)), Term[IntSort](zero)
+		if name == "else" {
+			thenTerm, elseTerm = zero, ApplySortedUnary(function, x)
+		}
+		conditional := If[IntSort]{
+			Condition: condition, Then: thenTerm, Else: elseTerm,
+		}
+		formula := And{Values: []Term[BoolSort]{
+			Equal{Left: x, Right: y},
+			LessEqual{Left: conditional, Right: zero},
+			Less{Left: zero, Right: ApplySortedUnary(function, y)},
+		}}
+		if result := Check(Assert(1, New(), formula)); func() bool { _, ok := result.(Unsatisfiable); return ok }() == false {
+			t.Fatalf("%s result=%T", name, result)
+		}
+	}
+}
+
+func TestCompactConditionalIntegerEUFSystem(t *testing.T) {
+	system := CompactConditionalIntegerEUFSystem{
+		Base: CompactIntegerEUFSystem{EqualityCount: 1, UnaryComparisonCount: 1},
+		Conditional: IntegerConditionalComparison{
+			Condition: IntegerDifferenceConstraint{
+				PositiveID: 1, NegativeID: 2,
+				HasPositive: true, HasNegative: true,
+			},
+			Then: IntegerConditionalBranch{
+				Application: true, FunctionID: 3, ArgumentID: 1,
+			},
+			Else:  IntegerConditionalBranch{Constant: NewIntegerValue(0)},
+			Bound: NewIntegerValue(0), ApplicationOnLeft: true,
+		},
+	}
+	system.Base.EqualityLeft[0], system.Base.EqualityRight[0] = 1, 2
+	system.Base.UnaryComparisons[0] = IntegerUnaryComparison{
+		FunctionID: 3, ArgumentID: 2, Bound: NewIntegerValue(0),
+		ApplicationOnLeft: false, Strict: true,
+	}
+	if result := Check(Assert(1, New(), system)); func() bool { _, ok := result.(Unsatisfiable); return ok }() == false {
+		t.Fatalf("result=%T", result)
+	}
+	system.Base.EqualityCount = 0
+	if result := Check(Assert(2, New(), system)); func() bool { _, ok := result.(Satisfiable); return ok }() == false {
+		t.Fatalf("satisfiable result=%T", result)
+	}
+}
+
 func TestSharedIntegerEUFPropagatesApplicationEqualityIntoLIA(t *testing.T) {
 	x := IntegerVariable(1)
 	y := IntegerVariable(2)

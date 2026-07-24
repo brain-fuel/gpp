@@ -1906,6 +1906,35 @@ func TestExecuteBinaryIntegerPredicateCongruence(t *testing.T) {
 	}
 }
 
+func TestExecuteConditionalIntegerFunctionArithmetic(t *testing.T) {
+	for _, source := range []string{
+		`(set-logic QF_UFLIA)
+(declare-const x Int)
+(declare-const y Int)
+(declare-fun f (Int) Int)
+(assert (= x y))
+(assert (<= (ite (<= x y) (f x) 0) 0))
+(assert (< 0 (f y)))
+(check-sat)`,
+		`(set-logic QF_UFLIA)
+(declare-const x Int)
+(declare-const y Int)
+(declare-fun f (Int) Int)
+(assert (= x y))
+(assert (<= (ite (< x y) 0 (f x)) 0))
+(assert (< 0 (f y)))
+(check-sat)`,
+	} {
+		result, ok := Execute(source).(Executed)
+		if !ok {
+			t.Fatalf("result=%#v", Execute(source))
+		}
+		if _, ok := result.Responses[len(result.Responses)-1].(Unsatisfiable); !ok {
+			t.Fatalf("last response=%T", result.Responses[len(result.Responses)-1])
+		}
+	}
+}
+
 func TestExecutePurifiedRealFunctionArithmetic(t *testing.T) {
 	source := `(set-logic QF_UFLRA)
 (declare-const x Real)

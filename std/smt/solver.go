@@ -295,6 +295,11 @@ func (e *engine) solveAdditional(assumptions []Term[BoolSort]) checkOutcome {
 				return outcome
 			}
 		}
+		if compact, ok := allAssertions[0].(CompactConditionalIntegerEUFSystem); ok {
+			if outcome, recognized := solveCompactConditionalIntegerEUFSystem(compact); recognized {
+				return outcome
+			}
+		}
 		if normalized, ok := allAssertions[0].(BooleanCNF); ok {
 			if outcome, recognized := solveBooleanChoiceCNF(normalized); recognized {
 				return outcome

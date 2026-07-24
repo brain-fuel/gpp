@@ -2637,6 +2637,16 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 			}
 		}
 	case "ite":
+		if len(terms) == 3 && terms[0].sort == sortBool &&
+			terms[1].integer != nil && terms[2].integer != nil &&
+			(terms[1].sort == sortInt || terms[1].sort == sortNumber) &&
+			(terms[2].sort == sortInt || terms[2].sort == sortNumber) {
+			return dynamicTerm{sort: sortInt, integer: smt.If[smt.IntSort]{
+				Condition: terms[0].boolean,
+				Then:      terms[1].integer,
+				Else:      terms[2].integer,
+			}}, nil
+		}
 		if len(terms) == 3 && terms[0].sort == sortBool && terms[1].sort == terms[2].sort {
 			if terms[1].sort == sortBool {
 				return dynamicTerm{sort: sortBool, boolean: smt.If[smt.BoolSort]{Condition: terms[0].boolean, Then: terms[1].boolean, Else: terms[2].boolean}}, nil
