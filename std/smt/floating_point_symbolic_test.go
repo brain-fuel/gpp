@@ -257,6 +257,87 @@ func TestCompactFloatingPointMinMaxWithAssignedSymbols(t *testing.T) {
 	}
 }
 
+func TestUnconstrainedFloatingPointMinMaxCanonicalModels(t *testing.T) {
+	targets := []FloatingPointValue{
+		FloatingPointPositiveZero(15, 113),
+		FloatingPointNegativeZero(15, 113),
+		FloatingPointPositiveInfinity(15, 113),
+		FloatingPointNegativeInfinity(15, 113),
+		FloatingPointNaN(15, 113),
+		FloatingPointFromRational(
+			15, 113, RoundNearestTiesToEven(), NewRational(-3, 2),
+		),
+	}
+	for _, operation := range []uint8{
+		FloatingPointOperationMin, FloatingPointOperationMax,
+	} {
+		for targetIndex, target := range targets {
+			for _, same := range []bool{false, true} {
+				rightID := 2
+				if same {
+					rightID = 1
+				}
+				relation := NewFloatingPointMinMaxRelation(
+					15, 113, 1, rightID, operation,
+					FloatingPointBits(target),
+				)
+				result, ok := Check(AssertFloatingPointMinMaxRelation(
+					1, New(), relation,
+				)).(Satisfiable)
+				if !ok {
+					t.Fatalf(
+						"operation=%d target=%d same=%v was not satisfiable",
+						operation, targetIndex, same,
+					)
+				}
+				leftBits, leftFound := FloatingPointSymbolModelBits(
+					result.Value, 1,
+				)
+				rightBits, rightFound := FloatingPointSymbolModelBits(
+					result.Value, rightID,
+				)
+				if !leftFound || !rightFound ||
+					leftBits.Width() != 128 || rightBits.Width() != 128 {
+					t.Fatal("canonical min/max model is incomplete")
+				}
+				left := FloatingPointFromBits(15, 113, leftBits)
+				right := FloatingPointFromBits(15, 113, rightBits)
+				selected := FloatingPointMin(left, right)
+				if operation == FloatingPointOperationMax {
+					selected = FloatingPointMax(left, right)
+				}
+				if !EqualBitVectorValue(
+					FloatingPointBits(selected), relation.Value,
+				) {
+					t.Fatal("canonical operands do not reproduce target")
+				}
+			}
+		}
+	}
+}
+
+func TestPairedUnconstrainedFloatingPointMinMaxCanonicalModels(t *testing.T) {
+	minimum := NewFloatingPointMinMaxRelation(
+		8, 24, 1, 2, FloatingPointOperationMin,
+		NewBitVectorUint64(32, 0xc0400000),
+	)
+	maximum := NewFloatingPointMinMaxRelation(
+		8, 24, 3, 4, FloatingPointOperationMax,
+		NewBitVectorUint64(32, 0x3fc00000),
+	)
+	solver := AssertFloatingPointMinMaxRelation(1, New(), minimum)
+	solver = AssertFloatingPointMinMaxRelation(2, solver, maximum)
+	result, ok := Check(solver).(Satisfiable)
+	if !ok {
+		t.Fatal("paired independent min/max images must be satisfiable")
+	}
+	for id := 1; id <= 4; id++ {
+		if _, found := FloatingPointSymbolModelBits(result.Value, id); !found {
+			t.Fatalf("symbol %d missing from paired model", id)
+		}
+	}
+}
+
 func TestCompactFloatingPointRoundToIntegralWithAssignedSymbol(t *testing.T) {
 	solver := New()
 	solver = Assert(1, solver, BitVectorRelation{

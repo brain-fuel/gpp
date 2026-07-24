@@ -1100,6 +1100,49 @@ func synthesizeStandaloneFloatingPointComparison(
 	return false, true
 }
 
+func synthesizeStandaloneFloatingPointMinMax(
+	assignments *[4]compactBitVectorAssignment,
+	assignmentCount *int,
+	relation FloatingPointMinMaxRelation,
+) bool {
+	if relation.Negated {
+		return false
+	}
+	for index := 0; index < *assignmentCount; index++ {
+		if assignments[index].id == relation.LeftSymbolID ||
+			assignments[index].id == relation.RightSymbolID {
+			return false
+		}
+	}
+	target := FloatingPointFromBits(
+		relation.ExponentBits, relation.SignificandBits, relation.Value,
+	)
+	selected := FloatingPointMin(target, target)
+	if relation.Operation == FloatingPointOperationMax {
+		selected = FloatingPointMax(target, target)
+	}
+	if !EqualBitVectorValue(FloatingPointBits(selected), relation.Value) {
+		return false
+	}
+	total := relation.ExponentBits + relation.SignificandBits
+	fixed := NotBitVectorValue(NewBitVectorUint64(total, 0))
+	assignments[*assignmentCount] = compactBitVectorAssignment{
+		id: relation.LeftSymbolID, value: relation.Value, fixed: fixed,
+	}
+	*assignmentCount++
+	if relation.LeftSymbolID == relation.RightSymbolID {
+		return true
+	}
+	if *assignmentCount == len(assignments) {
+		return false
+	}
+	assignments[*assignmentCount] = compactBitVectorAssignment{
+		id: relation.RightSymbolID, value: relation.Value, fixed: fixed,
+	}
+	*assignmentCount++
+	return true
+}
+
 func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome, bool) {
 	var problem compactBitVectorProblem
 	for _, assertion := range assertions {
@@ -1167,6 +1210,35 @@ func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome,
 				return checkOutcome{status: checkUnsat}, true
 			}
 			if !synthesized {
+				return checkOutcome{}, false
+			}
+		}
+	}
+	// fp.min(target, target) and fp.max(target, target) reproduce every exact
+	// IEEE result pattern under this package's deterministic SMT-LIB-permitted
+	// NaN and signed-zero choices. Validate that identity through the public
+	// kernels before committing up to two independent result images.
+	if problem.minMaxCount > 0 &&
+		problem.minMaxCount <= 2 &&
+		problem.relationCount == 0 &&
+		problem.conversionCount == 0 &&
+		problem.comparisonCount == 0 &&
+		problem.roundCount == 0 &&
+		problem.fpConversionCount == 0 &&
+		problem.fromBVCount == 0 &&
+		problem.formatCount == 0 &&
+		problem.toRealCount == 0 &&
+		problem.addCount == 0 &&
+		problem.subCount == 0 &&
+		problem.mulCount == 0 &&
+		problem.divCount == 0 &&
+		problem.fmaCount == 0 &&
+		problem.sqrtCount == 0 &&
+		problem.remCount == 0 {
+		for _, relation := range problem.minMax[:problem.minMaxCount] {
+			if !synthesizeStandaloneFloatingPointMinMax(
+				&assignments, &assignmentCount, relation,
+			) {
 				return checkOutcome{}, false
 			}
 		}
