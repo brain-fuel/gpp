@@ -5783,6 +5783,38 @@ func TestExecuteGroundBitVectorArraySymbolicIndex(t *testing.T) {
 	if _, ok := result.Responses[len(result.Responses)-1].(Unsatisfiable); !ok {
 		t.Fatalf("last=%#v", result.Responses[len(result.Responses)-1])
 	}
+
+	modelScript := `(set-logic QF_AUFBV)
+(declare-const a (Array (_ BitVec 4) (_ BitVec 8)))
+(declare-const i (_ BitVec 4))
+(assert (= i #x3))
+(assert (= (select a i) #xa5))
+(check-sat)
+(get-value (i (select a i) (select a #x3)))`
+	modelResult, ok := Execute(modelScript).(Executed)
+	if !ok {
+		t.Fatalf("model execute=%#v", Execute(modelScript))
+	}
+	values, ok := modelResult.Responses[len(modelResult.Responses)-1].(ValuesAvailable)
+	if !ok || len(values.Values) != 3 {
+		t.Fatalf(
+			"model last=%#v",
+			modelResult.Responses[len(modelResult.Responses)-1],
+		)
+	}
+	for index, expected := range []smt.BitVectorValue{
+		smt.NewBitVectorUint64(4, 3),
+		smt.NewBitVectorUint64(8, 0xa5),
+		smt.NewBitVectorUint64(8, 0xa5),
+	} {
+		actual, ok := values.Values[index].(BitVectorValue)
+		if !ok || !smt.EqualBitVectorValue(actual.Value, expected) {
+			t.Fatalf(
+				"value %d=%#v, want %v",
+				index, values.Values[index], expected,
+			)
+		}
+	}
 }
 
 func TestExecuteGroundIntegerArrayCongruence(t *testing.T) {

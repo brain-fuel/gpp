@@ -2989,6 +2989,71 @@ func TestGroundBitVectorArrayExtensionalModel(t *testing.T) {
 	}
 }
 
+func TestGroundBitVectorArraySymbolicIndexModel(t *testing.T) {
+	array := BitVectorArrayConst(4, 8, 1, "memory")
+	index := bitVectorSymbol[BitVecSort]{width: 4, iD: 2}
+	value := NewBitVectorUint64(8, 0xa5)
+	result, ok := Check(Assert(
+		1, New(), Equal{
+			Left:  Select(array, index),
+			Right: BitVectorTerm(value),
+		},
+	)).(Satisfiable)
+	if !ok {
+		t.Fatal("expected symbolic-address array model")
+	}
+	address, addressOK := DirectBitVectorSymbolModelValue(result.Value, 2)
+	stored, storedOK := BitVectorArrayValue(result.Value, array, address)
+	if !addressOK || address.Width() != 4 || !storedOK ||
+		!EqualBitVectorValue(stored, value) {
+		t.Fatalf(
+			"address=%v/%v stored=%v/%v",
+			address, addressOK, stored, storedOK,
+		)
+	}
+
+	fixedAddress := NewBitVectorUint64(4, 3)
+	result, ok = Check(Assert(
+		2, New(), And{Values: []Term[BoolSort]{
+			Equal{Left: index, Right: BitVectorTerm(fixedAddress)},
+			Equal{
+				Left:  Select(array, index),
+				Right: BitVectorTerm(value),
+			},
+		}},
+	)).(Satisfiable)
+	if !ok {
+		t.Fatal("expected constrained symbolic-address array model")
+	}
+	address, addressOK = DirectBitVectorSymbolModelValue(result.Value, 2)
+	stored, storedOK = BitVectorArrayValue(result.Value, array, fixedAddress)
+	if !addressOK || !EqualBitVectorValue(address, fixedAddress) ||
+		!storedOK || !EqualBitVectorValue(stored, value) {
+		t.Fatalf(
+			"fixed address=%v/%v stored=%v/%v",
+			address, addressOK, stored, storedOK,
+		)
+	}
+
+	negated, ok := Check(Assert(
+		3, New(), BitVectorArraySymbolicReadValueRelation{
+			ArrayID: 1, IndexID: 2,
+			IndexWidth: 4, ElementWidth: 8,
+			Address: fixedAddress, Value: value,
+			Negated: true,
+		},
+	)).(Satisfiable)
+	if !ok {
+		t.Fatal("expected negated symbolic-address array model")
+	}
+	stored, storedOK = BitVectorArrayValue(
+		negated.Value, array, fixedAddress,
+	)
+	if !storedOK || EqualBitVectorValue(stored, value) {
+		t.Fatalf("negated stored=%v/%v", stored, storedOK)
+	}
+}
+
 func BenchmarkGroundEUFCold(b *testing.B) {
 	a := UninterpretedConstant(1, 1, "a")
 	c := UninterpretedConstant(1, 2, "b")

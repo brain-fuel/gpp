@@ -146,7 +146,18 @@ type BitVectorArrayEqualityRelation struct {
 	Negated                  bool
 }
 
+// BitVectorArraySymbolicReadValueRelation is the compact model-producing form
+// of `address = constant && select(memory, address) = value`.
+type BitVectorArraySymbolicReadValueRelation struct {
+	ArrayID, IndexID         int
+	IndexWidth, ElementWidth int
+	Address, Value           BitVectorValue
+	Negated                  bool
+}
+
 func (BitVectorArrayEqualityRelation) isTerm(BoolSort) {}
+
+func (BitVectorArraySymbolicReadValueRelation) isTerm(BoolSort) {}
 
 func (BitVectorArrayStoreReadValueRelation) isTerm(BoolSort) {}
 
@@ -162,6 +173,31 @@ func (BitVectorArrayEqualityExchange) isTerm(BoolSort) {}
 func solveCompactBitVectorArrayExchange(assertions []Term[BoolSort]) (checkOutcome, bool) {
 	if len(assertions) != 1 {
 		return checkOutcome{}, false
+	}
+	if value, ok := assertions[0].(BitVectorArraySymbolicReadValueRelation); ok {
+		if value.IndexWidth <= 0 || value.ElementWidth <= 0 ||
+			value.Address.Width() != value.IndexWidth ||
+			value.Value.Width() != value.ElementWidth {
+			return checkOutcome{}, false
+		}
+		stored := value.Value
+		if value.Negated {
+			stored = XorBitVectorValue(
+				stored, NewBitVectorUint64(value.ElementWidth, 1),
+			)
+		}
+		bitVectors := bitVectorModel{}
+		bitVectors.set(value.IndexID, value.Address)
+		arrays := &bitVectorArrayModel{}
+		arrays.setDefault(
+			value.ArrayID,
+			NewBitVectorUint64(value.ElementWidth, 0),
+		)
+		arrays.set(value.ArrayID, value.Address, stored)
+		return checkOutcome{
+			status: checkSat, bitVectors: bitVectors,
+			bitVectorArrays: arrays,
+		}, true
 	}
 	value, ok := assertions[0].(BitVectorArrayEqualityExchange)
 	if !ok {
@@ -182,7 +218,9 @@ func solveCompactBitVectorArrayExchange(assertions []Term[BoolSort]) (checkOutco
 	return checkOutcome{status: checkSat}, true
 }
 
-func (problem *groundBitVectorArrayProblem) model() *bitVectorArrayModel {
+func (problem *groundBitVectorArrayProblem) model(
+	bitVectors *bitVectorModel,
+) *bitVectorArrayModel {
 	model := &bitVectorArrayModel{}
 	for position := 0; position < problem.arrayCount; position++ {
 		width := problem.arrayElementWidths[position]
@@ -192,8 +230,17 @@ func (problem *groundBitVectorArrayProblem) model() *bitVectorArrayModel {
 	}
 	for position := 0; position < problem.readCount; position++ {
 		read := problem.reads[position]
-		if read.constant || read.index.symbol {
+		if read.constant {
 			continue
+		}
+		readIndex := read.index.value
+		if read.index.symbol {
+			var found bool
+			readIndex, found = bitVectors.lookup(read.index.id)
+			if !found {
+				readIndex = NewBitVectorUint64(read.index.width, 0)
+				bitVectors.set(read.index.id, readIndex)
+			}
 		}
 		root := problem.readRoot(position)
 		value := BitVectorValue{}
@@ -213,7 +260,7 @@ func (problem *groundBitVectorArrayProblem) model() *bitVectorArrayModel {
 		}
 		for arrayPosition := 0; arrayPosition < problem.arrayCount; arrayPosition++ {
 			if problem.arrayRoot(problem.arrayIDs[arrayPosition]) == problem.arrayRoot(read.arrayID) {
-				model.set(problem.arrayIDs[arrayPosition], read.index.value, value)
+				model.set(problem.arrayIDs[arrayPosition], readIndex, value)
 			}
 		}
 	}
@@ -287,6 +334,15 @@ type groundBitVectorArrayExpression struct {
 }
 
 func solveGroundBitVectorArrays(assertions []Term[BoolSort]) (checkOutcome, bool) {
+	return solveGroundBitVectorArraysWithModel(
+		assertions, bitVectorModel{},
+	)
+}
+
+func solveGroundBitVectorArraysWithModel(
+	assertions []Term[BoolSort],
+	bitVectors bitVectorModel,
+) (checkOutcome, bool) {
 	problem := groundBitVectorArrayProblem{}
 	for _, assertion := range assertions {
 		if !problem.collectArrays(assertion, false) {
@@ -330,7 +386,11 @@ func solveGroundBitVectorArrays(assertions []Term[BoolSort]) (checkOutcome, bool
 			}
 		}
 	}
-	return checkOutcome{status: checkSat, bitVectorArrays: problem.model()}, true
+	arrayModel := problem.model(&bitVectors)
+	return checkOutcome{
+		status: checkSat, bitVectors: bitVectors,
+		bitVectorArrays: arrayModel,
+	}, true
 }
 
 // solveSharedArrayBitVector exchanges equalities entailed by QF_BV into the
@@ -399,12 +459,11 @@ func solveSharedArrayBitVector(assertions []Term[BoolSort]) (checkOutcome, bool)
 			}
 		}
 	}
-	arrayOutcome, recognized := solveGroundBitVectorArrays(arrays)
+	arrayOutcome, recognized := solveGroundBitVectorArraysWithModel(
+		arrays, bitVectorOutcome.bitVectors,
+	)
 	if !recognized {
 		return checkOutcome{}, false
-	}
-	if arrayOutcome.status == checkSat {
-		arrayOutcome.bitVectors = bitVectorOutcome.bitVectors
 	}
 	return arrayOutcome, true
 }
