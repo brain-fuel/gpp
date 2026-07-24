@@ -496,6 +496,13 @@ func IntegerToBitVectorValue(width int, value IntegerValue) BitVectorValue {
 }
 
 func NotBitVectorValue(value BitVectorValue) BitVectorValue {
+	if value.width <= 64 && value.large == nil {
+		result := ^value.small
+		if value.width < 64 {
+			result &= uint64(1)<<value.width - 1
+		}
+		return BitVectorValue{width: value.width, small: result}
+	}
 	mask := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), uint(value.width)), big.NewInt(1))
 	result := new(big.Int).Xor(value.big(), mask)
 	if value.width <= 64 {

@@ -2228,6 +2228,31 @@ func TestBitVectorBitBlastBooleanOperations(t *testing.T) {
 	}
 }
 
+func TestCompactInteriorBitVectorExtractRetainsSourceWidth(t *testing.T) {
+	x := BitVecConst(32, 1, "x")
+	relation := BitVectorRelation{
+		Width:       8,
+		SourceWidth: 32,
+		SymbolID:    1,
+		Value:       NewBitVectorUint64(8, 0xff),
+		Operation:   11,
+		ParameterA:  30,
+		ParameterB:  23,
+	}
+	result, ok := Check(Assert(1, New(), relation)).(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", Check(Assert(1, New(), relation)))
+	}
+	value, found := BitVecModelValue(result.Value, x)
+	if !found || value.Width() != 32 {
+		t.Fatalf("model=%#v/%v", value, found)
+	}
+	exponent := ExtractBitVectorValue(value, 30, 23)
+	if expected := NewBitVectorUint64(8, 0xff); !EqualBitVectorValue(exponent, expected) {
+		t.Fatalf("interior extract=%#v, want %#v", exponent, expected)
+	}
+}
+
 func TestBitVectorAdditionWrapsAtIndexedWidth(t *testing.T) {
 	wrapped := BitVecAdd(BitVecVal(8, 255), BitVecVal(8, 1))
 	formula := Not{Value: Equal{Left: wrapped, Right: BitVecVal(8, 0)}}

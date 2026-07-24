@@ -5,18 +5,22 @@ import "math/big"
 // BitVectorRelation is a compact unary equality or disequality retained by
 // compatibility layers. If Masked is set it denotes symbol & Mask = Value.
 type BitVectorRelation struct {
-	Width      int
-	SymbolID   int
-	Value      BitVectorValue
-	Mask       BitVectorValue
-	Masked     bool
-	Negated    bool
-	Order      uint8
-	Operation  uint8
-	Operand    BitVectorValue
-	ParameterA int
-	ParameterB int
-	Predicate  uint8
+	Width int
+	// SourceWidth retains the input width for width-changing compact
+	// operations. Zero preserves the legacy inference for operations whose
+	// result width is sufficient to recover the input width.
+	SourceWidth int
+	SymbolID    int
+	Value       BitVectorValue
+	Mask        BitVectorValue
+	Masked      bool
+	Negated     bool
+	Order       uint8
+	Operation   uint8
+	Operand     BitVectorValue
+	ParameterA  int
+	ParameterB  int
+	Predicate   uint8
 }
 
 func (BitVectorRelation) isTerm(BoolSort) {}
@@ -224,7 +228,7 @@ func containsBitVectorTheory(term Term[BoolSort]) bool {
 		return true
 	case bitVectorUnsignedAddOverflow[BoolSort], bitVectorSignedAddOverflow[BoolSort], bitVectorUnsignedSubOverflow[BoolSort], bitVectorSignedSubOverflow[BoolSort], bitVectorUnsignedMulOverflow[BoolSort], bitVectorSignedMulOverflow[BoolSort], bitVectorSignedDivOverflow[BoolSort], bitVectorNegOverflow[BoolSort]:
 		return true
-	case BitVectorRelation, BitVectorConjunction, BitVectorIntegerRelation, BitVectorMixedConjunction, BitVectorEUFRelation, BitVectorEUFConjunction:
+	case BitVectorRelation, BitVectorConjunction, BitVectorIntegerRelation, BitVectorMixedConjunction, BitVectorEUFRelation, BitVectorEUFConjunction, FloatingPointRelation:
 		return true
 	}
 	return false
@@ -319,6 +323,7 @@ func solveGroundBitVectorEUFContradiction(assertions []Term[BoolSort]) (checkOut
 type compactBitVectorAssignment struct {
 	id    int
 	value BitVectorValue
+	fixed BitVectorValue
 }
 
 type compactBitVectorIntegerRelation struct {
@@ -362,6 +367,17 @@ func (problem *compactBitVectorProblem) add(term Term[BoolSort], negated bool) b
 		return true
 	case Not:
 		return problem.add(value.Value, !negated)
+	case FloatingPointRelation:
+		value.Negated = value.Negated != negated
+		relations, count, ok := compactFloatingPointRelations(value)
+		if !ok || problem.relationCount+count > len(problem.relations) {
+			return false
+		}
+		for index := 0; index < count; index++ {
+			problem.relations[problem.relationCount] = relations[index]
+			problem.relationCount++
+		}
+		return true
 	case BitVectorRelation:
 		if problem.relationCount == len(problem.relations) {
 			return false
@@ -472,8 +488,103 @@ func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome,
 			if assignmentCount == len(assignments) {
 				return checkOutcome{}, false
 			}
-			assignments[assignmentCount] = compactBitVectorAssignment{id: relation.SymbolID, value: relation.Value}
+			assignments[assignmentCount] = compactBitVectorAssignment{
+				id:    relation.SymbolID,
+				value: relation.Value,
+				fixed: NotBitVectorValue(NewBitVectorUint64(relation.Value.Width(), 0)),
+			}
 			assignmentCount++
+		}
+	}
+	// Width-changing extract relations can constrain a symbol without first
+	// assigning its entire source value. Synthesize a deterministic source
+	// pattern directly so common classification workloads stay on the compact
+	// path instead of allocating a general bit-blast graph.
+	for _, relation := range relations {
+		found := false
+		for index := 0; index < assignmentCount; index++ {
+			if assignments[index].id == relation.SymbolID {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		if relation.Masked || relation.Order != 0 || relation.Predicate != 0 ||
+			relation.Operation != 0 && relation.Operation != 11 {
+			return checkOutcome{}, false
+		}
+		sourceWidth := relation.SourceWidth
+		if sourceWidth == 0 {
+			sourceWidth = relation.Width
+			if relation.Operation == 11 {
+				sourceWidth = relation.ParameterA + 1
+			}
+		}
+		if sourceWidth <= 0 || assignmentCount == len(assignments) {
+			return checkOutcome{}, false
+		}
+		assignments[assignmentCount] = compactBitVectorAssignment{
+			id:    relation.SymbolID,
+			value: NewBitVectorUint64(sourceWidth, 0),
+			fixed: NewBitVectorUint64(sourceWidth, 0),
+		}
+		assignmentCount++
+	}
+	for relationPass := 0; relationPass < 2; relationPass++ {
+		for _, relation := range relations {
+			if relation.Masked || relation.Order != 0 || relation.Predicate != 0 ||
+				relation.Operation != 0 && relation.Operation != 11 ||
+				relationPass == 0 && relation.Negated ||
+				relationPass == 1 && !relation.Negated {
+				continue
+			}
+			var assignment *compactBitVectorAssignment
+			for index := 0; index < assignmentCount; index++ {
+				if assignments[index].id == relation.SymbolID {
+					assignment = &assignments[index]
+					break
+				}
+			}
+			if assignment == nil {
+				return checkOutcome{}, false
+			}
+			low, high := 0, assignment.value.Width()-1
+			if relation.Operation == 11 {
+				low, high = relation.ParameterB, relation.ParameterA
+			}
+			if low < 0 || high < low || high >= assignment.value.Width() ||
+				relation.Value.Width() != high-low+1 {
+				return checkOutcome{}, false
+			}
+			if !relation.Negated {
+				for bit := low; bit <= high; bit++ {
+					want := relation.Value.Bit(bit - low)
+					if assignment.fixed.Bit(bit) && assignment.value.Bit(bit) != want {
+						return checkOutcome{status: checkUnsat}, true
+					}
+					setBitVectorValueBit(&assignment.value, bit, want)
+					setBitVectorValueBit(&assignment.fixed, bit, true)
+				}
+				continue
+			}
+			actual := ExtractBitVectorValue(assignment.value, high, low)
+			if !EqualBitVectorValue(actual, relation.Value) {
+				continue
+			}
+			changed := false
+			for bit := low; bit <= high; bit++ {
+				if assignment.fixed.Bit(bit) {
+					continue
+				}
+				setBitVectorValueBit(&assignment.value, bit, !assignment.value.Bit(bit))
+				changed = true
+				break
+			}
+			if !changed {
+				return checkOutcome{status: checkUnsat}, true
+			}
 		}
 	}
 	for _, conversion := range problem.conversions[:problem.conversionCount] {
@@ -594,6 +705,29 @@ func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome,
 	return checkOutcome{status: checkSat, bitVectors: model}, true
 }
 
+func setBitVectorValueBit(value *BitVectorValue, index int, bit bool) {
+	if index < 0 || index >= value.width {
+		panic("smt: bit-vector bit index out of range")
+	}
+	if value.width <= 64 {
+		mask := uint64(1) << index
+		if bit {
+			value.small |= mask
+		} else {
+			value.small &^= mask
+		}
+		return
+	}
+	if value.large == nil {
+		value.large = new(big.Int)
+	}
+	bitValue := uint(0)
+	if bit {
+		bitValue = 1
+	}
+	value.large.SetBit(value.large, index, bitValue)
+}
+
 func (encoder *bitVectorEncoder) boolean(term Term[BoolSort]) (int, bool) {
 	switch value := term.(type) {
 	case Bool:
@@ -696,6 +830,8 @@ func (encoder *bitVectorEncoder) boolean(term Term[BoolSort]) (int, bool) {
 		return encoder.integerConversionComparison(value.Left, value.Right, -2)
 	case BitVectorRelation:
 		return encoder.boolean(expandBitVectorRelation(value))
+	case FloatingPointRelation:
+		return encoder.boolean(expandFloatingPointRelation(value))
 	case BitVectorConjunction:
 		literals := make([]int, 0, value.Count)
 		for _, relation := range value.values() {
@@ -741,14 +877,18 @@ func (encoder *bitVectorEncoder) integerConversionComparisonRelation(value BitVe
 
 func expandBitVectorRelation(relation BitVectorRelation) Term[BoolSort] {
 	sourceWidth := relation.Width
-	switch relation.Operation {
-	case 11:
-		sourceWidth = relation.ParameterA + 1
-	case 12, 13:
-		sourceWidth -= relation.ParameterA
-	case 16:
-		if relation.ParameterA > 0 {
-			sourceWidth /= relation.ParameterA
+	if relation.SourceWidth > 0 {
+		sourceWidth = relation.SourceWidth
+	} else {
+		switch relation.Operation {
+		case 11:
+			sourceWidth = relation.ParameterA + 1
+		case 12, 13:
+			sourceWidth -= relation.ParameterA
+		case 16:
+			if relation.ParameterA > 0 {
+				sourceWidth /= relation.ParameterA
+			}
 		}
 	}
 	var actual Term[BitVecSort] = BitVecConst(sourceWidth, relation.SymbolID, "")
@@ -827,6 +967,86 @@ func expandBitVectorRelation(relation BitVectorRelation) Term[BoolSort] {
 		return Not{Value: result}
 	}
 	return result
+}
+
+func compactFloatingPointRelations(value FloatingPointRelation) ([3]BitVectorRelation, int, bool) {
+	var result [3]BitVectorRelation
+	if value.Negated || value.ExponentBits < 2 || value.SignificandBits < 2 {
+		return result, 0, false
+	}
+	total := value.ExponentBits + value.SignificandBits
+	exponentZero := BitVectorRelation{
+		Width: value.ExponentBits, SourceWidth: total, SymbolID: value.SymbolID,
+		Value:     NewBitVectorUint64(value.ExponentBits, 0),
+		Operation: 11, ParameterA: total - 2, ParameterB: value.SignificandBits - 1,
+	}
+	exponentAll := exponentZero
+	exponentAll.Value = NotBitVectorValue(exponentAll.Value)
+	significandZero := BitVectorRelation{
+		Width: value.SignificandBits - 1, SourceWidth: total, SymbolID: value.SymbolID,
+		Value:     NewBitVectorUint64(value.SignificandBits-1, 0),
+		Operation: 11, ParameterA: value.SignificandBits - 2, ParameterB: 0,
+	}
+	switch value.Predicate {
+	case FloatingPointPredicateNaN:
+		significandZero.Negated = true
+		result[0], result[1] = exponentAll, significandZero
+		return result, 2, true
+	case FloatingPointPredicateInfinite:
+		result[0], result[1] = exponentAll, significandZero
+		return result, 2, true
+	case FloatingPointPredicateZero:
+		result[0], result[1] = exponentZero, significandZero
+		return result, 2, true
+	case FloatingPointPredicateSubnormal:
+		significandZero.Negated = true
+		result[0], result[1] = exponentZero, significandZero
+		return result, 2, true
+	case FloatingPointPredicateNormal:
+		exponentZero.Negated, exponentAll.Negated = true, true
+		result[0], result[1] = exponentZero, exponentAll
+		return result, 2, true
+	default:
+		return result, 0, false
+	}
+}
+
+func expandFloatingPointRelation(value FloatingPointRelation) Term[BoolSort] {
+	relations, count, compact := compactFloatingPointRelations(FloatingPointRelation{
+		ExponentBits: value.ExponentBits, SignificandBits: value.SignificandBits,
+		SymbolID: value.SymbolID, Predicate: value.Predicate,
+	})
+	if compact {
+		terms := make([]Term[BoolSort], count)
+		for index := 0; index < count; index++ {
+			terms[index] = expandBitVectorRelation(relations[index])
+		}
+		var term Term[BoolSort] = And{Values: terms}
+		if value.Negated {
+			term = Not{Value: term}
+		}
+		return term
+	}
+	total := value.ExponentBits + value.SignificandBits
+	symbol := BitVecConst(total, value.SymbolID, "")
+	exponent := BitVecExtract(total-2, value.SignificandBits-1, symbol)
+	significand := BitVecExtract(value.SignificandBits-2, 0, symbol)
+	sign := BitVecExtract(total-1, total-1, symbol)
+	exponentAll := Equal{Left: exponent, Right: BitVectorTerm(NotBitVectorValue(NewBitVectorUint64(value.ExponentBits, 0)))}
+	significandZero := Equal{Left: significand, Right: BitVecVal(value.SignificandBits-1, 0)}
+	signSet := Equal{Left: sign, Right: BitVecVal(1, 1)}
+	negative := And{Values: []Term[BoolSort]{Not{Value: And{Values: []Term[BoolSort]{exponentAll, Not{Value: significandZero}}}}, signSet}}
+	var term Term[BoolSort] = negative
+	if value.Predicate == FloatingPointPredicatePositive {
+		term = And{Values: []Term[BoolSort]{
+			Not{Value: And{Values: []Term[BoolSort]{exponentAll, Not{Value: significandZero}}}},
+			Not{Value: signSet},
+		}}
+	}
+	if value.Negated {
+		return Not{Value: term}
+	}
+	return term
 }
 
 func (encoder *bitVectorEncoder) term(term any) ([]int, bool) {
