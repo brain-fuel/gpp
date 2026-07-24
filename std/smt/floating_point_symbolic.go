@@ -20,6 +20,24 @@ const (
 	FloatingPointOperationMax
 )
 
+// FloatingPointBitVectorTermFromComponents implements SMT-LIB's native
+// (fp sign exponent significand) constructor for arbitrary bit-vector terms.
+func FloatingPointBitVectorTermFromComponents(
+	exponentBits, significandBits int,
+	sign, exponent, significand Term[BitVecSort],
+) Term[BitVecSort] {
+	if exponentBits < 2 {
+		panic("smt: floating-point exponent width must be at least 2")
+	}
+	if significandBits < 2 {
+		panic("smt: floating-point significand width must be at least 2")
+	}
+	return BitVecConcat(
+		1, exponentBits+significandBits-1, sign,
+		BitVecConcat(exponentBits, significandBits-1, exponent, significand),
+	)
+}
+
 // FloatingPointRelation is the compact solver-neutral form of a classification
 // predicate over one IEEE/SMT-LIB floating-point bit-vector symbol.
 type FloatingPointRelation struct {

@@ -207,6 +207,62 @@ func FloatingPointFromUint64(exponentBits int, significandBits int, bits uint64)
 	return FloatingPointFromBits(exponentBits, significandBits, NewBitVectorUint64(int(exponentBits+significandBits), bits))
 }
 
+// FloatingPointFromComponents implements SMT-LIB's native
+// (fp sign exponent significand) constructor. The significand argument contains
+// the s-1 explicitly encoded trailing bits, not the hidden leading bit.
+//
+//goplus:dep FloatingPointFromComponents(exponentBits nat, significandBits nat, sign BitVectorValue, exponent BitVectorValue, significand BitVectorValue) FloatingPointValue[exponentBits, significandBits]
+func FloatingPointFromComponents(exponentBits int, significandBits int, sign BitVectorValue, exponent BitVectorValue, significand BitVectorValue) FloatingPointValue {
+	if sign.Width() != 1 {
+		panic("smt: floating-point sign width must be 1")
+	}
+	if exponent.Width() != int(exponentBits) {
+		panic("smt: floating-point exponent component width mismatch")
+	}
+	if significand.Width() != int(significandBits-1) {
+		panic("smt: floating-point significand component width mismatch")
+	}
+	return FloatingPointFromBits(exponentBits, significandBits,
+		ConcatBitVectorValue(sign, ConcatBitVectorValue(exponent, significand)))
+}
+
+//goplus:dep FloatingPointPositiveZero(exponentBits nat, significandBits nat) FloatingPointValue[exponentBits, significandBits]
+func FloatingPointPositiveZero(exponentBits int, significandBits int) FloatingPointValue {
+	return FloatingPointFromBits(exponentBits, significandBits, NewBitVectorUint64(int(exponentBits+significandBits), 0))
+}
+
+//goplus:dep FloatingPointNegativeZero(exponentBits nat, significandBits nat) FloatingPointValue[exponentBits, significandBits]
+func FloatingPointNegativeZero(exponentBits int, significandBits int) FloatingPointValue {
+	return FloatingPointFromComponents(exponentBits, significandBits,
+		NewBitVectorUint64(1, 1), NewBitVectorUint64(int(exponentBits), 0),
+		NewBitVectorUint64(int(significandBits-1), 0))
+}
+
+//goplus:dep FloatingPointPositiveInfinity(exponentBits nat, significandBits nat) FloatingPointValue[exponentBits, significandBits]
+func FloatingPointPositiveInfinity(exponentBits int, significandBits int) FloatingPointValue {
+	return FloatingPointFromComponents(exponentBits, significandBits,
+		NewBitVectorUint64(1, 0), NotBitVectorValue(NewBitVectorUint64(int(exponentBits), 0)),
+		NewBitVectorUint64(int(significandBits-1), 0))
+}
+
+//goplus:dep FloatingPointNegativeInfinity(exponentBits nat, significandBits nat) FloatingPointValue[exponentBits, significandBits]
+func FloatingPointNegativeInfinity(exponentBits int, significandBits int) FloatingPointValue {
+	return FloatingPointFromComponents(exponentBits, significandBits,
+		NewBitVectorUint64(1, 1), NotBitVectorValue(NewBitVectorUint64(int(exponentBits), 0)),
+		NewBitVectorUint64(int(significandBits-1), 0))
+}
+
+// FloatingPointNaN returns a deterministic positive quiet NaN. SMT-LIB leaves
+// the sign and payload of its indexed NaN special value unspecified.
+//
+//goplus:dep FloatingPointNaN(exponentBits nat, significandBits nat) FloatingPointValue[exponentBits, significandBits]
+func FloatingPointNaN(exponentBits int, significandBits int) FloatingPointValue {
+	payload := ConcatBitVectorValue(NewBitVectorUint64(1, 1),
+		NewBitVectorUint64(int(significandBits-2), 0))
+	return FloatingPointFromComponents(exponentBits, significandBits,
+		NewBitVectorUint64(1, 0), NotBitVectorValue(NewBitVectorUint64(int(exponentBits), 0)), payload)
+}
+
 //goplus:dep FloatingPointBits(0 e nat, 0 s nat, value FloatingPointValue[e, s]) BitVectorValue
 func FloatingPointBits(value FloatingPointValue) BitVectorValue {
 	switch __gp_m1 := any(value).(type) {

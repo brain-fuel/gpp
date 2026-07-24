@@ -16,6 +16,7 @@ const (
 	fpFastPredicate
 	fpFastComparison
 	fpFastEquality
+	fpFastGroundEquality
 	fpFastCheck
 )
 
@@ -31,6 +32,7 @@ type fpFastCommand struct {
 	comparison                    uint8
 	operation                     uint8
 	negated                       bool
+	groundHolds                   bool
 }
 
 type fpFastSymbol struct {
@@ -69,12 +71,12 @@ const (
 	fpFastSymbolBits uint8 = iota + 1
 	fpFastRoundedBits
 	fpFastMinMaxBits
+	fpFastExactFloatingBits
 	fpFastLiteralBits
 )
 
 func executeFloatingPointFast(source string) (ExecutionResult, bool) {
-	if !strings.Contains(source, "FloatingPoint") ||
-		!strings.Contains(source, "QF_FP") {
+	if !strings.Contains(source, "QF_FP") {
 		return nil, false
 	}
 	var commands [32]fpFastCommand
@@ -231,6 +233,14 @@ func executeFloatingPointFast(source string) (ExecutionResult, bool) {
 			solver = smt.Assert(nextAssertion, solver, equality)
 			nextAssertion++
 			responses = append(responses, Acknowledged{CommandIndex: command.commandIndex})
+		case fpFastGroundEquality:
+			holds := command.groundHolds
+			if command.negated {
+				holds = !holds
+			}
+			solver = smt.Assert(nextAssertion, solver, smt.Bool{Value: holds})
+			nextAssertion++
+			responses = append(responses, Acknowledged{CommandIndex: command.commandIndex})
 		case fpFastCheck:
 			switch result := smt.Check(solver).(type) {
 			case smt.Satisfiable:
@@ -325,6 +335,14 @@ func (scanner *fpFastScanner) formula(
 	if derived.kind == fpFastLiteralBits {
 		derived, literal = right, left
 	}
+	if derived.kind == fpFastExactFloatingBits &&
+		literal.kind == fpFastLiteralBits &&
+		derived.value.Width() == literal.value.Width() {
+		holds := smt.EqualBitVectorValue(derived.value, literal.value)
+		return fpFastCommand{
+			kind: fpFastGroundEquality, groundHolds: holds,
+		}, true
+	}
 	if literal.kind != fpFastLiteralBits ||
 		derived.exponentBits+derived.significandBits != literal.value.Width() {
 		return fpFastCommand{}, false
@@ -354,33 +372,10 @@ func (scanner *fpFastScanner) operand(
 ) (fpFastOperand, bool) {
 	snapshot := scanner.at
 	if token, ok := scanner.next(); ok && token.kind == fpFastAtom {
-		text := scanner.text(token)
-		if strings.HasPrefix(text, "#x") && len(text) > 2 {
-			width := 4 * (len(text) - 2)
-			if width > 64 {
-				return fpFastOperand{}, false
-			}
-			value, err := strconv.ParseUint(text[2:], 16, 64)
-			if err != nil {
-				return fpFastOperand{}, false
-			}
+		if value, ok := scanner.bitVectorLiteral(token); ok {
 			return fpFastOperand{
 				kind:  fpFastLiteralBits,
-				value: smt.NewBitVectorUint64(width, value),
-			}, true
-		}
-		if strings.HasPrefix(text, "#b") && len(text) > 2 {
-			width := len(text) - 2
-			if width > 64 {
-				return fpFastOperand{}, false
-			}
-			value, err := strconv.ParseUint(text[2:], 2, 64)
-			if err != nil {
-				return fpFastOperand{}, false
-			}
-			return fpFastOperand{
-				kind:  fpFastLiteralBits,
-				value: smt.NewBitVectorUint64(width, value),
+				value: value,
 			}, true
 		}
 	}
@@ -413,6 +408,55 @@ func (scanner *fpFastScanner) operand(
 		return fpFastOperand{}, false
 	}
 	switch scanner.text(operation) {
+	case "fp":
+		signToken, signOK := scanner.next()
+		exponentToken, exponentOK := scanner.next()
+		significandToken, significandOK := scanner.next()
+		sign, signLiteral := scanner.bitVectorLiteral(signToken)
+		exponent, exponentLiteral := scanner.bitVectorLiteral(exponentToken)
+		significand, significandLiteral := scanner.bitVectorLiteral(significandToken)
+		if !signOK || !exponentOK || !significandOK ||
+			!signLiteral || !exponentLiteral || !significandLiteral ||
+			sign.Width() != 1 || exponent.Width() < 2 || significand.Width() < 1 ||
+			!scanner.right() || !scanner.right() {
+			return fpFastOperand{}, false
+		}
+		value := smt.FloatingPointFromComponents(
+			exponent.Width(), significand.Width()+1,
+			sign, exponent, significand,
+		)
+		return fpFastOperand{
+			kind:         fpFastExactFloatingBits,
+			exponentBits: exponent.Width(), significandBits: significand.Width() + 1,
+			value: smt.FloatingPointBits(value),
+		}, true
+	case "_":
+		name, nameOK := scanner.atom()
+		exponentBits, exponentOK := scanner.positiveInt()
+		significandBits, significandOK := scanner.positiveInt()
+		if !nameOK || !exponentOK || !significandOK ||
+			exponentBits < 2 || significandBits < 2 ||
+			!scanner.right() || !scanner.right() {
+			return fpFastOperand{}, false
+		}
+		var value smt.FloatingPointValue
+		switch scanner.text(name) {
+		case "+zero":
+			value = smt.FloatingPointPositiveZero(exponentBits, significandBits)
+		case "-zero":
+			value = smt.FloatingPointNegativeZero(exponentBits, significandBits)
+		case "+oo":
+			value = smt.FloatingPointPositiveInfinity(exponentBits, significandBits)
+		case "-oo":
+			value = smt.FloatingPointNegativeInfinity(exponentBits, significandBits)
+		default:
+			return fpFastOperand{}, false
+		}
+		return fpFastOperand{
+			kind:         fpFastExactFloatingBits,
+			exponentBits: exponentBits, significandBits: significandBits,
+			value: smt.FloatingPointBits(value),
+		}, true
 	case "fp.roundToIntegral":
 		mode, modeOK := scanner.atom()
 		symbol, symbolOK := scanner.atom()
@@ -459,6 +503,32 @@ func (scanner *fpFastScanner) operand(
 	default:
 		return fpFastOperand{}, false
 	}
+}
+
+func (scanner *fpFastScanner) bitVectorLiteral(
+	token fpFastToken,
+) (smt.BitVectorValue, bool) {
+	if token.kind != fpFastAtom {
+		return smt.BitVectorValue{}, false
+	}
+	text := scanner.text(token)
+	base, digits, width := 0, "", 0
+	switch {
+	case strings.HasPrefix(text, "#x") && len(text) > 2:
+		base, digits, width = 16, text[2:], 4*(len(text)-2)
+	case strings.HasPrefix(text, "#b") && len(text) > 2:
+		base, digits, width = 2, text[2:], len(text)-2
+	default:
+		return smt.BitVectorValue{}, false
+	}
+	if width > 64 {
+		return smt.BitVectorValue{}, false
+	}
+	value, err := strconv.ParseUint(digits, base, 64)
+	if err != nil {
+		return smt.BitVectorValue{}, false
+	}
+	return smt.NewBitVectorUint64(width, value), true
 }
 
 func fpFastFindSymbol(name string, symbols []fpFastSymbol) (fpFastSymbol, bool) {

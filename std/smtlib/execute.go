@@ -1577,6 +1577,20 @@ func (executor *executor) term(expression SExpr) (dynamicTerm, error) {
 		}
 		return dynamicTerm{sort: sortString, stringValue: character}, nil
 	}
+	if value, recognized, err := indexedFloatingPointSpecial(list); recognized {
+		if err != nil {
+			return dynamicTerm{}, err
+		}
+		bits := smt.FloatingPointBits(value)
+		return dynamicTerm{
+			sort: sortFloatingPoint, bitWidth: bits.Width(),
+			exponentBits:    smt.FloatingPointExponentBits(value),
+			significandBits: smt.FloatingPointSignificandBits(value),
+			bitVector:       smt.BitVectorTerm(bits),
+			bitVectorExact:  true,
+			bitVectorValue:  bits,
+		}, nil
+	}
 	if operator, operatorOK := atomText(list.Values[0]); operatorOK && operator == "match" {
 		return executor.matchParametricDatatype(list)
 	}
@@ -2287,6 +2301,30 @@ func compactDatatypeTerms(values []dynamicTerm) smt.NaryDatatypeTerms {
 }
 
 func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error) {
+	if operator == "fp" && len(terms) == 3 &&
+		terms[0].sort == sortBitVector && terms[0].bitWidth == 1 &&
+		terms[1].sort == sortBitVector && terms[1].bitWidth >= 2 &&
+		terms[2].sort == sortBitVector && terms[2].bitWidth >= 1 {
+		exponentBits, significandBits := terms[1].bitWidth, terms[2].bitWidth+1
+		result := dynamicTerm{
+			sort: sortFloatingPoint, bitWidth: exponentBits + significandBits,
+			exponentBits: exponentBits, significandBits: significandBits,
+			bitVector: smt.FloatingPointBitVectorTermFromComponents(
+				exponentBits, significandBits,
+				terms[0].bitVector, terms[1].bitVector, terms[2].bitVector,
+			),
+		}
+		if terms[0].bitVectorExact && terms[1].bitVectorExact && terms[2].bitVectorExact {
+			value := smt.FloatingPointFromComponents(
+				exponentBits, significandBits,
+				terms[0].bitVectorValue, terms[1].bitVectorValue, terms[2].bitVectorValue,
+			)
+			result.bitVectorExact = true
+			result.bitVectorValue = smt.FloatingPointBits(value)
+			result.bitVector = smt.BitVectorTerm(result.bitVectorValue)
+		}
+		return result, nil
+	}
 	if operator == "fp.to_ieee_bv" && len(terms) == 1 &&
 		terms[0].sort == sortFloatingPoint {
 		return dynamicTerm{
@@ -3211,6 +3249,45 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 		}
 	}
 	return dynamicTerm{}, fmt.Errorf("unsupported or ill-sorted application %s", operator)
+}
+
+func indexedFloatingPointSpecial(list List) (smt.FloatingPointValue, bool, error) {
+	var zero smt.FloatingPointValue
+	if len(list.Values) != 4 {
+		return zero, false, nil
+	}
+	marker, markerOK := atomText(list.Values[0])
+	name, nameOK := atomText(list.Values[1])
+	exponentText, exponentOK := atomText(list.Values[2])
+	significandText, significandOK := atomText(list.Values[3])
+	if !markerOK || marker != "_" || !nameOK {
+		return zero, false, nil
+	}
+	switch name {
+	case "+zero", "-zero", "+oo", "-oo", "NaN":
+	default:
+		return zero, false, nil
+	}
+	if !exponentOK || !significandOK {
+		return zero, true, fmt.Errorf("floating-point special value widths must be numerals")
+	}
+	exponentBits, exponentErr := strconv.Atoi(exponentText)
+	significandBits, significandErr := strconv.Atoi(significandText)
+	if exponentErr != nil || significandErr != nil || exponentBits < 2 || significandBits < 2 {
+		return zero, true, fmt.Errorf("floating-point special value requires widths of at least 2")
+	}
+	switch name {
+	case "+zero":
+		return smt.FloatingPointPositiveZero(exponentBits, significandBits), true, nil
+	case "-zero":
+		return smt.FloatingPointNegativeZero(exponentBits, significandBits), true, nil
+	case "+oo":
+		return smt.FloatingPointPositiveInfinity(exponentBits, significandBits), true, nil
+	case "-oo":
+		return smt.FloatingPointNegativeInfinity(exponentBits, significandBits), true, nil
+	default:
+		return smt.FloatingPointNaN(exponentBits, significandBits), true, nil
+	}
 }
 
 func floatingPointPredicateOperator(operator string) (uint8, bool) {

@@ -50,6 +50,48 @@ func TestFloatingPointGroundClassification(t *testing.T) {
 	}
 }
 
+func TestFloatingPointComponentsAndSpecialValues(t *testing.T) {
+	one := FloatingPointFromComponents(
+		8, 24,
+		NewBitVectorUint64(1, 0),
+		NewBitVectorUint64(8, 0x7f),
+		NewBitVectorUint64(23, 0),
+	)
+	bits, ok := FloatingPointBits(one).Uint64()
+	if !ok || bits != 0x3f800000 {
+		t.Fatalf("component bits=%#x,%v, want 0x3f800000,true", bits, ok)
+	}
+	cases := []struct {
+		name  string
+		value FloatingPointValue
+		bits  uint64
+	}{
+		{"+zero", FloatingPointPositiveZero(8, 24), 0x00000000},
+		{"-zero", FloatingPointNegativeZero(8, 24), 0x80000000},
+		{"+oo", FloatingPointPositiveInfinity(8, 24), 0x7f800000},
+		{"-oo", FloatingPointNegativeInfinity(8, 24), 0xff800000},
+		{"NaN", FloatingPointNaN(8, 24), 0x7fc00000},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			got, ok := FloatingPointBits(test.value).Uint64()
+			if !ok || got != test.bits {
+				t.Fatalf("bits=%#x,%v, want %#x,true", got, ok, test.bits)
+			}
+		})
+	}
+	binary128Infinity := FloatingPointPositiveInfinity(15, 113)
+	if bits := FloatingPointBits(binary128Infinity); bits.Width() != 128 ||
+		!FloatingPointIsInfinite(binary128Infinity) {
+		t.Fatalf("binary128 infinity bits=%v", bits)
+	}
+	binary128NaN := FloatingPointNaN(15, 113)
+	if bits := FloatingPointBits(binary128NaN); bits.Width() != 128 ||
+		!FloatingPointIsNaN(binary128NaN) {
+		t.Fatalf("binary128 NaN bits=%v", bits)
+	}
+}
+
 func TestFloatingPointGroundEquality(t *testing.T) {
 	positiveZero := FloatingPointFromUint64(8, 24, 0x00000000)
 	negativeZero := FloatingPointFromUint64(8, 24, 0x80000000)

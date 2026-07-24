@@ -48,6 +48,48 @@ func FloatingPointFromUint64(exponentBits nat, significandBits nat, bits uint64)
 	return FloatingPointFromBits(exponentBits, significandBits, NewBitVectorUint64(int(exponentBits+significandBits), bits))
 }
 
+// FloatingPointFromComponents implements SMT-LIB's native
+// (fp sign exponent significand) constructor. The significand argument contains
+// the s-1 explicitly encoded trailing bits, not the hidden leading bit.
+func FloatingPointFromComponents(exponentBits nat, significandBits nat, sign BitVectorValue, exponent BitVectorValue, significand BitVectorValue) FloatingPointValue[exponentBits, significandBits] {
+	if sign.Width() != 1 { panic("smt: floating-point sign width must be 1") }
+	if exponent.Width() != int(exponentBits) { panic("smt: floating-point exponent component width mismatch") }
+	if significand.Width() != int(significandBits-1) { panic("smt: floating-point significand component width mismatch") }
+	return FloatingPointFromBits(exponentBits, significandBits,
+		ConcatBitVectorValue(sign, ConcatBitVectorValue(exponent, significand)))
+}
+
+func FloatingPointPositiveZero(exponentBits nat, significandBits nat) FloatingPointValue[exponentBits, significandBits] {
+	return FloatingPointFromBits(exponentBits, significandBits, NewBitVectorUint64(int(exponentBits+significandBits), 0))
+}
+
+func FloatingPointNegativeZero(exponentBits nat, significandBits nat) FloatingPointValue[exponentBits, significandBits] {
+	return FloatingPointFromComponents(exponentBits, significandBits,
+		NewBitVectorUint64(1, 1), NewBitVectorUint64(int(exponentBits), 0),
+		NewBitVectorUint64(int(significandBits-1), 0))
+}
+
+func FloatingPointPositiveInfinity(exponentBits nat, significandBits nat) FloatingPointValue[exponentBits, significandBits] {
+	return FloatingPointFromComponents(exponentBits, significandBits,
+		NewBitVectorUint64(1, 0), NotBitVectorValue(NewBitVectorUint64(int(exponentBits), 0)),
+		NewBitVectorUint64(int(significandBits-1), 0))
+}
+
+func FloatingPointNegativeInfinity(exponentBits nat, significandBits nat) FloatingPointValue[exponentBits, significandBits] {
+	return FloatingPointFromComponents(exponentBits, significandBits,
+		NewBitVectorUint64(1, 1), NotBitVectorValue(NewBitVectorUint64(int(exponentBits), 0)),
+		NewBitVectorUint64(int(significandBits-1), 0))
+}
+
+// FloatingPointNaN returns a deterministic positive quiet NaN. SMT-LIB leaves
+// the sign and payload of its indexed NaN special value unspecified.
+func FloatingPointNaN(exponentBits nat, significandBits nat) FloatingPointValue[exponentBits, significandBits] {
+	payload := ConcatBitVectorValue(NewBitVectorUint64(1, 1),
+		NewBitVectorUint64(int(significandBits-2), 0))
+	return FloatingPointFromComponents(exponentBits, significandBits,
+		NewBitVectorUint64(1, 0), NotBitVectorValue(NewBitVectorUint64(int(exponentBits), 0)), payload)
+}
+
 func FloatingPointBits(0 e nat, 0 s nat, value FloatingPointValue[e, s]) BitVectorValue {
 	match value { case floatingPointValue(_, _, bits): return bits }
 }

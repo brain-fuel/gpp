@@ -2,6 +2,22 @@ package smt
 
 import "testing"
 
+func TestFloatingPointBitVectorTermFromComponents(t *testing.T) {
+	term := FloatingPointBitVectorTermFromComponents(
+		8, 24,
+		BitVectorTerm(NewBitVectorUint64(1, 0)),
+		BitVectorTerm(NewBitVectorUint64(8, 0x7f)),
+		BitVectorTerm(NewBitVectorUint64(23, 0)),
+	)
+	solver := Assert(1, New(), Equal{
+		Left: term, Right: BitVectorTerm(NewBitVectorUint64(32, 0x3f800000)),
+	})
+	result := Check(solver)
+	if _, ok := result.(Satisfiable); !ok {
+		t.Fatalf("native floating-point constructor result=%T, want satisfiable", result)
+	}
+}
+
 func TestSymbolicFloatingPointClassificationModels(t *testing.T) {
 	tests := []struct {
 		name     string

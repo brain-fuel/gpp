@@ -2440,6 +2440,83 @@ func TestExecuteFloatingPointUnaryAndMinMax(t *testing.T) {
 	}
 }
 
+func TestExecuteFloatingPointNativeConstructorAndSpecialValues(t *testing.T) {
+	script := `
+(set-logic QF_FP)
+(assert (= (fp.to_ieee_bv
+  (fp #b0 #b01111111 #b00000000000000000000000)) #x3f800000))
+(assert (= (fp.to_ieee_bv (_ +zero 8 24)) #x00000000))
+(assert (= (fp.to_ieee_bv (_ -zero 8 24)) #x80000000))
+(assert (= (fp.to_ieee_bv (_ +oo 8 24)) #x7f800000))
+(assert (= (fp.to_ieee_bv (_ -oo 8 24)) #xff800000))
+(assert (fp.isNaN (_ NaN 8 24)))
+(check-sat)
+`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("execute=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+		t.Fatalf("result=%#v", result)
+	}
+}
+
+func TestStreamFloatingPointNativeConstructorAndSpecialValues(t *testing.T) {
+	script := `(set-logic QF_FP)
+(assert (= (fp.to_ieee_bv
+  (fp #b0 #b01111111 #b00000000000000000000000)) #x3f800000))
+(assert (= (fp.to_ieee_bv (_ -zero 8 24)) #x80000000))
+(assert (= (fp.to_ieee_bv (_ +oo 8 24)) #x7f800000))
+(assert (= (fp.to_ieee_bv (_ -oo 8 24)) #xff800000))
+(check-sat)`
+	fast, recognized := executeFloatingPointFast(script)
+	if !recognized {
+		t.Fatal("native floating-point construction script did not use streaming execution")
+	}
+	result, ok := fast.(Executed)
+	if !ok {
+		t.Fatalf("fast=%#v", fast)
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+		t.Fatalf("result=%#v", result)
+	}
+}
+
+func TestExecuteSymbolicFloatingPointNativeConstructor(t *testing.T) {
+	script := `
+(set-logic QF_FPBV)
+(declare-const sign (_ BitVec 1))
+(declare-const exponent (_ BitVec 8))
+(declare-const significand (_ BitVec 23))
+(assert (= sign #b0))
+(assert (= exponent #x7f))
+(assert (= significand #b00000000000000000000000))
+(assert (= (fp.to_ieee_bv (fp sign exponent significand)) #x3f800000))
+(check-sat)
+`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("execute=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+		t.Fatalf("result=%#v", result)
+	}
+}
+
+func TestRejectIllSortedFloatingPointNativeConstruction(t *testing.T) {
+	scripts := []string{
+		`(assert (fp.isZero (fp #b00 #b00000000 #b00000000000000000000000)))`,
+		`(assert (fp.isZero (fp #b0 #b0 #b0)))`,
+		`(assert (fp.isZero (_ +zero 1 24)))`,
+		`(assert (fp.isZero (_ NaN 8 1)))`,
+	}
+	for _, script := range scripts {
+		if _, ok := Execute(script).(ExecutionFailed); !ok {
+			t.Fatalf("Execute(%q) unexpectedly succeeded", script)
+		}
+	}
+}
+
 func TestExecuteSymbolicFloatingPointAbsAndNeg(t *testing.T) {
 	script := `(set-logic QF_FP)
 (declare-const x (_ FloatingPoint 8 24))
@@ -2608,6 +2685,40 @@ func BenchmarkExecuteFloatingPointMin(b *testing.B) {
 			responses, errors := executeCommands(parsed.Commands)
 			if len(errors) != 0 {
 				b.Fatal("execution failed")
+			}
+			if _, ok := responses[len(responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+}
+
+func BenchmarkExecuteFloatingPointConstruction(b *testing.B) {
+	script := `(set-logic QF_FP)
+(assert (= (fp.to_ieee_bv
+  (fp #b0 #b01111111 #b00000000000000000000000)) #x3f800000))
+(assert (= (fp.to_ieee_bv (_ -zero 8 24)) #x80000000))
+(assert (= (fp.to_ieee_bv (_ +oo 8 24)) #x7f800000))
+(assert (= (fp.to_ieee_bv (_ -oo 8 24)) #xff800000))
+(check-sat)`
+	b.Run("stream", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if _, ok := Execute(script).(Executed); !ok {
+				b.Fatal("stream execution failed")
+			}
+		}
+	})
+	b.Run("general", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			parsed, ok := Parse(script).(Parsed)
+			if !ok {
+				b.Fatal("parse failed")
+			}
+			responses, errors := executeCommands(parsed.Commands)
+			if len(errors) != 0 {
+				b.Fatal("general execution failed")
 			}
 			if _, ok := responses[len(responses)-1].(Satisfiable); !ok {
 				b.Fatal("unexpected result")
