@@ -1,6 +1,9 @@
 package smt
 
-import "testing"
+import (
+	"math/big"
+	"testing"
+)
 
 func TestFloatingPointGroundClassification(t *testing.T) {
 	tests := []struct {
@@ -793,6 +796,67 @@ func TestFloatingPointToSignedBitVectorBinary128(t *testing.T) {
 	want := IntegerToBitVectorValue(130, NewIntegerValue(-128))
 	if !EqualBitVectorValue(got, want) {
 		t.Fatalf("got %v, want %v", BitVectorToIntegerValue(got, true), BitVectorToIntegerValue(want, true))
+	}
+}
+
+func TestFloatingPointFromBitVectorModes(t *testing.T) {
+	tests := []struct {
+		name   string
+		value  uint64
+		width  int
+		signed bool
+		mode   FloatingPointRoundingMode
+		want   uint64
+	}{
+		{"unsigned exact", 3, 8, false, RoundNearestTiesToEven(), 0x40400000},
+		{"signed negative", 0xfd, 8, true, RoundNearestTiesToEven(), 0xc0400000},
+		{"unsigned high bit", 0xfd, 8, false, RoundNearestTiesToEven(), 0x437d0000},
+		{"tie even", 0x01000001, 32, false, RoundNearestTiesToEven(), 0x4b800000},
+		{"tie away", 0x01000001, 32, false, RoundNearestTiesToAway(), 0x4b800001},
+		{"toward positive", 0x01000001, 32, false, RoundTowardPositive(), 0x4b800001},
+		{"toward zero", 0x01000001, 32, false, RoundTowardZero(), 0x4b800000},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			value := NewBitVectorUint64(test.width, test.value)
+			var got FloatingPointValue
+			if test.signed {
+				got = FloatingPointFromSignedBitVector(
+					8, 24, test.mode, value,
+				)
+			} else {
+				got = FloatingPointFromUnsignedBitVector(
+					8, 24, test.mode, value,
+				)
+			}
+			raw, inline := FloatingPointBits(got).Uint64()
+			if !inline || raw != test.want {
+				t.Fatalf("bits = %#x, want %#x", raw, test.want)
+			}
+		})
+	}
+}
+
+func TestFloatingPointFromSignedBitVectorArbitraryWidth(t *testing.T) {
+	value := IntegerToBitVectorValue(
+		130,
+		integerValueFromBig(new(big.Int).Neg(
+			new(big.Int).Lsh(big.NewInt(1), 120),
+		)),
+	)
+	got := FloatingPointFromSignedBitVector(
+		15, 113, RoundNearestTiesToEven(), value,
+	)
+	if !FloatingPointIsNegative(got) || FloatingPointIsInfinite(got) {
+		t.Fatalf("unexpected binary128 conversion: %#v", FloatingPointBits(got))
+	}
+	finite := decodeFloatingPointFinite(got)
+	if !finite.negative ||
+		finite.scale.Sign() < 0 ||
+		new(big.Int).Lsh(finite.magnitude, uint(finite.scale.Int64())).Cmp(
+			new(big.Int).Lsh(big.NewInt(1), 120),
+		) != 0 {
+		t.Fatal("binary128 conversion did not preserve exact -2^120")
 	}
 }
 

@@ -278,6 +278,18 @@ func FloatingPointToSignedBitVector(0 e nat, 0 s nat, width nat, mode FloatingPo
 	return floatingPointToBitVector(floatingPointRoundingModeCode(mode), int(width), value, true)
 }
 
+// FloatingPointFromUnsignedBitVector rounds an exact unsigned bit-vector
+// integer into the requested floating-point format.
+func FloatingPointFromUnsignedBitVector(exponentBits nat, significandBits nat, mode FloatingPointRoundingMode, value BitVectorValue) FloatingPointValue[exponentBits, significandBits] {
+	return floatingPointFromBitVector(floatingPointRoundingModeCode(mode), int(exponentBits), int(significandBits), value, false)
+}
+
+// FloatingPointFromSignedBitVector interprets value as a two's-complement
+// integer and rounds it into the requested floating-point format.
+func FloatingPointFromSignedBitVector(exponentBits nat, significandBits nat, mode FloatingPointRoundingMode, value BitVectorValue) FloatingPointValue[exponentBits, significandBits] {
+	return floatingPointFromBitVector(floatingPointRoundingModeCode(mode), int(exponentBits), int(significandBits), value, true)
+}
+
 func floatingPointSignificandNonzero(bits BitVectorValue, significandBits int) bool {
 	for index := 0; index < significandBits-1; index++ {
 		if bits.Bit(index) { return true }

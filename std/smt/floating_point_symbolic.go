@@ -101,6 +101,19 @@ type FloatingPointToBitVectorRelation struct {
 
 func (FloatingPointToBitVectorRelation) isTerm(BoolSort) {}
 
+type FloatingPointFromBitVectorRelation struct {
+	ExponentBits    int
+	SignificandBits int
+	Width           int
+	SymbolID        int
+	Mode            uint8
+	Signed          bool
+	Value           BitVectorValue
+	Negated         bool
+}
+
+func (FloatingPointFromBitVectorRelation) isTerm(BoolSort) {}
+
 // FloatingPointAddRelation constrains the exact rounded IEEE bits of fp.add
 // over two assigned same-format symbols.
 type FloatingPointAddRelation struct {
@@ -218,6 +231,17 @@ type floatingPointToBitVectorTermValue struct {
 
 func (floatingPointToBitVectorTermValue) isTerm(BitVecSort) {}
 
+type floatingPointFromBitVectorTermValue struct {
+	exponentBits    int
+	significandBits int
+	width           int
+	value           Term[BitVecSort]
+	mode            uint8
+	signed          bool
+}
+
+func (floatingPointFromBitVectorTermValue) isTerm(BitVecSort) {}
+
 func NewFloatingPointComparisonRelation(
 	exponentBits, significandBits, leftSymbolID, rightSymbolID int,
 	comparison uint8,
@@ -291,6 +315,26 @@ func NewFloatingPointToBitVectorRelation(
 		panic("smt: floating-point conversion result width mismatch")
 	}
 	return FloatingPointToBitVectorRelation{
+		ExponentBits: exponentBits, SignificandBits: significandBits,
+		Width: width, SymbolID: symbolID,
+		Mode: floatingPointRoundingModeCode(mode), Signed: signed,
+		Value: value,
+	}
+}
+
+func NewFloatingPointFromBitVectorRelation(
+	exponentBits, significandBits, width, symbolID int,
+	mode FloatingPointRoundingMode,
+	signed bool,
+	value BitVectorValue,
+) FloatingPointFromBitVectorRelation {
+	if exponentBits < 2 || significandBits < 2 || width <= 0 {
+		panic("smt: invalid bit-vector to floating-point relation")
+	}
+	if value.Width() != exponentBits+significandBits {
+		panic("smt: bit-vector to floating-point result width mismatch")
+	}
+	return FloatingPointFromBitVectorRelation{
 		ExponentBits: exponentBits, SignificandBits: significandBits,
 		Width: width, SymbolID: symbolID,
 		Mode: floatingPointRoundingModeCode(mode), Signed: signed,
@@ -703,6 +747,22 @@ func AssertFloatingPointToBitVectorRelation(
 	}
 }
 
+func AssertFloatingPointFromBitVectorRelation(
+	assertion int,
+	solver Solver,
+	relation FloatingPointFromBitVectorRelation,
+) Solver {
+	if assertion < 0 {
+		panic("smt: negative assertion identity")
+	}
+	nextContext := runtimeContextID(solver.contextID, assertion)
+	return solverValue{
+		contextID: nextContext,
+		depth:     solver.depth,
+		state:     solver.state.asserted(relation),
+	}
+}
+
 func AssertFloatingPointAddRelation(
 	assertion int,
 	solver Solver,
@@ -878,6 +938,43 @@ func floatingPointToBitVectorTerm(
 		value:           value,
 		mode:            floatingPointRoundingModeCode(mode),
 		signed:          signed,
+	}
+}
+
+func FloatingPointFromUnsignedBitVectorTerm(
+	exponentBits, significandBits, width int,
+	value Term[BitVecSort],
+	mode FloatingPointRoundingMode,
+) Term[BitVecSort] {
+	return floatingPointFromBitVectorTerm(
+		exponentBits, significandBits, width, value, mode, false,
+	)
+}
+
+func FloatingPointFromSignedBitVectorTerm(
+	exponentBits, significandBits, width int,
+	value Term[BitVecSort],
+	mode FloatingPointRoundingMode,
+) Term[BitVecSort] {
+	return floatingPointFromBitVectorTerm(
+		exponentBits, significandBits, width, value, mode, true,
+	)
+}
+
+func floatingPointFromBitVectorTerm(
+	exponentBits, significandBits, width int,
+	value Term[BitVecSort],
+	mode FloatingPointRoundingMode,
+	signed bool,
+) Term[BitVecSort] {
+	if exponentBits < 2 || significandBits < 2 || width <= 0 {
+		panic("smt: invalid bit-vector to floating-point term")
+	}
+	return floatingPointFromBitVectorTermValue{
+		exponentBits:    exponentBits,
+		significandBits: significandBits,
+		width:           width, value: value,
+		mode: floatingPointRoundingModeCode(mode), signed: signed,
 	}
 }
 

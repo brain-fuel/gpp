@@ -593,6 +593,22 @@ func FloatingPointToSignedBitVector(width int, mode FloatingPointRoundingMode, v
 	return floatingPointToBitVector(floatingPointRoundingModeCode(mode), int(width), value, true)
 }
 
+// FloatingPointFromUnsignedBitVector rounds an exact unsigned bit-vector
+// integer into the requested floating-point format.
+//
+//goplus:dep FloatingPointFromUnsignedBitVector(exponentBits nat, significandBits nat, mode FloatingPointRoundingMode, value BitVectorValue) FloatingPointValue[exponentBits, significandBits]
+func FloatingPointFromUnsignedBitVector(exponentBits int, significandBits int, mode FloatingPointRoundingMode, value BitVectorValue) FloatingPointValue {
+	return floatingPointFromBitVector(floatingPointRoundingModeCode(mode), int(exponentBits), int(significandBits), value, false)
+}
+
+// FloatingPointFromSignedBitVector interprets value as a two's-complement
+// integer and rounds it into the requested floating-point format.
+//
+//goplus:dep FloatingPointFromSignedBitVector(exponentBits nat, significandBits nat, mode FloatingPointRoundingMode, value BitVectorValue) FloatingPointValue[exponentBits, significandBits]
+func FloatingPointFromSignedBitVector(exponentBits int, significandBits int, mode FloatingPointRoundingMode, value BitVectorValue) FloatingPointValue {
+	return floatingPointFromBitVector(floatingPointRoundingModeCode(mode), int(exponentBits), int(significandBits), value, true)
+}
+
 func floatingPointSignificandNonzero(bits BitVectorValue, significandBits int) bool {
 	for index := 0; index < significandBits-1; index++ {
 		if bits.Bit(index) {

@@ -21,6 +21,7 @@ const (
 	fpFastSqrt
 	fpFastRem
 	fpFastConvert
+	fpFastFromBV
 	fpFastPredicate
 	fpFastComparison
 	fpFastEquality
@@ -50,6 +51,7 @@ type fpFastSymbol struct {
 	name             string
 	id, exponentBits int
 	significandBits  int
+	bitWidth         int
 }
 
 type fpFastToken struct {
@@ -93,6 +95,8 @@ const (
 	fpFastSqrtBits
 	fpFastRemBits
 	fpFastConversionBits
+	fpFastBitVectorSymbolBits
+	fpFastFromBVBits
 	fpFastExactFloatingBits
 	fpFastLiteralBits
 )
@@ -134,12 +138,19 @@ func executeFloatingPointFast(source string) (ExecutionResult, bool) {
 			}
 			marker, markerOK := scanner.atom()
 			sort, sortOK := scanner.atom()
-			exponent, exponentOK := scanner.positiveInt()
-			significand, significandOK := scanner.positiveInt()
-			if !markerOK || !sortOK || !exponentOK || !significandOK ||
-				scanner.text(marker) != "_" ||
-				scanner.text(sort) != "FloatingPoint" ||
-				exponent < 2 || significand < 2 ||
+			first, firstOK := scanner.positiveInt()
+			second, secondOK := 0, false
+			if sortOK && scanner.text(sort) == "FloatingPoint" {
+				second, secondOK = scanner.positiveInt()
+			}
+			floating := markerOK && sortOK && firstOK && secondOK &&
+				scanner.text(marker) == "_" &&
+				scanner.text(sort) == "FloatingPoint" &&
+				first >= 2 && second >= 2
+			bitVector := markerOK && sortOK && firstOK &&
+				scanner.text(marker) == "_" &&
+				scanner.text(sort) == "BitVec"
+			if !floating && !bitVector ||
 				!scanner.right() || !scanner.right() {
 				return nil, false
 			}
@@ -152,11 +163,18 @@ func executeFloatingPointFast(source string) (ExecutionResult, bool) {
 			symbolCount++
 			symbols[symbolCount-1] = fpFastSymbol{
 				name: nameText, id: symbolCount,
-				exponentBits: exponent, significandBits: significand,
+				exponentBits: first, significandBits: second,
+			}
+			if bitVector {
+				symbols[symbolCount-1].exponentBits = 0
+				symbols[symbolCount-1].bitWidth = first
 			}
 			command.kind = fpFastDeclare
 			command.symbolID, command.name = symbolCount, nameText
-			command.exponentBits, command.significandBits = exponent, significand
+			command.exponentBits, command.significandBits = first, second
+			if bitVector {
+				command.exponentBits, command.width = 0, first
+			}
 		case "assert":
 			relation, relationOK := scanner.formula(symbols[:symbolCount])
 			if !relationOK || !scanner.right() {
@@ -187,8 +205,12 @@ func executeFloatingPointFast(source string) (ExecutionResult, bool) {
 		case fpFastAcknowledge, fpFastDeclare:
 			responses = append(responses, Acknowledged{CommandIndex: command.commandIndex})
 		case fpFastAssign:
+			width := command.exponentBits + command.significandBits
+			if command.width != 0 {
+				width = command.width
+			}
 			relation := smt.BitVectorRelation{
-				Width:    command.exponentBits + command.significandBits,
+				Width:    width,
 				SymbolID: command.symbolID, Value: command.value,
 				Negated: command.negated,
 			}
@@ -308,6 +330,18 @@ func executeFloatingPointFast(source string) (ExecutionResult, bool) {
 			)
 			relation.Negated = command.negated
 			solver = smt.AssertFloatingPointToBitVectorRelation(
+				nextAssertion, solver, relation,
+			)
+			nextAssertion++
+			responses = append(responses, Acknowledged{CommandIndex: command.commandIndex})
+		case fpFastFromBV:
+			relation := smt.NewFloatingPointFromBitVectorRelation(
+				command.exponentBits, command.significandBits,
+				command.width, command.symbolID, command.mode,
+				command.signed, command.value,
+			)
+			relation.Negated = command.negated
+			solver = smt.AssertFloatingPointFromBitVectorRelation(
 				nextAssertion, solver, relation,
 			)
 			nextAssertion++
@@ -460,7 +494,8 @@ func (scanner *fpFastScanner) formula(
 		}, true
 	}
 	expectedWidth := derived.exponentBits + derived.significandBits
-	if derived.kind == fpFastConversionBits {
+	if derived.kind == fpFastConversionBits ||
+		derived.kind == fpFastBitVectorSymbolBits {
 		expectedWidth = derived.width
 	}
 	if literal.kind != fpFastLiteralBits ||
@@ -499,6 +534,10 @@ func (scanner *fpFastScanner) formula(
 		command.kind = fpFastRem
 	case fpFastConversionBits:
 		command.kind = fpFastConvert
+	case fpFastBitVectorSymbolBits:
+		command.kind = fpFastAssign
+	case fpFastFromBVBits:
+		command.kind = fpFastFromBV
 	default:
 		return fpFastCommand{}, false
 	}
@@ -514,6 +553,12 @@ func (scanner *fpFastScanner) operand(
 			return fpFastOperand{
 				kind:  fpFastLiteralBits,
 				value: value,
+			}, true
+		}
+		if symbol, found := fpFastFindSymbol(scanner.text(token), symbols); found && symbol.bitWidth > 0 {
+			return fpFastOperand{
+				kind:     fpFastBitVectorSymbolBits,
+				symbolID: symbol.id, width: symbol.bitWidth,
 			}, true
 		}
 	}
@@ -570,6 +615,38 @@ func (scanner *fpFastScanner) operand(
 	if !scanner.left() {
 		return fpFastOperand{}, false
 	}
+	fromBVSnapshot := scanner.at
+	if scanner.left() {
+		marker, markerOK := scanner.atom()
+		name, nameOK := scanner.atom()
+		exponentBits, exponentOK := scanner.positiveInt()
+		significandBits, significandOK := scanner.positiveInt()
+		if markerOK && nameOK && exponentOK && significandOK &&
+			scanner.text(marker) == "_" &&
+			(scanner.text(name) == "to_fp" ||
+				scanner.text(name) == "to_fp_unsigned") &&
+			exponentBits >= 2 && significandBits >= 2 &&
+			scanner.right() {
+			modeToken, modeOK := scanner.atom()
+			symbolToken, symbolOK := scanner.atom()
+			mode, modeFound := fpFastRoundingMode(scanner.text(modeToken))
+			symbol, symbolFound := fpFastFindSymbol(
+				scanner.text(symbolToken), symbols,
+			)
+			if modeOK && symbolOK && modeFound && symbolFound &&
+				symbol.bitWidth > 0 && scanner.right() && scanner.right() {
+				return fpFastOperand{
+					kind:     fpFastFromBVBits,
+					symbolID: symbol.id, width: symbol.bitWidth,
+					exponentBits:    exponentBits,
+					significandBits: significandBits,
+					mode:            mode,
+					signed:          scanner.text(name) == "to_fp",
+				}, true
+			}
+		}
+	}
+	scanner.at = fromBVSnapshot
 	operation, operationOK := scanner.atom()
 	if !operationOK {
 		return fpFastOperand{}, false
