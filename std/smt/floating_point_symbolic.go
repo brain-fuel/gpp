@@ -104,6 +104,9 @@ type FloatingPointToBitVectorRelation struct {
 
 func (FloatingPointToBitVectorRelation) isTerm(BoolSort) {}
 
+// FloatingPointFromBitVectorRelation constrains an indexed signed or unsigned
+// BV-to-FP conversion. An unconstrained BV source can use an integer-derived,
+// forward-validated preimage when the result lies in the conversion image.
 type FloatingPointFromBitVectorRelation struct {
 	ExponentBits    int
 	SignificandBits int

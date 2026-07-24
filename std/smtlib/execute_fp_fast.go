@@ -232,6 +232,7 @@ func executeFloatingPointFast(source string) (ExecutionResult, bool) {
 			logic, logicOK := scanner.atom()
 			if !logicOK ||
 				(scanner.text(logic) != "QF_FP" &&
+					scanner.text(logic) != "QF_FPBV" &&
 					scanner.text(logic) != "ALL") ||
 				!scanner.right() {
 				return nil, false

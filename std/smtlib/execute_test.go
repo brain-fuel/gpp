@@ -3462,6 +3462,35 @@ func TestExecuteSymbolicFloatingPointFromBitVector(t *testing.T) {
 	}
 }
 
+func TestExecuteUnconstrainedFloatingPointFromBitVector(t *testing.T) {
+	script := `(set-logic QF_FPBV)
+(declare-const x (_ BitVec 8))
+(assert (= (fp.to_ieee_bv ((_ to_fp 8 24) RNE x)) #xc0400000))
+(check-sat)`
+	fast, recognized := executeFloatingPointFast(script)
+	if !recognized {
+		t.Fatal("unconstrained BV-to-FP did not use streaming execution")
+	}
+	result, ok := fast.(Executed)
+	if !ok {
+		t.Fatalf("streaming execution=%#v", fast)
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+		t.Fatalf("streaming result=%#v", result)
+	}
+	parsed, ok := Parse(script).(Parsed)
+	if !ok {
+		t.Fatal("general parse failed")
+	}
+	responses, errors := executeCommands(parsed.Commands)
+	if len(errors) != 0 {
+		t.Fatalf("general execution errors=%#v", errors)
+	}
+	if _, ok := responses[len(responses)-1].(Satisfiable); !ok {
+		t.Fatalf("general result=%#v", responses)
+	}
+}
+
 func TestStreamFloatingPointFromBitVector(t *testing.T) {
 	script := `(set-logic QF_FP)
 (declare-const x (_ BitVec 8))
@@ -4471,6 +4500,47 @@ func BenchmarkExecuteFloatingPointFromBitVector(b *testing.B) {
 (assert (= value #x01000001))
 (assert (= (fp.to_ieee_bv ((_ to_fp 8 24) RNE value)) #x4b800000))
 (assert (= (fp.to_ieee_bv ((_ to_fp_unsigned 8 24) RNA value)) #x4b800001))
+(check-sat)`
+	b.Run("stream", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			result, ok := Execute(script).(Executed)
+			if !ok {
+				b.Fatal("stream execution failed")
+			}
+			if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+	b.Run("general", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			parsed, ok := Parse(script).(Parsed)
+			if !ok {
+				b.Fatal("parse failed")
+			}
+			responses, errors := executeCommands(parsed.Commands)
+			if len(errors) != 0 {
+				b.Fatal("general execution failed")
+			}
+			if _, ok := responses[len(responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+}
+
+func BenchmarkExecuteUnconstrainedFloatingPointFromBitVector(b *testing.B) {
+	script := `(set-logic QF_FPBV)
+(declare-const signed8 (_ BitVec 8))
+(declare-const unsigned8 (_ BitVec 8))
+(declare-const signed32 (_ BitVec 32))
+(declare-const unsigned32 (_ BitVec 32))
+(assert (= (fp.to_ieee_bv ((_ to_fp 8 24) RNE signed8)) #xc0400000))
+(assert (= (fp.to_ieee_bv ((_ to_fp_unsigned 8 24) RNE unsigned8)) #x437d0000))
+(assert (= (fp.to_ieee_bv ((_ to_fp 8 24) RTZ signed32)) #xcb800000))
+(assert (= (fp.to_ieee_bv ((_ to_fp_unsigned 8 24) RNA unsigned32)) #x4b800001))
 (check-sat)`
 	b.Run("stream", func(b *testing.B) {
 		b.ReportAllocs()

@@ -155,6 +155,18 @@ func (model bitVectorModel) lookup(id int) (BitVectorValue, bool) {
 	return value, ok
 }
 
+// DirectBitVectorSymbolModelValue reads one direct bit-vector symbol without
+// constructing an erased Term value. Higher-level typed facades can use this
+// path when they retain the symbol identity and width separately.
+func DirectBitVectorSymbolModelValue(model Model, id int) (BitVectorValue, bool) {
+	switch value := any(model).(type) {
+	case modelValue:
+		return value.bitVectors.lookup(id)
+	default:
+		panic("smt: invalid model")
+	}
+}
+
 func (model *bitVectorModel) merge(other bitVectorModel) {
 	for index := 0; index < other.count; index++ {
 		entry := other.inline[index]
@@ -708,6 +720,82 @@ func synthesizeFloatingPointToBitVectorPreimage(
 	return BitVectorValue{}, false
 }
 
+func synthesizeFloatingPointFromBitVectorPreimage(
+	relation FloatingPointFromBitVectorRelation,
+) (BitVectorValue, bool, bool) {
+	total := relation.ExponentBits + relation.SignificandBits
+	if relation.Value.Width() != total {
+		return BitVectorValue{}, false, false
+	}
+	target := FloatingPointFromBits(
+		relation.ExponentBits, relation.SignificandBits, relation.Value,
+	)
+	if FloatingPointIsNaN(target) ||
+		FloatingPointIsZero(target) && FloatingPointIsNegative(target) ||
+		FloatingPointIsInfinite(target) &&
+			FloatingPointIsNegative(target) && !relation.Signed {
+		return BitVectorValue{}, false, true
+	}
+	validate := func(candidate BitVectorValue) bool {
+		converted := floatingPointFromBitVector(
+			relation.Mode,
+			relation.ExponentBits,
+			relation.SignificandBits,
+			candidate,
+			relation.Signed,
+		)
+		return EqualBitVectorValue(
+			FloatingPointBits(converted), relation.Value,
+		)
+	}
+	validateExtrema := func() (BitVectorValue, bool) {
+		all := NotBitVectorValue(NewBitVectorUint64(relation.Width, 0))
+		candidates := [2]BitVectorValue{all, all}
+		count := 1
+		if relation.Signed {
+			maximum := LogicalShiftRightBitVectorValue(
+				all, NewBitVectorUint64(relation.Width, 1),
+			)
+			candidates[0] = maximum
+			candidates[1] = NotBitVectorValue(maximum)
+			count = 2
+		}
+		for _, candidate := range candidates[:count] {
+			if validate(candidate) {
+				return candidate, true
+			}
+		}
+		return BitVectorValue{}, false
+	}
+	if FloatingPointIsInfinite(target) {
+		if candidate, ok := validateExtrema(); ok {
+			return candidate, true, false
+		}
+		return BitVectorValue{}, false, false
+	}
+	rational, valid := floatingPointToRational(target)
+	if !valid || !rational.IsInteger() {
+		return BitVectorValue{}, false, true
+	}
+	integer := RationalNumerator(rational)
+	candidate := IntegerToBitVectorValue(relation.Width, integer)
+	if CompareIntegerValue(
+		BitVectorToIntegerValue(candidate, relation.Signed), integer,
+	) != 0 {
+		if extreme, ok := validateExtrema(); ok {
+			return extreme, true, false
+		}
+		return BitVectorValue{}, false, false
+	}
+	if !validate(candidate) {
+		if extreme, ok := validateExtrema(); ok {
+			return extreme, true, false
+		}
+		return BitVectorValue{}, false, false
+	}
+	return candidate, true, false
+}
+
 func (problem *compactBitVectorProblem) add(term Term[BoolSort], negated bool) bool {
 	switch value := term.(type) {
 	case And:
@@ -1053,6 +1141,37 @@ func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome,
 		}
 		candidate, synthesized :=
 			synthesizeFloatingPointToBitVectorPreimage(relation)
+		if !synthesized || assignmentCount == len(assignments) {
+			return checkOutcome{}, false
+		}
+		assignments[assignmentCount] = compactBitVectorAssignment{
+			id: relation.SymbolID, value: candidate,
+			fixed: NotBitVectorValue(
+				NewBitVectorUint64(candidate.Width(), 0),
+			),
+		}
+		assignmentCount++
+	}
+	// A finite BV-to-FP result must be an integer-valued floating-point number.
+	// Reconstruct that integer in the indexed BV domain and forward-validate
+	// it; extrema provide overflow witnesses for infinities. NaN, negative
+	// zero, and unsigned negative infinity are impossible.
+	for _, relation := range problem.fromBVs[:problem.fromBVCount] {
+		found := false
+		for index := 0; index < assignmentCount; index++ {
+			if assignments[index].id == relation.SymbolID {
+				found = true
+				break
+			}
+		}
+		if found || relation.Negated {
+			continue
+		}
+		candidate, synthesized, impossible :=
+			synthesizeFloatingPointFromBitVectorPreimage(relation)
+		if impossible {
+			return checkOutcome{status: checkUnsat}, true
+		}
 		if !synthesized || assignmentCount == len(assignments) {
 			return checkOutcome{}, false
 		}

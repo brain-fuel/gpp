@@ -906,6 +906,90 @@ func TestFloatingPointFromBitVectorModes(t *testing.T) {
 	}
 }
 
+func TestFloatingPointFromBitVectorSynthesizesUnconstrainedSource(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		signed bool
+		target uint64
+		want   uint64
+	}{
+		{"signed-negative", true, 0xc0400000, 0xfd},
+		{"unsigned", false, 0x437d0000, 0xfd},
+		{"zero", false, 0, 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			relation := NewFloatingPointFromBitVectorRelation(
+				8, 24, 8, 1, RoundNearestTiesToEven(),
+				test.signed, NewBitVectorUint64(32, test.target),
+			)
+			result, ok := Check(AssertFloatingPointFromBitVectorRelation(
+				1, New(), relation,
+			)).(Satisfiable)
+			if !ok {
+				t.Fatal("expected synthesized BV-to-FP source")
+			}
+			source, found := FloatingPointSymbolModelBits(result.Value, 1)
+			raw, inline := source.Uint64()
+			if !found || !inline || raw != test.want {
+				t.Fatalf("source=%#x, found=%v, want %#x", raw, found, test.want)
+			}
+		})
+	}
+}
+
+func TestFloatingPointFromBitVectorRejectsImpossibleResults(t *testing.T) {
+	for _, target := range []uint64{
+		0x3fc00000, // noninteger
+		0x80000000, // negative zero
+		0x7fc00000, // NaN
+		0xff800000, // unsigned negative infinity
+	} {
+		relation := NewFloatingPointFromBitVectorRelation(
+			8, 24, 8, 1, RoundNearestTiesToEven(), false,
+			NewBitVectorUint64(32, target),
+		)
+		if _, ok := Check(AssertFloatingPointFromBitVectorRelation(
+			1, New(), relation,
+		)).(Unsatisfiable); !ok {
+			t.Fatalf("expected result %#x to be impossible", target)
+		}
+	}
+}
+
+func TestFloatingPointFromBitVectorSynthesizesWideBinary128Source(t *testing.T) {
+	target := FloatingPointBits(FloatingPointFromRational(
+		15, 113, RoundNearestTiesToEven(), NewRational(-128, 1),
+	))
+	relation := NewFloatingPointFromBitVectorRelation(
+		15, 113, 130, 1, RoundNearestTiesToEven(), true, target,
+	)
+	result, ok := Check(AssertFloatingPointFromBitVectorRelation(
+		1, New(), relation,
+	)).(Satisfiable)
+	if !ok {
+		t.Fatal("expected synthesized wide BV-to-binary128 source")
+	}
+	source, found := FloatingPointSymbolModelBits(result.Value, 1)
+	if !found || source.Width() != 130 ||
+		CompareIntegerValue(
+			BitVectorToIntegerValue(source, true), NewIntegerValue(-128),
+		) != 0 {
+		t.Fatal("unexpected wide BV-to-binary128 source")
+	}
+}
+
+func TestFloatingPointFromBitVectorSynthesizesInfinityOverflow(t *testing.T) {
+	target := FloatingPointBits(FloatingPointPositiveInfinity(5, 11))
+	relation := NewFloatingPointFromBitVectorRelation(
+		5, 11, 130, 1, RoundNearestTiesToEven(), false, target,
+	)
+	if _, ok := Check(AssertFloatingPointFromBitVectorRelation(
+		1, New(), relation,
+	)).(Satisfiable); !ok {
+		t.Fatal("expected maximum unsigned BV to synthesize +infinity")
+	}
+}
+
 func TestFloatingPointConvertFormat(t *testing.T) {
 	t.Run("special values preserve class and zero sign", func(t *testing.T) {
 		if got := FloatingPointConvertFormat(
