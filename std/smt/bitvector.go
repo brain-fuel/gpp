@@ -463,7 +463,9 @@ func synthesizeFloatingPointFMAIdentity(
 	leftAddend := relation.LeftSymbolID == relation.AddendSymbolID
 	rightAddend := relation.RightSymbolID == relation.AddendSymbolID
 	if leftRight && leftAddend {
-		return false
+		return synthesizeFloatingPointSelfFMA(
+			assignments, assignmentCount, relation,
+		)
 	}
 	total := relation.ExponentBits + relation.SignificandBits
 	repeated := leftRight || leftAddend || rightAddend
@@ -555,6 +557,77 @@ func synthesizeFloatingPointFMAIdentity(
 	}
 	*assignmentCount++
 	return true
+}
+
+func synthesizeFloatingPointSelfFMA(
+	assignments *[4]compactBitVectorAssignment,
+	assignmentCount *int,
+	relation FloatingPointFMARelation,
+) bool {
+	total := relation.ExponentBits + relation.SignificandBits
+	if relation.Value.Width() != total ||
+		*assignmentCount == len(assignments) {
+		return false
+	}
+	target := FloatingPointFromBits(
+		relation.ExponentBits, relation.SignificandBits, relation.Value,
+	)
+	commit := func(candidate FloatingPointValue) bool {
+		actual := floatingPointFMA(
+			relation.Mode, candidate, candidate, candidate,
+		)
+		if !EqualBitVectorValue(FloatingPointBits(actual), relation.Value) {
+			return false
+		}
+		assignments[*assignmentCount] = compactBitVectorAssignment{
+			id: relation.LeftSymbolID, value: FloatingPointBits(candidate),
+			fixed: NotBitVectorValue(NewBitVectorUint64(total, 0)),
+		}
+		*assignmentCount++
+		return true
+	}
+	// Preserve fixed points and special-value witnesses without performing
+	// reverse arithmetic. This covers both signed zeros, infinities, and the
+	// NaN payloads that the exact FMA kernel propagates unchanged.
+	if commit(target) {
+		return true
+	}
+	one := floatingPointFromRational(
+		1, relation.ExponentBits, relation.SignificandBits,
+		NewRational(1, 1),
+	)
+	two := floatingPointFromRational(
+		1, relation.ExponentBits, relation.SignificandBits,
+		NewRational(2, 1),
+	)
+	four := floatingPointFromRational(
+		1, relation.ExponentBits, relation.SignificandBits,
+		NewRational(4, 1),
+	)
+	// x*x+x=t has roots (-1 +/- sqrt(1+4t))/2. Derive both roots in
+	// every IEEE rounding mode, then probe their adjacent representations.
+	// The final exact fused-operation validation makes this sound even when
+	// the rounded reverse calculation does not find every possible preimage.
+	for mode := uint8(1); mode <= 5; mode++ {
+		discriminant := floatingPointFMA(mode, four, target, one)
+		root := floatingPointSqrt(mode, discriminant)
+		for _, numerator := range [2]FloatingPointValue{
+			floatingPointSub(mode, root, one),
+			floatingPointSub(
+				mode,
+				FloatingPointNeg(root),
+				one,
+			),
+		} {
+			candidate := floatingPointDiv(mode, numerator, two)
+			if commit(candidate) ||
+				commit(floatingPointNextDown(candidate)) ||
+				commit(floatingPointNextUp(candidate)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func synthesizeFloatingPointSqrtPreimage(

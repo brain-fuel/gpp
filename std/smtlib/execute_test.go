@@ -2624,16 +2624,20 @@ func TestExecuteRepeatedOperandFloatingPointImages(t *testing.T) {
 }
 
 func TestExecuteRepeatedOperandFloatingPointFMA(t *testing.T) {
-	for _, expression := range []string{
-		"(fp.fma RNE x x y)",
-		"(fp.fma RNE x y x)",
-		"(fp.fma RNE y x x)",
+	for _, test := range []struct {
+		expression string
+		target     string
+	}{
+		{"(fp.fma RNE x x y)", "#x3fc00000"},
+		{"(fp.fma RNE x y x)", "#x3fc00000"},
+		{"(fp.fma RNE y x x)", "#x3fc00000"},
+		{"(fp.fma RNE x x x)", "#x3f400000"},
 	} {
 		script := `(set-logic QF_FP)
 (declare-const x (_ FloatingPoint 8 24))
 (declare-const y (_ FloatingPoint 8 24))
-(assert (= (fp.to_ieee_bv ` + expression + `)
-  #x3fc00000))
+(assert (= (fp.to_ieee_bv ` + test.expression + `)
+  ` + test.target + `))
 (check-sat)`
 		fast, recognized := executeFloatingPointFast(script)
 		if !recognized {
@@ -4272,6 +4276,41 @@ func BenchmarkExecuteRepeatedOperandFloatingPointFMA(b *testing.B) {
 (declare-const d (_ FloatingPoint 8 24))
 (assert (= (fp.to_ieee_bv (fp.fma RNE a a b)) #x3fc00000))
 (assert (= (fp.to_ieee_bv (fp.fma RNE c d c)) #xbfc00000))
+(check-sat)`
+	b.Run("stream", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			result, ok := Execute(script).(Executed)
+			if !ok {
+				b.Fatal("execution failed")
+			}
+			if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+	b.Run("general", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			parsed, ok := Parse(script).(Parsed)
+			if !ok {
+				b.Fatal("parse failed")
+			}
+			responses, errors := executeCommands(parsed.Commands)
+			if len(errors) != 0 {
+				b.Fatal("execution failed")
+			}
+			if _, ok := responses[len(responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+}
+
+func BenchmarkExecuteAllAliasedFloatingPointFMA(b *testing.B) {
+	script := `(set-logic QF_FP)
+(declare-const x (_ FloatingPoint 8 24))
+(assert (= (fp.to_ieee_bv (fp.fma RNE x x x)) #x3f400000))
 (check-sat)`
 	b.Run("stream", func(b *testing.B) {
 		b.ReportAllocs()
