@@ -24,6 +24,7 @@ const (
 	fpFastFromBV
 	fpFastFormat
 	fpFastToReal
+	fpFastToRealAffine
 	fpFastPredicate
 	fpFastComparison
 	fpFastEquality
@@ -50,6 +51,8 @@ type fpFastCommand struct {
 	signed                        bool
 	negated                       bool
 	groundHolds                   bool
+	realTermCount                 int
+	realTerms                     [4]smt.FloatingPointToRealTerm
 }
 
 type fpFastSymbol struct {
@@ -89,6 +92,53 @@ type fpFastOperand struct {
 	operation              uint8
 	width                  int
 	signed                 bool
+}
+
+type fpFastRealAffine struct {
+	count    int
+	terms    [4]smt.FloatingPointToRealTerm
+	constant smt.Rational
+}
+
+func (value *fpFastRealAffine) accumulate(
+	other fpFastRealAffine,
+	multiplier smt.Rational,
+) bool {
+	value.constant = smt.AddRational(
+		value.constant, smt.MultiplyRational(other.constant, multiplier),
+	)
+	for index := 0; index < other.count; index++ {
+		term := other.terms[index]
+		term.Coefficient = smt.MultiplyRational(term.Coefficient, multiplier)
+		merged := false
+		for existingIndex := 0; existingIndex < value.count; existingIndex++ {
+			existing := &value.terms[existingIndex]
+			if existing.ExponentBits == term.ExponentBits &&
+				existing.SignificandBits == term.SignificandBits &&
+				existing.SymbolID == term.SymbolID {
+				existing.Coefficient = smt.AddRational(
+					existing.Coefficient, term.Coefficient,
+				)
+				if existing.Coefficient.Sign() == 0 {
+					copy(
+						value.terms[existingIndex:],
+						value.terms[existingIndex+1:value.count],
+					)
+					value.count--
+				}
+				merged = true
+				break
+			}
+		}
+		if !merged {
+			if value.count == len(value.terms) {
+				return false
+			}
+			value.terms[value.count] = term
+			value.count++
+		}
+	}
+	return true
 }
 
 const (
@@ -210,6 +260,7 @@ func executeFloatingPointFast(source string) (ExecutionResult, bool) {
 	responses := make([]Response, 0, commandCount)
 	solver := smt.New()
 	nextAssertion := 1
+	groundUnsat := false
 	for index := 0; index < commandCount; index++ {
 		command := commands[index]
 		switch command.kind {
@@ -381,6 +432,17 @@ func executeFloatingPointFast(source string) (ExecutionResult, bool) {
 			)
 			nextAssertion++
 			responses = append(responses, Acknowledged{CommandIndex: command.commandIndex})
+		case fpFastToRealAffine:
+			relation := smt.NewFloatingPointToRealInlineRelation(
+				command.realTerms, command.realTermCount,
+				command.realValue, command.comparison,
+			)
+			relation.Negated = command.negated
+			solver = smt.AssertFloatingPointToRealRelation(
+				nextAssertion, solver, relation,
+			)
+			nextAssertion++
+			responses = append(responses, Acknowledged{CommandIndex: command.commandIndex})
 		case fpFastPredicate:
 			relation := smt.NewFloatingPointRelation(
 				command.exponentBits, command.significandBits,
@@ -423,10 +485,16 @@ func executeFloatingPointFast(source string) (ExecutionResult, bool) {
 			if command.negated {
 				holds = !holds
 			}
-			solver = smt.Assert(nextAssertion, solver, smt.Bool{Value: holds})
-			nextAssertion++
+			groundUnsat = groundUnsat || !holds
 			responses = append(responses, Acknowledged{CommandIndex: command.commandIndex})
 		case fpFastCheck:
+			if groundUnsat {
+				result := smt.Check(smt.Assert(
+					1, smt.New(), smt.Bool{Value: false},
+				)).(smt.Unsatisfiable)
+				responses = append(responses, Unsatisfiable{Proof: result.Value})
+				continue
+			}
 			switch result := smt.Check(solver).(type) {
 			case smt.Satisfiable:
 				responses = append(responses, Satisfiable{Model: result.Value})
@@ -507,6 +575,62 @@ func (scanner *fpFastScanner) formula(
 			significandBits: left.significandBits,
 			comparison:      comparison,
 		}, true
+	}
+	affineSnapshot := scanner.at
+	affineComparison := uint8(0)
+	affineReverse := false
+	affineOperator := scanner.text(operator)
+	affineSupported := affineOperator == "=" || affineOperator == "<=" ||
+		affineOperator == "<" || affineOperator == ">=" || affineOperator == ">"
+	if affineOperator == "<=" || affineOperator == ">=" {
+		affineComparison = 1
+	} else if affineOperator == "<" || affineOperator == ">" {
+		affineComparison = 2
+	}
+	affineReverse = affineOperator == ">=" || affineOperator == ">"
+	if affineSupported {
+		left, leftOK := scanner.realAffine(symbols)
+		right, rightOK := scanner.realAffine(symbols)
+		if leftOK && rightOK && scanner.right() {
+			if affineReverse {
+				left, right = right, left
+			}
+			result := fpFastRealAffine{}
+			if result.accumulate(left, smt.NewRational(1, 1)) &&
+				result.accumulate(right, smt.NewRational(-1, 1)) {
+				count := 0
+				for index := 0; index < result.count; index++ {
+					if result.terms[index].Coefficient.Sign() == 0 {
+						continue
+					}
+					result.terms[count] = result.terms[index]
+					count++
+				}
+				if count == 0 {
+					comparison := smt.CompareRational(
+						result.constant, smt.Rational{},
+					)
+					holds := comparison == 0
+					if affineComparison == 1 {
+						holds = comparison <= 0
+					} else if affineComparison == 2 {
+						holds = comparison < 0
+					}
+					return fpFastCommand{
+						kind: fpFastGroundEquality, groundHolds: holds,
+					}, true
+				}
+				if count != 0 {
+					return fpFastCommand{
+						kind:          fpFastToRealAffine,
+						realTermCount: count, realTerms: result.terms,
+						realValue:  result.constant,
+						comparison: affineComparison,
+					}, true
+				}
+			}
+		}
+		scanner.at = affineSnapshot
 	}
 	if scanner.text(operator) != "=" {
 		return fpFastCommand{}, false
@@ -947,6 +1071,108 @@ func (scanner *fpFastScanner) operand(
 	default:
 		return fpFastOperand{}, false
 	}
+}
+
+func (scanner *fpFastScanner) realAffine(
+	symbols []fpFastSymbol,
+) (fpFastRealAffine, bool) {
+	snapshot := scanner.at
+	if token, ok := scanner.atom(); ok {
+		value, err := smt.ParseRational(scanner.text(token))
+		if err == nil {
+			return fpFastRealAffine{constant: value}, true
+		}
+	}
+	scanner.at = snapshot
+	if !scanner.left() {
+		return fpFastRealAffine{}, false
+	}
+	operator, ok := scanner.atom()
+	if !ok {
+		return fpFastRealAffine{}, false
+	}
+	switch scanner.text(operator) {
+	case "fp.to_real":
+		symbolToken, symbolOK := scanner.atom()
+		symbol, symbolFound := fpFastFindSymbol(
+			scanner.text(symbolToken), symbols,
+		)
+		if !symbolOK || !symbolFound || symbol.bitWidth != 0 ||
+			!scanner.right() {
+			return fpFastRealAffine{}, false
+		}
+		return fpFastRealAffine{
+			count: 1,
+			terms: [4]smt.FloatingPointToRealTerm{{
+				ExponentBits:    symbol.exponentBits,
+				SignificandBits: symbol.significandBits,
+				SymbolID:        symbol.id, Coefficient: smt.NewRational(1, 1),
+			}},
+		}, true
+	case "+":
+		result := fpFastRealAffine{}
+		operandCount := 0
+		for {
+			endSnapshot := scanner.at
+			if scanner.right() {
+				return result, operandCount >= 2
+			}
+			scanner.at = endSnapshot
+			operand, operandOK := scanner.realAffine(symbols)
+			if !operandOK || !result.accumulate(
+				operand, smt.NewRational(1, 1),
+			) {
+				return fpFastRealAffine{}, false
+			}
+			operandCount++
+		}
+	case "-":
+		left, leftOK := scanner.realAffine(symbols)
+		if !leftOK {
+			return fpFastRealAffine{}, false
+		}
+		endSnapshot := scanner.at
+		if scanner.right() {
+			result := fpFastRealAffine{}
+			if !result.accumulate(left, smt.NewRational(-1, 1)) {
+				return fpFastRealAffine{}, false
+			}
+			return result, true
+		}
+		scanner.at = endSnapshot
+		right, rightOK := scanner.realAffine(symbols)
+		if !rightOK || !scanner.right() {
+			return fpFastRealAffine{}, false
+		}
+		result := fpFastRealAffine{}
+		return result, result.accumulate(left, smt.NewRational(1, 1)) &&
+			result.accumulate(right, smt.NewRational(-1, 1))
+	case "*":
+		left, leftOK := scanner.realAffine(symbols)
+		right, rightOK := scanner.realAffine(symbols)
+		if !leftOK || !rightOK || !scanner.right() {
+			return fpFastRealAffine{}, false
+		}
+		if left.count == 0 {
+			result := fpFastRealAffine{}
+			return result, result.accumulate(right, left.constant)
+		}
+		if right.count == 0 {
+			result := fpFastRealAffine{}
+			return result, result.accumulate(left, right.constant)
+		}
+	case "/":
+		left, leftOK := scanner.realAffine(symbols)
+		right, rightOK := scanner.realAffine(symbols)
+		if !leftOK || !rightOK || left.count != 0 || right.count != 0 ||
+			right.constant.Sign() == 0 || !scanner.right() {
+			return fpFastRealAffine{}, false
+		}
+		return fpFastRealAffine{
+			constant: smt.DivideRational(left.constant, right.constant),
+		}, true
+	}
+	return fpFastRealAffine{}, false
 }
 
 func (scanner *fpFastScanner) bitVectorLiteral(

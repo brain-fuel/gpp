@@ -45,6 +45,7 @@ type dynamicTerm struct {
 	floatingPointFormat     *dynamicFloatingPointFormat
 	floatingPointFromReal   *dynamicFloatingPointFromReal
 	floatingPointToReal     *dynamicFloatingPointToReal
+	floatingPointRealAffine *dynamicFloatingPointRealAffine
 	floatingPointMinMax     *dynamicFloatingPointMinMax
 	floatingPointAdd        *dynamicFloatingPointAdd
 	floatingPointSub        *dynamicFloatingPointSub
@@ -73,6 +74,11 @@ type dynamicFloatingPointRound struct {
 	exponentBits, significandBits int
 	symbolID                      int
 	mode                          smt.FloatingPointRoundingMode
+}
+
+type dynamicFloatingPointRealAffine struct {
+	terms    []smt.FloatingPointToRealTerm
+	constant smt.Rational
 }
 
 type dynamicFloatingPointConversion struct {
@@ -2462,6 +2468,13 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 				significandBits: value.significandBits,
 				symbolID:        value.floatingPointSymbol,
 			},
+			floatingPointRealAffine: &dynamicFloatingPointRealAffine{
+				terms: []smt.FloatingPointToRealTerm{{
+					ExponentBits: value.exponentBits, SignificandBits: value.significandBits,
+					SymbolID:    value.floatingPointSymbol,
+					Coefficient: smt.NewRational(1, 1),
+				}},
+			},
 		}, nil
 	}
 	if operator == "fp.add" && len(terms) == 3 &&
@@ -3285,6 +3298,11 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 		}
 	case "=":
 		if len(terms) == 2 {
+			if relation, ok := floatingPointRealRelation(
+				terms[0], terms[1], 0,
+			); ok {
+				return dynamicTerm{sort: sortBool, boolean: relation}, nil
+			}
 			symbol, exact := terms[0], terms[1]
 			if symbol.bitVectorSymbol == 0 {
 				symbol, exact = terms[1], terms[0]
@@ -3650,6 +3668,25 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 			return dynamicTerm{sort: sortBool, boolean: smt.And{Values: equalities}}, nil
 		}
 	case "+":
+		if len(terms) >= 2 {
+			affine := dynamicFloatingPointRealAffine{}
+			recognized := false
+			valid := true
+			for _, term := range terms {
+				value, ok := floatingPointRealAffine(term)
+				if !ok {
+					valid = false
+					break
+				}
+				recognized = recognized || len(value.terms) != 0
+				accumulateFloatingPointRealAffine(
+					&affine, value, smt.NewRational(1, 1),
+				)
+			}
+			if valid && recognized {
+				return dynamicFloatingPointRealTerm(affine), nil
+			}
+		}
 		if values, ok := reals(); ok && hasReal() {
 			return dynamicTerm{sort: sortReal, real: smt.RealAdd{Values: values}}, nil
 		}
@@ -3657,6 +3694,27 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 			return dynamicTerm{sort: sortInt, integer: smt.Add{Values: values}}, nil
 		}
 	case "-":
+		if len(terms) == 1 || len(terms) == 2 {
+			left, leftOK := floatingPointRealAffine(terms[0])
+			if leftOK && len(left.terms) != 0 {
+				affine := dynamicFloatingPointRealAffine{}
+				leftMultiplier := smt.NewRational(1, 1)
+				if len(terms) == 1 {
+					leftMultiplier = smt.NewRational(-1, 1)
+				}
+				accumulateFloatingPointRealAffine(&affine, left, leftMultiplier)
+				if len(terms) == 2 {
+					right, rightOK := floatingPointRealAffine(terms[1])
+					if !rightOK {
+						break
+					}
+					accumulateFloatingPointRealAffine(
+						&affine, right, smt.NewRational(-1, 1),
+					)
+				}
+				return dynamicFloatingPointRealTerm(affine), nil
+			}
+		}
 		if values, ok := reals(); ok && hasReal() && len(values) == 1 {
 			return dynamicTerm{sort: sortReal, real: smt.RealScale{Coefficient: smt.NewRational(-1, 1), Value: values[0]}}, nil
 		}
@@ -3670,6 +3728,13 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 			return dynamicTerm{sort: sortInt, integer: smt.Subtract{Left: values[0], Right: values[1]}}, nil
 		}
 	case "<=":
+		if len(terms) == 2 {
+			if relation, ok := floatingPointRealRelation(
+				terms[0], terms[1], 1,
+			); ok {
+				return dynamicTerm{sort: sortBool, boolean: relation}, nil
+			}
+		}
 		if values, ok := reals(); ok && len(values) == 2 && hasReal() {
 			return dynamicTerm{sort: sortBool, boolean: smt.RealLessEqual{Left: values[0], Right: values[1]}}, nil
 		}
@@ -3677,6 +3742,13 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 			return dynamicTerm{sort: sortBool, boolean: smt.LessEqual{Left: values[0], Right: values[1]}}, nil
 		}
 	case "<":
+		if len(terms) == 2 {
+			if relation, ok := floatingPointRealRelation(
+				terms[0], terms[1], 2,
+			); ok {
+				return dynamicTerm{sort: sortBool, boolean: relation}, nil
+			}
+		}
 		if values, ok := reals(); ok && len(values) == 2 && hasReal() {
 			return dynamicTerm{sort: sortBool, boolean: smt.RealLess{Left: values[0], Right: values[1]}}, nil
 		}
@@ -3696,6 +3768,13 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 			}
 		}
 	case ">=":
+		if len(terms) == 2 {
+			if relation, ok := floatingPointRealRelation(
+				terms[1], terms[0], 1,
+			); ok {
+				return dynamicTerm{sort: sortBool, boolean: relation}, nil
+			}
+		}
 		if values, ok := reals(); ok && len(values) == 2 && hasReal() {
 			return dynamicTerm{sort: sortBool, boolean: smt.RealLessEqual{Left: values[1], Right: values[0]}}, nil
 		}
@@ -3703,6 +3782,13 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 			return dynamicTerm{sort: sortBool, boolean: smt.LessEqual{Left: values[1], Right: values[0]}}, nil
 		}
 	case ">":
+		if len(terms) == 2 {
+			if relation, ok := floatingPointRealRelation(
+				terms[1], terms[0], 2,
+			); ok {
+				return dynamicTerm{sort: sortBool, boolean: relation}, nil
+			}
+		}
 		if values, ok := reals(); ok && len(values) == 2 && hasReal() {
 			return dynamicTerm{sort: sortBool, boolean: smt.RealLess{Left: values[1], Right: values[0]}}, nil
 		}
@@ -3711,6 +3797,22 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 		}
 	case "*":
 		if len(terms) == 2 {
+			if coefficient, ok := rationalConstant(terms[0]); ok {
+				if affine, affineOK := floatingPointRealAffine(terms[1]); affineOK &&
+					len(affine.terms) != 0 {
+					result := dynamicFloatingPointRealAffine{}
+					accumulateFloatingPointRealAffine(&result, affine, coefficient)
+					return dynamicFloatingPointRealTerm(result), nil
+				}
+			}
+			if coefficient, ok := rationalConstant(terms[1]); ok {
+				if affine, affineOK := floatingPointRealAffine(terms[0]); affineOK &&
+					len(affine.terms) != 0 {
+					result := dynamicFloatingPointRealAffine{}
+					accumulateFloatingPointRealAffine(&result, affine, coefficient)
+					return dynamicFloatingPointRealTerm(result), nil
+				}
+			}
 			if coefficient, ok := integerConstant(terms[0]); ok && terms[1].sort == sortInt {
 				return dynamicTerm{sort: sortInt, integer: smt.ScaleInteger(coefficient, terms[1].integer)}, nil
 			}
@@ -4414,6 +4516,96 @@ func termError(fallback string, err error) string {
 		return err.Error()
 	}
 	return fallback
+}
+
+func floatingPointRealAffine(
+	term dynamicTerm,
+) (dynamicFloatingPointRealAffine, bool) {
+	if term.floatingPointRealAffine != nil {
+		value := *term.floatingPointRealAffine
+		value.terms = append([]smt.FloatingPointToRealTerm(nil), value.terms...)
+		return value, true
+	}
+	if value, ok := rationalConstant(term); ok {
+		return dynamicFloatingPointRealAffine{constant: value}, true
+	}
+	return dynamicFloatingPointRealAffine{}, false
+}
+
+func dynamicFloatingPointRealTerm(
+	value dynamicFloatingPointRealAffine,
+) dynamicTerm {
+	if len(value.terms) == 0 {
+		return dynamicTerm{
+			sort: sortReal, real: smt.Real{Value: value.constant},
+		}
+	}
+	return dynamicTerm{sort: sortReal, floatingPointRealAffine: &value}
+}
+
+func accumulateFloatingPointRealAffine(
+	target *dynamicFloatingPointRealAffine,
+	source dynamicFloatingPointRealAffine,
+	multiplier smt.Rational,
+) {
+	target.constant = smt.AddRational(
+		target.constant, smt.MultiplyRational(source.constant, multiplier),
+	)
+	for _, term := range source.terms {
+		term.Coefficient = smt.MultiplyRational(term.Coefficient, multiplier)
+		merged := false
+		for index := range target.terms {
+			existing := &target.terms[index]
+			if existing.ExponentBits == term.ExponentBits &&
+				existing.SignificandBits == term.SignificandBits &&
+				existing.SymbolID == term.SymbolID {
+				existing.Coefficient = smt.AddRational(
+					existing.Coefficient, term.Coefficient,
+				)
+				if existing.Coefficient.Sign() == 0 {
+					target.terms = append(
+						target.terms[:index], target.terms[index+1:]...,
+					)
+				}
+				merged = true
+				break
+			}
+		}
+		if !merged {
+			target.terms = append(target.terms, term)
+		}
+	}
+}
+
+func floatingPointRealRelation(
+	left, right dynamicTerm,
+	comparison uint8,
+) (smt.FloatingPointToRealRelation, bool) {
+	leftAffine, leftOK := floatingPointRealAffine(left)
+	rightAffine, rightOK := floatingPointRealAffine(right)
+	if !leftOK || !rightOK ||
+		(len(leftAffine.terms) == 0 && len(rightAffine.terms) == 0) {
+		return smt.FloatingPointToRealRelation{}, false
+	}
+	result := dynamicFloatingPointRealAffine{}
+	accumulateFloatingPointRealAffine(
+		&result, leftAffine, smt.NewRational(1, 1),
+	)
+	accumulateFloatingPointRealAffine(
+		&result, rightAffine, smt.NewRational(-1, 1),
+	)
+	terms := result.terms[:0]
+	for _, term := range result.terms {
+		if term.Coefficient.Sign() != 0 {
+			terms = append(terms, term)
+		}
+	}
+	if len(terms) == 0 {
+		return smt.FloatingPointToRealRelation{}, false
+	}
+	return smt.NewFloatingPointToRealAffineRelation(
+		terms, result.constant, comparison,
+	), true
 }
 
 func commandSpan(command Command) Span {

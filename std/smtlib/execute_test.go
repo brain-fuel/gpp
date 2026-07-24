@@ -3010,6 +3010,29 @@ func TestExecuteSymbolicFloatingPointToReal(t *testing.T) {
 	}
 }
 
+func TestExecuteAffineFloatingPointToReal(t *testing.T) {
+	script := `(set-logic QF_FP)
+(declare-const x (_ FloatingPoint 8 24))
+(declare-const y (_ FloatingPoint 8 24))
+(assert (= (fp.to_ieee_bv x) #x3fc00000))
+(assert (= (fp.to_ieee_bv y) #x40600000))
+(assert (= (+ (* 2.0 (fp.to_real x)) (- (fp.to_real y)) 0.5) 0.0))
+(assert (< (- (* 2.0 (fp.to_real x)) (fp.to_real y)) 0.0))
+(assert (>= (fp.to_real y) (+ (fp.to_real x) 2.0)))
+(assert (= (- (fp.to_real x) (fp.to_real x)) 0.0))
+(check-sat)`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("execution=%#v", Execute(script))
+	}
+	if _, recognized := executeFloatingPointFast(script); !recognized {
+		t.Fatal("affine fp.to_real script did not use streaming execution")
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+		t.Fatalf("responses=%#v", result.Responses)
+	}
+}
+
 func TestStreamFloatingPointToReal(t *testing.T) {
 	script := `(set-logic QF_FP)
 (declare-const x (_ FloatingPoint 8 24))
@@ -3820,6 +3843,46 @@ func BenchmarkExecuteFloatingPointToReal(b *testing.B) {
 (assert (= (fp.to_ieee_bv larger) #x40600000))
 (assert (= (fp.to_real positive) 1.5))
 (assert (= (fp.to_real larger) 3.5))
+(check-sat)`
+	b.Run("stream", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			result, ok := Execute(script).(Executed)
+			if !ok {
+				b.Fatal("stream execution failed")
+			}
+			if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+	b.Run("general", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			parsed, ok := Parse(script).(Parsed)
+			if !ok {
+				b.Fatal("parse failed")
+			}
+			responses, errors := executeCommands(parsed.Commands)
+			if len(errors) != 0 {
+				b.Fatal("general executor rejected script")
+			}
+			if _, ok := responses[len(responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+}
+
+func BenchmarkExecuteAffineFloatingPointToReal(b *testing.B) {
+	script := `(set-logic QF_FP)
+(declare-const x (_ FloatingPoint 8 24))
+(declare-const y (_ FloatingPoint 8 24))
+(assert (= (fp.to_ieee_bv x) #x3fc00000))
+(assert (= (fp.to_ieee_bv y) #x40600000))
+(assert (= (+ (* 2.0 (fp.to_real x)) (- (fp.to_real y)) 0.5) 0.0))
+(assert (< (- (* 2.0 (fp.to_real x)) (fp.to_real y)) 0.0))
+(assert (>= (fp.to_real y) (+ (fp.to_real x) 2.0)))
 (check-sat)`
 	b.Run("stream", func(b *testing.B) {
 		b.ReportAllocs()

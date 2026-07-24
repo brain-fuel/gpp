@@ -128,14 +128,29 @@ type FloatingPointFormatConversionRelation struct {
 func (FloatingPointFormatConversionRelation) isTerm(BoolSort) {}
 
 type FloatingPointToRealRelation struct {
-	ExponentBits    int
-	SignificandBits int
-	SymbolID        int
-	Value           Rational
-	Negated         bool
+	Count    int
+	Terms    [4]FloatingPointToRealTerm
+	Overflow []FloatingPointToRealTerm
+	Constant Rational
+	// Comparison is 0 for equality, 1 for <=, and 2 for <.
+	Comparison uint8
+	Negated    bool
+	// Value remains the exact right-hand side for the direct-relation
+	// constructor, preserving the established mutable compatibility surface.
+	Value  Rational
+	direct bool
 }
 
 func (FloatingPointToRealRelation) isTerm(BoolSort) {}
+
+// FloatingPointToRealTerm is one exact affine coefficient applied to the
+// finite rational value of an assigned floating-point symbol.
+type FloatingPointToRealTerm struct {
+	ExponentBits    int
+	SignificandBits int
+	SymbolID        int
+	Coefficient     Rational
+}
 
 // FloatingPointAddRelation constrains the exact rounded IEEE bits of fp.add
 // over two assigned same-format symbols.
@@ -404,13 +419,83 @@ func NewFloatingPointToRealRelation(
 	exponentBits, significandBits, symbolID int,
 	value Rational,
 ) FloatingPointToRealRelation {
-	if exponentBits < 2 || significandBits < 2 || symbolID <= 0 {
-		panic("smt: invalid floating-point to Real relation")
+	relation := NewFloatingPointToRealInlineRelation(
+		[4]FloatingPointToRealTerm{{
+			ExponentBits: exponentBits, SignificandBits: significandBits,
+			SymbolID: symbolID, Coefficient: NewRational(1, 1),
+		}},
+		1, NegateRational(value), 0,
+	)
+	relation.Value = value
+	relation.direct = true
+	return relation
+}
+
+// NewFloatingPointToRealAffineRelation constrains
+//
+//	sum(coefficient[i] * fp.to_real(symbol[i])) + constant
+//
+// by equality (comparison 0), non-strict upper bound (1), or strict upper
+// bound (2). Symbols must have assigned IEEE bit patterns in the same compact
+// conjunction.
+func NewFloatingPointToRealAffineRelation(
+	terms []FloatingPointToRealTerm,
+	constant Rational,
+	comparison uint8,
+) FloatingPointToRealRelation {
+	if len(terms) == 0 || comparison > 2 {
+		panic("smt: invalid floating-point to Real affine relation")
 	}
-	return FloatingPointToRealRelation{
-		ExponentBits: exponentBits, SignificandBits: significandBits,
-		SymbolID: symbolID, Value: value,
+	relation := FloatingPointToRealRelation{
+		Count: len(terms), Constant: constant, Comparison: comparison,
 	}
+	if len(terms) > len(relation.Terms) {
+		relation.Overflow = make([]FloatingPointToRealTerm, len(terms))
+	}
+	for index, term := range terms {
+		if term.ExponentBits < 2 || term.SignificandBits < 2 ||
+			term.SymbolID <= 0 || term.Coefficient.Sign() == 0 {
+			panic("smt: invalid floating-point to Real affine term")
+		}
+		if relation.Overflow != nil {
+			relation.Overflow[index] = term
+		} else {
+			relation.Terms[index] = term
+		}
+	}
+	return relation
+}
+
+// NewFloatingPointToRealInlineRelation is the allocation-free constructor for
+// affine relations containing at most four converted symbols.
+func NewFloatingPointToRealInlineRelation(
+	terms [4]FloatingPointToRealTerm,
+	count int,
+	constant Rational,
+	comparison uint8,
+) FloatingPointToRealRelation {
+	if count <= 0 || count > len(terms) || comparison > 2 {
+		panic("smt: invalid inline floating-point to Real affine relation")
+	}
+	relation := FloatingPointToRealRelation{
+		Count: count, Constant: constant, Comparison: comparison,
+	}
+	for index := 0; index < count; index++ {
+		term := terms[index]
+		if term.ExponentBits < 2 || term.SignificandBits < 2 ||
+			term.SymbolID <= 0 || term.Coefficient.Sign() == 0 {
+			panic("smt: invalid floating-point to Real affine term")
+		}
+		relation.Terms[index] = term
+	}
+	return relation
+}
+
+func (relation FloatingPointToRealRelation) values() []FloatingPointToRealTerm {
+	if relation.Overflow != nil {
+		return relation.Overflow[:relation.Count]
+	}
+	return relation.Terms[:relation.Count]
 }
 
 func NewFloatingPointAddRelation(

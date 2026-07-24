@@ -1013,6 +1013,49 @@ func TestFloatingPointToRealRelation(t *testing.T) {
 	}
 }
 
+func TestFloatingPointToRealAffineRelation(t *testing.T) {
+	solver := Assert(1, New(), BitVectorRelation{
+		Width: 32, SymbolID: 1,
+		Value: NewBitVectorUint64(32, 0x3fc00000),
+	})
+	solver = Assert(2, solver, BitVectorRelation{
+		Width: 32, SymbolID: 2,
+		Value: NewBitVectorUint64(32, 0x40600000),
+	})
+	terms := []FloatingPointToRealTerm{
+		{
+			ExponentBits: 8, SignificandBits: 24, SymbolID: 1,
+			Coefficient: NewRational(2, 1),
+		},
+		{
+			ExponentBits: 8, SignificandBits: 24, SymbolID: 2,
+			Coefficient: NewRational(-1, 1),
+		},
+	}
+	equality := NewFloatingPointToRealAffineRelation(
+		terms, NewRational(1, 2), 0,
+	)
+	if result := Check(AssertFloatingPointToRealRelation(
+		3, solver, equality,
+	)); func() bool { _, ok := result.(Satisfiable); return ok }() == false {
+		t.Fatalf("affine equality result=%T", result)
+	}
+	strict := NewFloatingPointToRealAffineRelation(
+		terms, Rational{}, 2,
+	)
+	if result := Check(AssertFloatingPointToRealRelation(
+		3, solver, strict,
+	)); func() bool { _, ok := result.(Satisfiable); return ok }() == false {
+		t.Fatalf("affine strict-order result=%T", result)
+	}
+	strict.Negated = true
+	if result := Check(AssertFloatingPointToRealRelation(
+		3, solver, strict,
+	)); func() bool { _, ok := result.(Unsatisfiable); return ok }() == false {
+		t.Fatalf("negated affine strict-order result=%T", result)
+	}
+}
+
 func TestFloatingPointFromSignedBitVectorArbitraryWidth(t *testing.T) {
 	value := IntegerToBitVectorValue(
 		130,

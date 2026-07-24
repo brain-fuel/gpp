@@ -919,27 +919,47 @@ func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome,
 		}
 	}
 	for _, relation := range problem.toReals[:problem.toRealCount] {
-		var assigned BitVectorValue
-		found := false
-		for index := 0; index < assignmentCount; index++ {
-			if assignments[index].id == relation.SymbolID {
-				assigned, found = assignments[index].value, true
-				break
+		totalValue := relation.Constant
+		for _, term := range relation.values() {
+			var assigned BitVectorValue
+			found := false
+			for index := 0; index < assignmentCount; index++ {
+				if assignments[index].id == term.SymbolID {
+					assigned, found = assignments[index].value, true
+					break
+				}
 			}
+			total := term.ExponentBits + term.SignificandBits
+			if !found || assigned.Width() != total {
+				return checkOutcome{}, false
+			}
+			converted, valid := floatingPointToRational(
+				FloatingPointFromBits(
+					term.ExponentBits, term.SignificandBits, assigned,
+				),
+			)
+			if !valid {
+				converted = Rational{}
+			}
+			totalValue = AddRational(
+				totalValue,
+				MultiplyRational(term.Coefficient, converted),
+			)
 		}
-		total := relation.ExponentBits + relation.SignificandBits
-		if !found || assigned.Width() != total {
-			return checkOutcome{}, false
+		comparison := CompareRational(totalValue, Rational{})
+		if relation.direct {
+			totalValue = AddRational(
+				totalValue,
+				SubtractRational(NegateRational(relation.Value), relation.Constant),
+			)
+			comparison = CompareRational(totalValue, Rational{})
 		}
-		converted, valid := floatingPointToRational(
-			FloatingPointFromBits(
-				relation.ExponentBits, relation.SignificandBits, assigned,
-			),
-		)
-		if !valid {
-			converted = Rational{}
+		holds := comparison == 0
+		if relation.Comparison == 1 {
+			holds = comparison <= 0
+		} else if relation.Comparison == 2 {
+			holds = comparison < 0
 		}
-		holds := CompareRational(converted, relation.Value) == 0
 		if holds == relation.Negated {
 			return checkOutcome{status: checkUnsat}, true
 		}
