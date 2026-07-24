@@ -373,6 +373,65 @@ func TestNonlinearIntegerProductBounds(t *testing.T) {
 	}
 }
 
+func TestNonlinearIntegerAffineProductBounds(t *testing.T) {
+	x := IntSymbol{ID: 113, Name: "x"}
+	y := IntSymbol{ID: 114, Name: "y"}
+	left := Add{Values: []Term[IntSort]{
+		ScaleInteger(NewIntegerValue(2), x),
+		IntegerTerm(NewIntegerValue(1)),
+	}}
+	right := Add{Values: []Term[IntSort]{
+		ScaleInteger(NewIntegerValue(3), y),
+		IntegerTerm(NewIntegerValue(-2)),
+	}}
+	product := MultiplyInteger(left, right)
+	interval := And{Values: []Term[BoolSort]{
+		Less{Left: IntegerTerm(NewIntegerValue(20)), Right: product},
+		LessEqual{Left: product, Right: IntegerTerm(NewIntegerValue(30))},
+	}}
+	checked := Check(Assert(1, New(), interval))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("affine product interval=%#v", checked)
+	}
+	xValue, xFound := IntegerModelValue(result.Value, x)
+	yValue, yFound := IntegerModelValue(result.Value, y)
+	leftValue := AddIntegerValue(
+		MultiplyIntegerValue(NewIntegerValue(2), xValue),
+		NewIntegerValue(1),
+	)
+	rightValue := AddIntegerValue(
+		MultiplyIntegerValue(NewIntegerValue(3), yValue),
+		NewIntegerValue(-2),
+	)
+	productValue := MultiplyIntegerValue(leftValue, rightValue)
+	if !xFound || !yFound ||
+		CompareIntegerValue(productValue, NewIntegerValue(20)) <= 0 ||
+		CompareIntegerValue(productValue, NewIntegerValue(30)) > 0 {
+		t.Fatalf("affine product model x=%v/%v y=%v/%v", xValue, xFound, yValue, yFound)
+	}
+
+	leftSquare := MultiplyInteger(left, left)
+	rightSquare := MultiplyInteger(right, right)
+	boundedConflict := And{Values: []Term[BoolSort]{
+		LessEqual{Left: leftSquare, Right: IntegerTerm(NewIntegerValue(9))},
+		LessEqual{Left: rightSquare, Right: IntegerTerm(NewIntegerValue(16))},
+		Less{Left: IntegerTerm(NewIntegerValue(12)), Right: product},
+	}}
+	conflictResult := Check(Assert(2, New(), boundedConflict))
+	if _, ok := conflictResult.(Unsatisfiable); !ok {
+		t.Fatalf("bounded affine product contradiction=%#v", conflictResult)
+	}
+
+	negated := Not{Value: LessEqual{
+		Left: product, Right: IntegerTerm(NewIntegerValue(20)),
+	}}
+	negatedResult := Check(Assert(3, New(), negated))
+	if _, ok := negatedResult.(Satisfiable); !ok {
+		t.Fatalf("negated affine product bound=%#v", negatedResult)
+	}
+}
+
 func TestNonlinearIntegerAffineFactorProducts(t *testing.T) {
 	x := IntSymbol{ID: 110, Name: "x"}
 	y := IntSymbol{ID: 111, Name: "y"}

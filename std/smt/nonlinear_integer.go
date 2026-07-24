@@ -125,6 +125,28 @@ type IntegerProductBoundSystem struct {
 
 func (IntegerProductBoundSystem) isTerm(BoolSort) {}
 
+// IntegerAffineProductBound represents
+// (a*x+b)*(c*y+d) <(=) k when Lower is false and
+// k <(=) (a*x+b)*(c*y+d) when Lower is true.
+type IntegerAffineProductBound struct {
+	Left, Right IntegerAffineFactor
+	Bound       IntegerValue
+	Lower       bool
+	Strict      bool
+}
+
+func (IntegerAffineProductBound) isTerm(BoolSort) {}
+
+// IntegerAffineProductBoundSystem is an allocation-free conjunction of
+// affine bilinear bounds for the bounded nonlinear integer fragment.
+type IntegerAffineProductBoundSystem struct {
+	Count    int
+	Inline   [4]IntegerAffineProductBound
+	Overflow []IntegerAffineProductBound
+}
+
+func (IntegerAffineProductBoundSystem) isTerm(BoolSort) {}
+
 type nonlinearIntegerCandidates struct {
 	count  int
 	values [nonlinearIntegerCandidateLimit]IntegerValue
@@ -154,7 +176,7 @@ type nonlinearIntegerProblem struct {
 	boundCount        int
 	bounds            [nonlinearIntegerRelationLimit]IntegerAffineSquareBound
 	productBoundCount int
-	productBounds     [nonlinearIntegerRelationLimit]IntegerProductBound
+	productBounds     [nonlinearIntegerRelationLimit]IntegerAffineProductBound
 	impossible        bool
 }
 
@@ -344,6 +366,28 @@ func (problem *nonlinearIntegerProblem) boolean(
 			}
 		}
 		return true
+	case IntegerAffineProductBound:
+		if negated {
+			value.Lower = !value.Lower
+			value.Strict = !value.Strict
+		}
+		return problem.addAffineProductBound(value)
+	case IntegerAffineProductBoundSystem:
+		if negated || value.Count < 0 {
+			return false
+		}
+		bounds := value.Overflow
+		if value.Count <= len(value.Inline) {
+			bounds = value.Inline[:value.Count]
+		} else if len(bounds) != value.Count {
+			return false
+		}
+		for _, bound := range bounds {
+			if !problem.addAffineProductBound(bound) {
+				return false
+			}
+		}
+		return true
 	default:
 		return false
 	}
@@ -373,17 +417,15 @@ func (problem *nonlinearIntegerProblem) squareComparison(
 			Factor: leftFactor, Bound: target, Lower: lower, Strict: strict,
 		})
 	}
-	leftID, leftOK := directIntegerSymbolID(product.Left)
-	rightID, rightOK := directIntegerSymbolID(product.Right)
-	if !leftOK || !rightOK {
+	if !leftAffine || !rightAffine {
 		return false
 	}
 	if negated {
 		lower = !lower
 		strict = !strict
 	}
-	return problem.addProductBound(IntegerProductBound{
-		LeftID: leftID, RightID: rightID,
+	return problem.addAffineProductBound(IntegerAffineProductBound{
+		Left: leftFactor, Right: rightFactor,
 		Bound: target, Lower: lower, Strict: strict,
 	})
 }
@@ -391,11 +433,26 @@ func (problem *nonlinearIntegerProblem) squareComparison(
 func (problem *nonlinearIntegerProblem) addProductBound(
 	bound IntegerProductBound,
 ) bool {
+	one := NewIntegerValue(1)
+	return problem.addAffineProductBound(IntegerAffineProductBound{
+		Left: IntegerAffineFactor{
+			SymbolID: bound.LeftID, Coefficient: one,
+		},
+		Right: IntegerAffineFactor{
+			SymbolID: bound.RightID, Coefficient: one,
+		},
+		Bound: bound.Bound, Lower: bound.Lower, Strict: bound.Strict,
+	})
+}
+
+func (problem *nonlinearIntegerProblem) addAffineProductBound(
+	bound IntegerAffineProductBound,
+) bool {
 	if problem.productBoundCount == len(problem.productBounds) {
 		return false
 	}
-	left, leftAdded := problem.ensureSymbol(bound.LeftID)
-	right, rightAdded := problem.ensureSymbol(bound.RightID)
+	left, leftAdded := problem.ensureSymbol(bound.Left.SymbolID)
+	right, rightAdded := problem.ensureSymbol(bound.Right.SymbolID)
 	if !leftAdded || !rightAdded {
 		return false
 	}
@@ -407,12 +464,29 @@ func (problem *nonlinearIntegerProblem) addProductBound(
 		}
 		witness = AddIntegerValue(witness, NewIntegerValue(offset))
 	}
-	problem.candidates[left].add(NewIntegerValue(1))
-	problem.candidates[right].add(witness)
-	problem.candidates[left].add(NewIntegerValue(-1))
-	problem.candidates[right].add(NegateIntegerValue(witness))
-	problem.candidates[left].add(IntegerValue{})
-	problem.candidates[right].add(IntegerValue{})
+	for candidate := int64(-4); candidate <= 4; candidate++ {
+		factorValue := NewIntegerValue(candidate)
+		problem.addAffineFactorCandidate(left, bound.Left, factorValue)
+		problem.addAffineFactorCandidate(right, bound.Right, factorValue)
+		if candidate != 0 {
+			quotient, _, ok := DivModIntegerValue(
+				witness, factorValue,
+			)
+			if ok {
+				for adjustment := int64(-2); adjustment <= 2; adjustment++ {
+					near := AddIntegerValue(
+						quotient, NewIntegerValue(adjustment),
+					)
+					problem.addAffineFactorCandidate(
+						right, bound.Right, near,
+					)
+					problem.addAffineFactorCandidate(
+						left, bound.Left, near,
+					)
+				}
+			}
+		}
+	}
 	problem.productBounds[problem.productBoundCount] = bound
 	problem.productBoundCount++
 	return true
@@ -885,13 +959,17 @@ func (problem *nonlinearIntegerProblem) valid(
 		}
 	}
 	for _, bound := range problem.productBounds[:problem.productBoundCount] {
-		left := problem.symbolPosition(bound.LeftID)
-		right := problem.symbolPosition(bound.RightID)
+		left := problem.symbolPosition(bound.Left.SymbolID)
+		right := problem.symbolPosition(bound.Right.SymbolID)
 		if left < 0 || right < 0 || !assigned[left] || !assigned[right] {
 			continue
 		}
 		comparison := CompareIntegerValue(
-			MultiplyIntegerValue(values[left], values[right]), bound.Bound,
+			MultiplyIntegerValue(
+				evaluateIntegerAffineFactor(bound.Left, values[left]),
+				evaluateIntegerAffineFactor(bound.Right, values[right]),
+			),
+			bound.Bound,
 		)
 		holds := comparison <= 0
 		if bound.Strict {
