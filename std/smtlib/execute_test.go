@@ -2066,6 +2066,25 @@ func TestExecuteAffineIntegerRealCoercions(t *testing.T) {
 	}
 }
 
+func TestExecuteAffineIntegerRealComparisons(t *testing.T) {
+	source := `(set-logic QF_LIRA)
+(declare-const x Int)
+(declare-const y Int)
+(assert (= x 3))
+(assert (= y 4))
+(assert (= (+ (to_real x) 1.5) (+ (to_real y) 0.5)))
+(assert (< (+ (to_real x) 1.5) (+ (to_real y) 1.0)))
+(assert (not (< (+ (to_real y) 1.0) (+ (to_real x) 1.5))))
+(check-sat)`
+	result, ok := Execute(source).(Executed)
+	if !ok {
+		t.Fatalf("result=%#v", Execute(source))
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+		t.Fatalf("check response=%#v", result.Responses[len(result.Responses)-1])
+	}
+}
+
 func TestExecuteConditionalIntegerFunctionArithmetic(t *testing.T) {
 	for _, source := range []string{
 		`(set-logic QF_UFLIA)

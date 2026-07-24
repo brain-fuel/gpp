@@ -205,6 +205,9 @@ func integerToRealSource(term Term[RealSort]) (Term[IntSort], bool) {
 }
 
 func rewriteIntegerRealEquality(left, right Term[RealSort]) (Term[BoolSort], bool) {
+	if relation, ok := rewriteAffineIntegerRealEquality(left, right); ok {
+		return relation, true
+	}
 	leftInteger, leftOK := integerToRealSource(left)
 	rightInteger, rightOK := integerToRealSource(right)
 	switch {
@@ -219,6 +222,17 @@ func rewriteIntegerRealEquality(left, right Term[RealSort]) (Term[BoolSort], boo
 	}
 }
 
+func rewriteAffineIntegerRealEquality(left, right Term[RealSort]) (Term[BoolSort], bool) {
+	difference, bound, ok := affineIntegerRealDifference(left, right)
+	if !ok {
+		return nil, false
+	}
+	if !bound.IsInteger() {
+		return Bool{Value: false}, true
+	}
+	return Equal{Left: difference, Right: IntegerTerm(FloorRational(bound))}, true
+}
+
 func integerEqualsRealConstant(integer Term[IntSort], real Term[RealSort]) (Term[BoolSort], bool) {
 	value, ok := ExactRealConstant(real)
 	if !ok {
@@ -231,6 +245,9 @@ func integerEqualsRealConstant(integer Term[IntSort], real Term[RealSort]) (Term
 }
 
 func rewriteIntegerRealOrder(left, right Term[RealSort], strict bool) (Term[BoolSort], bool) {
+	if relation, ok := rewriteAffineIntegerRealOrder(left, right, strict); ok {
+		return relation, true
+	}
 	leftInteger, leftOK := integerToRealSource(left)
 	rightInteger, rightOK := integerToRealSource(right)
 	if leftOK && rightOK {
@@ -266,4 +283,37 @@ func rewriteIntegerRealOrder(left, right Term[RealSort], strict bool) (Term[Bool
 		return LessEqual{Left: IntegerTerm(ceiling), Right: rightInteger}, true
 	}
 	return nil, false
+}
+
+// affineIntegerRealDifference returns the integer-valued expression and exact
+// rational bound for left <= right rewritten as integer <= bound.
+func affineIntegerRealDifference(
+	left, right Term[RealSort],
+) (Term[IntSort], Rational, bool) {
+	leftAffine, leftOK := decomposeIntegerAffineReal(left)
+	rightAffine, rightOK := decomposeIntegerAffineReal(right)
+	if !leftOK || !rightOK ||
+		leftAffine.integer == nil && rightAffine.integer == nil {
+		return nil, Rational{}, false
+	}
+	difference := subtractAffineIntegerTerms(leftAffine.integer, rightAffine.integer)
+	if difference == nil {
+		return nil, Rational{}, false
+	}
+	return difference, SubtractRational(rightAffine.offset, leftAffine.offset), true
+}
+
+func rewriteAffineIntegerRealOrder(
+	left, right Term[RealSort],
+	strict bool,
+) (Term[BoolSort], bool) {
+	difference, bound, ok := affineIntegerRealDifference(left, right)
+	if !ok {
+		return nil, false
+	}
+	floor := FloorRational(bound)
+	if strict && bound.IsInteger() {
+		return Less{Left: difference, Right: IntegerTerm(floor)}, true
+	}
+	return LessEqual{Left: difference, Right: IntegerTerm(floor)}, true
 }

@@ -1886,6 +1886,32 @@ func TestAffineIntegerRealCoercions(t *testing.T) {
 	}
 }
 
+func TestAffineIntegerRealComparisons(t *testing.T) {
+	x, y := IntegerVariable(1), IntegerVariable(2)
+	left := RealAdd{Values: []Term[RealSort]{
+		IntToReal(x),
+		Real{Value: MustParseRational("3/2")},
+	}}
+	right := RealAdd{Values: []Term[RealSort]{
+		IntToReal(y),
+		Real{Value: MustParseRational("1/2")},
+	}}
+	upper := RealAdd{Values: []Term[RealSort]{
+		IntToReal(y),
+		Real{Value: MustParseRational("1")},
+	}}
+	formula := And{Values: []Term[BoolSort]{
+		Equal{Left: x, Right: Integer{Value: 3}},
+		Equal{Left: y, Right: Integer{Value: 4}},
+		Equal{Left: left, Right: right},
+		RealLess{Left: left, Right: upper},
+		Not{Value: RealLess{Left: upper, Right: left}},
+	}}
+	if result := Check(Assert(1, New(), formula)); func() bool { _, ok := result.(Satisfiable); return ok }() == false {
+		t.Fatalf("result=%T", result)
+	}
+}
+
 func TestSharedRealEUFExchangesLRAImpliedEquality(t *testing.T) {
 	x := RealSymbol{ID: 1, Name: "x"}
 	y := RealSymbol{ID: 2, Name: "y"}
