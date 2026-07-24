@@ -5,6 +5,7 @@ import "math"
 type IntegerDivModRelation struct {
 	SymbolID            int
 	DividendCoefficient IntegerValue
+	DividendOffset      IntegerValue
 	Divisor             IntegerValue
 	Expected            IntegerValue
 	Remainder           bool
@@ -29,25 +30,74 @@ func CompactIntegerDivModEquality(left, right Term[IntSort]) (IntegerDivModRelat
 	}
 	switch value := left.(type) {
 	case IntegerDiv:
-		id, coefficient, symbol := compactScaledIntegerSymbol(value.Dividend)
-		return IntegerDivModRelation{SymbolID: id, DividendCoefficient: coefficient, Divisor: value.Divisor, Expected: expected}, symbol && CompareIntegerValue(value.Divisor, IntegerValue{}) != 0
+		dividend, compact := compactAffineIntegerDividend(value.Dividend)
+		return IntegerDivModRelation{SymbolID: dividend.id, DividendCoefficient: dividend.coefficient, DividendOffset: dividend.offset, Divisor: value.Divisor, Expected: expected}, compact && CompareIntegerValue(value.Divisor, IntegerValue{}) != 0
 	case IntegerMod:
-		id, coefficient, symbol := compactScaledIntegerSymbol(value.Dividend)
-		return IntegerDivModRelation{SymbolID: id, DividendCoefficient: coefficient, Divisor: value.Divisor, Expected: expected, Remainder: true}, symbol && CompareIntegerValue(value.Divisor, IntegerValue{}) != 0
+		dividend, compact := compactAffineIntegerDividend(value.Dividend)
+		return IntegerDivModRelation{SymbolID: dividend.id, DividendCoefficient: dividend.coefficient, DividendOffset: dividend.offset, Divisor: value.Divisor, Expected: expected, Remainder: true}, compact && CompareIntegerValue(value.Divisor, IntegerValue{}) != 0
 	}
 	return IntegerDivModRelation{}, false
 }
 
-func compactScaledIntegerSymbol(term Term[IntSort]) (int, IntegerValue, bool) {
+type compactIntegerAffineDividend struct {
+	id          int
+	coefficient IntegerValue
+	offset      IntegerValue
+	symbol      bool
+}
+
+func compactAffineIntegerDividend(term Term[IntSort]) (compactIntegerAffineDividend, bool) {
+	dividend, ok := decomposeCompactIntegerAffineDividend(term)
+	return dividend, ok && dividend.symbol
+}
+
+func decomposeCompactIntegerAffineDividend(term Term[IntSort]) (compactIntegerAffineDividend, bool) {
 	if id, ok := IntegerVariableID(term); ok {
-		return id, NewIntegerValue(1), true
+		return compactIntegerAffineDividend{
+			id: id, coefficient: NewIntegerValue(1), symbol: true,
+		}, true
 	}
-	scaled, ok := term.(IntegerScale)
-	if !ok {
-		return 0, IntegerValue{}, false
+	if exact, ok := exactIntegerConstant(term); ok {
+		return compactIntegerAffineDividend{offset: exact}, true
 	}
-	id, symbol := IntegerVariableID(scaled.Value)
-	return id, scaled.Coefficient, symbol
+	switch value := term.(type) {
+	case IntegerScale:
+		dividend, ok := decomposeCompactIntegerAffineDividend(value.Value)
+		if !ok {
+			return compactIntegerAffineDividend{}, false
+		}
+		dividend.coefficient = MultiplyIntegerValue(value.Coefficient, dividend.coefficient)
+		dividend.offset = MultiplyIntegerValue(value.Coefficient, dividend.offset)
+		return dividend, true
+	case Add:
+		result := compactIntegerAffineDividend{}
+		for _, item := range value.Values {
+			next, ok := decomposeCompactIntegerAffineDividend(item)
+			if !ok || result.symbol && next.symbol && result.id != next.id {
+				return compactIntegerAffineDividend{}, false
+			}
+			if next.symbol {
+				result.id, result.symbol = next.id, true
+			}
+			result.coefficient = AddIntegerValue(result.coefficient, next.coefficient)
+			result.offset = AddIntegerValue(result.offset, next.offset)
+		}
+		return result, true
+	case Subtract:
+		left, leftOK := decomposeCompactIntegerAffineDividend(value.Left)
+		right, rightOK := decomposeCompactIntegerAffineDividend(value.Right)
+		if !leftOK || !rightOK || left.symbol && right.symbol && left.id != right.id {
+			return compactIntegerAffineDividend{}, false
+		}
+		if !left.symbol && right.symbol {
+			left.id, left.symbol = right.id, true
+		}
+		left.coefficient = AddIntegerValue(left.coefficient, NegateIntegerValue(right.coefficient))
+		left.offset = AddIntegerValue(left.offset, NegateIntegerValue(right.offset))
+		return left, true
+	default:
+		return compactIntegerAffineDividend{}, false
+	}
 }
 
 type compactDivModSymbol struct {
@@ -165,7 +215,10 @@ func solveCompactIntegerDivModValues(equalities []IntegerLinearEquality, relatio
 		if symbol == nil || !symbol.assigned {
 			return checkOutcome{}, false
 		}
-		dividend := MultiplyIntegerValue(relation.DividendCoefficient, symbol.value)
+		dividend := AddIntegerValue(
+			MultiplyIntegerValue(relation.DividendCoefficient, symbol.value),
+			relation.DividendOffset,
+		)
 		quotient, remainder, valid := DivModIntegerValue(dividend, relation.Divisor)
 		actual := quotient
 		if relation.Remainder {

@@ -98,12 +98,28 @@ func rationalScaledIntegerReal(
 		return nil, IntegerValue{}, false
 	}
 	value, valueOK := decomposeIntegerAffineReal(scale.Value)
-	if !valueOK || value.integer == nil || value.offset.Sign() != 0 {
+	if !valueOK || value.integer == nil {
 		return nil, IntegerValue{}, false
 	}
-	numerator := RationalNumerator(scale.Coefficient)
-	denominator := RationalDenominator(scale.Coefficient)
-	return ScaleInteger(numerator, value.integer), denominator, true
+	coefficientNumerator := RationalNumerator(scale.Coefficient)
+	coefficientDenominator := RationalDenominator(scale.Coefficient)
+	scaledOffset := MultiplyRational(scale.Coefficient, value.offset)
+	offsetNumerator := RationalNumerator(scaledOffset)
+	offsetDenominator := RationalDenominator(scaledOffset)
+
+	numerator := ScaleInteger(
+		MultiplyIntegerValue(coefficientNumerator, offsetDenominator),
+		value.integer,
+	)
+	constant := MultiplyIntegerValue(offsetNumerator, coefficientDenominator)
+	if CompareIntegerValue(constant, IntegerValue{}) != 0 {
+		numerator = addAffineIntegerTerms(numerator, IntegerTerm(constant))
+	}
+	denominator := MultiplyIntegerValue(
+		coefficientDenominator,
+		offsetDenominator,
+	)
+	return numerator, denominator, true
 }
 
 func floorRationalScaledIntegerReal(term Term[RealSort]) (Term[IntSort], bool) {

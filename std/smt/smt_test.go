@@ -286,6 +286,19 @@ func TestIntegerEuclideanDivisionAndModulo(t *testing.T) {
 	if value, found := IntegerModelValue(scaledResult.Value, x); !found || CompareIntegerValue(value, NewIntegerValue(7)) != 0 {
 		t.Fatalf("scaled div/mod x=(%v,%v)", value, found)
 	}
+	affineDividend := Add{Values: []Term[IntSort]{
+		ScaleInteger(NewIntegerValue(3), x),
+		Integer{Value: 5},
+	}}
+	affineRelation, affineOK := CompactIntegerDivModEquality(
+		DivInteger(affineDividend, NewIntegerValue(2)),
+		Integer{Value: 13},
+	)
+	if !affineOK ||
+		CompareIntegerValue(affineRelation.DividendCoefficient, NewIntegerValue(3)) != 0 ||
+		CompareIntegerValue(affineRelation.DividendOffset, NewIntegerValue(5)) != 0 {
+		t.Fatal("affine div relation did not compact")
+	}
 }
 
 func TestIntegerDifferenceLogicSatModel(t *testing.T) {
@@ -1974,6 +1987,33 @@ func TestRationalScaledIntegerRealCoercions(t *testing.T) {
 	}}
 	if result := Check(Assert(3, New(), negativeFractional)); func() bool { _, ok := result.(Satisfiable); return ok }() == false {
 		t.Fatalf("negative fractional result=%T", result)
+	}
+	affineScaled := RealScale{
+		Coefficient: NewRational(3, 2),
+		Value: RealAdd{Values: []Term[RealSort]{
+			IntToReal(x),
+			Real{Value: NewRational(1, 4)},
+		}},
+	}
+	affineFractional := And{Values: []Term[BoolSort]{
+		Equal{Left: x, Right: Integer{Value: 7}},
+		Equal{Left: RealToInt(affineScaled), Right: Integer{Value: 10}},
+		Not{Value: RealIsInt(affineScaled)},
+	}}
+	if result := Check(Assert(4, New(), affineFractional)); func() bool { _, ok := result.(Satisfiable); return ok }() == false {
+		t.Fatalf("affine fractional result=%T", result)
+	}
+	negativeAffineScaled := RealScale{
+		Coefficient: NewRational(-3, 2),
+		Value:       affineScaled.Value,
+	}
+	negativeAffine := And{Values: []Term[BoolSort]{
+		Equal{Left: x, Right: Integer{Value: 7}},
+		Equal{Left: RealToInt(negativeAffineScaled), Right: Integer{Value: -11}},
+		Not{Value: RealIsInt(negativeAffineScaled)},
+	}}
+	if result := Check(Assert(5, New(), negativeAffine)); func() bool { _, ok := result.(Satisfiable); return ok }() == false {
+		t.Fatalf("negative affine result=%T", result)
 	}
 }
 

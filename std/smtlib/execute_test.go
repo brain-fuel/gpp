@@ -2099,6 +2099,12 @@ func TestExecuteRationalScaledIntegerRealCoercions(t *testing.T) {
 (assert (= (to_int (* 1.5 (to_real x))) 12))
 (assert (is_int (* 1.5 (to_real x))))
 (check-sat)`,
+		`(set-logic QF_LIRA)
+(declare-const x Int)
+(assert (= x 7))
+(assert (= (to_int (* 1.5 (+ (to_real x) 0.25))) 10))
+(assert (not (is_int (* 1.5 (+ (to_real x) 0.25)))))
+(check-sat)`,
 	} {
 		result, ok := Execute(source).(Executed)
 		if !ok {
