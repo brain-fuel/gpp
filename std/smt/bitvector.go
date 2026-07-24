@@ -670,6 +670,64 @@ func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome,
 		}
 		assignmentCount++
 	}
+	// For two distinct unconstrained operands, fp.add(result, signed-zero)
+	// provides a canonical preimage for every ordinary result. Validate the
+	// candidate through the exact arithmetic kernel before committing it so
+	// NaN payload behavior and signed-zero rules remain format- and
+	// mode-correct.
+	for _, relation := range problem.adds[:problem.addCount] {
+		leftFound, rightFound := false, false
+		for index := 0; index < assignmentCount; index++ {
+			leftFound = leftFound ||
+				assignments[index].id == relation.LeftSymbolID
+			rightFound = rightFound ||
+				assignments[index].id == relation.RightSymbolID
+		}
+		if leftFound || rightFound || relation.Negated {
+			continue
+		}
+		if relation.LeftSymbolID == relation.RightSymbolID {
+			return checkOutcome{}, false
+		}
+		total := relation.ExponentBits + relation.SignificandBits
+		if relation.Value.Width() != total ||
+			assignmentCount+2 > len(assignments) {
+			return checkOutcome{}, false
+		}
+		left := FloatingPointFromBits(
+			relation.ExponentBits, relation.SignificandBits, relation.Value,
+		)
+		zeros := [2]FloatingPointValue{
+			FloatingPointPositiveZero(
+				relation.ExponentBits, relation.SignificandBits,
+			),
+			FloatingPointNegativeZero(
+				relation.ExponentBits, relation.SignificandBits,
+			),
+		}
+		var right BitVectorValue
+		found := false
+		for _, zero := range zeros {
+			sum := floatingPointAdd(relation.Mode, left, zero)
+			if EqualBitVectorValue(FloatingPointBits(sum), relation.Value) {
+				right = FloatingPointBits(zero)
+				found = true
+				break
+			}
+		}
+		if !found {
+			return checkOutcome{}, false
+		}
+		fixed := NotBitVectorValue(NewBitVectorUint64(total, 0))
+		assignments[assignmentCount] = compactBitVectorAssignment{
+			id: relation.LeftSymbolID, value: relation.Value, fixed: fixed,
+		}
+		assignmentCount++
+		assignments[assignmentCount] = compactBitVectorAssignment{
+			id: relation.RightSymbolID, value: right, fixed: fixed,
+		}
+		assignmentCount++
+	}
 	// Width-changing extract relations can constrain a symbol without first
 	// assigning its entire source value. Synthesize a deterministic source
 	// pattern directly so common classification workloads stay on the compact

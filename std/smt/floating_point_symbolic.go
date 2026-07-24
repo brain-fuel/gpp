@@ -163,7 +163,8 @@ type FloatingPointToRealRealTerm struct {
 }
 
 // FloatingPointAddRelation constrains the exact rounded IEEE bits of fp.add
-// over two assigned same-format symbols.
+// over two same-format symbols. Distinct unconstrained operands can use a
+// validated result-plus-signed-zero canonical model.
 type FloatingPointAddRelation struct {
 	ExponentBits    int
 	SignificandBits int
