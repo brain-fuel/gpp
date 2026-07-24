@@ -207,6 +207,100 @@ func TestNonlinearIntegerDisequalityEscapeAndConflict(t *testing.T) {
 	}
 }
 
+func TestNonlinearIntegerSelfSquareBounds(t *testing.T) {
+	x := IntSymbol{ID: 107, Name: "x"}
+	square := MultiplyInteger(x, x)
+	interval := And{Values: []Term[BoolSort]{
+		LessEqual{
+			Left: IntegerTerm(NewIntegerValue(80)), Right: square,
+		},
+		LessEqual{
+			Left: square, Right: IntegerTerm(NewIntegerValue(100)),
+		},
+	}}
+	checked := Check(Assert(1, New(), interval))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("square interval=%#v", checked)
+	}
+	value, found := IntegerModelValue(result.Value, x)
+	squared := MultiplyIntegerValue(value, value)
+	if !found ||
+		CompareIntegerValue(squared, NewIntegerValue(80)) < 0 ||
+		CompareIntegerValue(squared, NewIntegerValue(100)) > 0 {
+		t.Fatalf("square interval model=%v/%v", value, found)
+	}
+
+	contradiction := And{Values: []Term[BoolSort]{
+		LessEqual{
+			Left: IntegerTerm(NewIntegerValue(10)), Right: square,
+		},
+		LessEqual{
+			Left: square, Right: IntegerTerm(NewIntegerValue(8)),
+		},
+	}}
+	contradictionResult := Check(Assert(2, New(), contradiction))
+	if _, ok := contradictionResult.(Unsatisfiable); !ok {
+		t.Fatalf("square contradiction=%#v", contradictionResult)
+	}
+
+	negativeUpper := Less{
+		Left: square, Right: IntegerTerm(IntegerValue{}),
+	}
+	negativeResult := Check(Assert(3, New(), negativeUpper))
+	if _, ok := negativeResult.(Unsatisfiable); !ok {
+		t.Fatalf("negative strict upper bound=%#v", negativeResult)
+	}
+
+	negated := Not{Value: LessEqual{
+		Left: square, Right: IntegerTerm(NewIntegerValue(8)),
+	}}
+	checked = Check(Assert(4, New(), negated))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("negated square bound=%#v", checked)
+	}
+	value, found = IntegerModelValue(result.Value, x)
+	if !found || CompareIntegerValue(
+		MultiplyIntegerValue(value, value), NewIntegerValue(8),
+	) <= 0 {
+		t.Fatalf("negated square model=%v/%v", value, found)
+	}
+
+	outsideEnumeration := And{Values: []Term[BoolSort]{
+		LessEqual{
+			Left: IntegerTerm(NewIntegerValue(10001)), Right: square,
+		},
+		LessEqual{
+			Left: square, Right: IntegerTerm(NewIntegerValue(10000)),
+		},
+	}}
+	largeResult := Check(Assert(5, New(), outsideEnumeration))
+	if _, ok := largeResult.(Unknown); !ok {
+		t.Fatalf("large incomplete square domain=%#v", largeResult)
+	}
+
+	wideSquare, err := ParseIntegerValue("1267650600228229401496703205376")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wideInterval := And{Values: []Term[BoolSort]{
+		LessEqual{Left: IntegerTerm(wideSquare), Right: square},
+		LessEqual{Left: square, Right: IntegerTerm(wideSquare)},
+	}}
+	checked = Check(Assert(6, New(), wideInterval))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("wide exact square=%#v", checked)
+	}
+	value, found = IntegerModelValue(result.Value, x)
+	if !found || CompareIntegerValue(
+		MultiplyIntegerValue(value, value), wideSquare,
+	) != 0 {
+		t.Fatalf("wide square model=%v/%v", value, found)
+	}
+}
+
 func TestLinearIntegerArithmeticIntegralityUnsat(t *testing.T) {
 	x := IntSymbol{ID: 1, Name: "x"}
 	twoX := ScaleInteger(NewIntegerValue(2), x)

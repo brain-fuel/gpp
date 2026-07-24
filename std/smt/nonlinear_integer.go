@@ -1,5 +1,7 @@
 package smt
 
+import "math"
+
 const (
 	nonlinearIntegerSymbolLimit    = 8
 	nonlinearIntegerRelationLimit  = 8
@@ -37,6 +39,27 @@ type IntegerProductSystem struct {
 
 func (IntegerProductSystem) isTerm(BoolSort) {}
 
+// IntegerSquareBound represents x² <(=) k when Lower is false and
+// k <(=) x² when Lower is true.
+type IntegerSquareBound struct {
+	SymbolID int
+	Bound    IntegerValue
+	Lower    bool
+	Strict   bool
+}
+
+func (IntegerSquareBound) isTerm(BoolSort) {}
+
+// IntegerSquareSystem is an allocation-free conjunction of self-square
+// bounds for the bounded nonlinear integer fragment.
+type IntegerSquareSystem struct {
+	Count    int
+	Inline   [4]IntegerSquareBound
+	Overflow []IntegerSquareBound
+}
+
+func (IntegerSquareSystem) isTerm(BoolSort) {}
+
 type nonlinearIntegerCandidates struct {
 	count  int
 	values [nonlinearIntegerCandidateLimit]IntegerValue
@@ -63,6 +86,8 @@ type nonlinearIntegerProblem struct {
 	domainComplete [nonlinearIntegerSymbolLimit]bool
 	relationCount  int
 	relations      [nonlinearIntegerRelationLimit]nonlinearIntegerProductRelation
+	boundCount     int
+	bounds         [nonlinearIntegerRelationLimit]IntegerSquareBound
 	impossible     bool
 }
 
@@ -75,7 +100,7 @@ func solveNonlinearIntegerAssertions(
 			return checkOutcome{}, false
 		}
 	}
-	if problem.relationCount == 0 {
+	if problem.relationCount == 0 && problem.boundCount == 0 {
 		return checkOutcome{}, false
 	}
 	if problem.impossible {
@@ -139,6 +164,14 @@ func (problem *nonlinearIntegerProblem) boolean(
 		return problem.boolean(value.Value, !negated)
 	case Equal:
 		return problem.equality(value.Left, value.Right, negated)
+	case Less:
+		return problem.squareComparison(
+			value.Left, value.Right, true, negated,
+		)
+	case LessEqual:
+		return problem.squareComparison(
+			value.Left, value.Right, false, negated,
+		)
 	case IntegerProductRelation:
 		value.Negated = value.Negated != negated
 		return problem.addRelation(value)
@@ -158,9 +191,138 @@ func (problem *nonlinearIntegerProblem) boolean(
 			}
 		}
 		return true
+	case IntegerSquareBound:
+		if negated {
+			value.Lower = !value.Lower
+			value.Strict = !value.Strict
+		}
+		return problem.addSquareBound(value)
+	case IntegerSquareSystem:
+		if negated || value.Count < 0 {
+			return false
+		}
+		bounds := value.Overflow
+		if value.Count <= len(value.Inline) {
+			bounds = value.Inline[:value.Count]
+		} else if len(bounds) != value.Count {
+			return false
+		}
+		for _, bound := range bounds {
+			if !problem.addSquareBound(bound) {
+				return false
+			}
+		}
+		return true
 	default:
 		return false
 	}
+}
+
+func (problem *nonlinearIntegerProblem) squareComparison(
+	left, right Term[IntSort], strict, negated bool,
+) bool {
+	product, target, ok := nonlinearIntegerProductEquality(left, right)
+	lower := false
+	if !ok {
+		product, target, ok = nonlinearIntegerProductEquality(right, left)
+		lower = true
+	}
+	if !ok {
+		return false
+	}
+	leftID, leftOK := directIntegerSymbolID(product.Left)
+	rightID, rightOK := directIntegerSymbolID(product.Right)
+	if !leftOK || !rightOK || leftID != rightID {
+		return false
+	}
+	if negated {
+		lower = !lower
+		strict = !strict
+	}
+	return problem.addSquareBound(IntegerSquareBound{
+		SymbolID: leftID, Bound: target, Lower: lower, Strict: strict,
+	})
+}
+
+func (problem *nonlinearIntegerProblem) addSquareBound(
+	bound IntegerSquareBound,
+) bool {
+	if problem.boundCount == len(problem.bounds) {
+		return false
+	}
+	position, added := problem.ensureSymbol(bound.SymbolID)
+	if !added {
+		return false
+	}
+	zero := IntegerValue{}
+	if bound.Lower {
+		minimum := zero
+		if CompareIntegerValue(bound.Bound, zero) >= 0 {
+			root := integerSquareRoot(bound.Bound)
+			exact := CompareIntegerValue(
+				MultiplyIntegerValue(root, root), bound.Bound,
+			) == 0
+			minimum = root
+			if bound.Strict || !exact {
+				minimum = AddIntegerValue(minimum, NewIntegerValue(1))
+			}
+		}
+		problem.candidates[position].add(minimum)
+		problem.candidates[position].add(NegateIntegerValue(minimum))
+	} else {
+		if CompareIntegerValue(bound.Bound, zero) < 0 ||
+			bound.Strict && CompareIntegerValue(bound.Bound, zero) == 0 {
+			problem.impossible = true
+		} else {
+			maximum := integerSquareRoot(bound.Bound)
+			if bound.Strict && CompareIntegerValue(
+				MultiplyIntegerValue(maximum, maximum), bound.Bound,
+			) == 0 {
+				maximum = AddIntegerValue(maximum, NewIntegerValue(-1))
+			}
+			complete := problem.addSquareRange(position, maximum)
+			problem.domainComplete[position] =
+				problem.domainComplete[position] || complete
+		}
+	}
+	problem.bounds[problem.boundCount] = bound
+	problem.boundCount++
+	return true
+}
+
+func integerSquareRoot(value IntegerValue) IntegerValue {
+	if inline, ok := value.Int64(); ok && inline >= 0 {
+		root := int64(math.Sqrt(float64(inline)))
+		for root < inline && root+1 <= inline/(root+1) {
+			root++
+		}
+		for root > 0 && root > inline/root {
+			root--
+		}
+		return NewIntegerValue(root)
+	}
+	root := value.big()
+	root.Sqrt(root)
+	return integerValueFromBig(root)
+}
+
+func (problem *nonlinearIntegerProblem) addSquareRange(
+	position int, maximum IntegerValue,
+) bool {
+	inline, ok := maximum.Int64()
+	if !ok || inline < 0 ||
+		inline > (nonlinearIntegerCandidateLimit-1)/2 {
+		problem.candidates[position].add(IntegerValue{})
+		problem.candidates[position].add(maximum)
+		problem.candidates[position].add(NegateIntegerValue(maximum))
+		return false
+	}
+	for candidate := -inline; candidate <= inline; candidate++ {
+		if !problem.candidates[position].add(NewIntegerValue(candidate)) {
+			return false
+		}
+	}
+	return true
 }
 
 func (problem *nonlinearIntegerProblem) equality(
@@ -405,6 +567,29 @@ func (problem *nonlinearIntegerProblem) valid(
 			relation.target,
 		) == 0
 		if holds == relation.negated {
+			return false
+		}
+	}
+	for _, bound := range problem.bounds[:problem.boundCount] {
+		position := problem.symbolPosition(bound.SymbolID)
+		if position < 0 || !assigned[position] {
+			continue
+		}
+		comparison := CompareIntegerValue(
+			MultiplyIntegerValue(values[position], values[position]),
+			bound.Bound,
+		)
+		holds := comparison <= 0
+		if bound.Strict {
+			holds = comparison < 0
+		}
+		if bound.Lower {
+			holds = comparison >= 0
+			if bound.Strict {
+				holds = comparison > 0
+			}
+		}
+		if !holds {
 			return false
 		}
 	}

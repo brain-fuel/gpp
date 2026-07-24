@@ -819,6 +819,48 @@ func TestExecuteNonlinearIntegerArithmetic(t *testing.T) {
 	}
 }
 
+func TestExecuteNonlinearIntegerSquareBounds(t *testing.T) {
+	script := `(set-logic QF_NIA)
+(declare-const x Int)
+(assert (<= 80 (* x x)))
+(assert (<= (* x x) 100))
+(check-sat)
+(get-value (x (* x x)))`
+	result := Execute(script).(Executed)
+	if _, ok := result.Responses[4].(Satisfiable); !ok {
+		t.Fatalf("square interval=%T", result.Responses[4])
+	}
+	values := result.Responses[5].(ValuesAvailable)
+	square := values.Values[1].(IntegerValue).Value
+	if square < 80 || square > 100 {
+		t.Fatalf("square model=%d", square)
+	}
+
+	contradiction := `(set-logic QF_NIA)
+(declare-const x Int)
+(assert (<= 10 (* x x)))
+(assert (<= (* x x) 8))
+(check-sat)`
+	unsat := Execute(contradiction).(Executed)
+	if _, ok := unsat.Responses[4].(Unsatisfiable); !ok {
+		t.Fatalf("square contradiction=%T", unsat.Responses[4])
+	}
+
+	negated := `(set-logic QF_NIA)
+(declare-const x Int)
+(assert (not (<= (* x x) 8)))
+(check-sat)
+(get-value ((* x x)))`
+	negatedResult := Execute(negated).(Executed)
+	if _, ok := negatedResult.Responses[3].(Satisfiable); !ok {
+		t.Fatalf("negated square=%T", negatedResult.Responses[3])
+	}
+	negatedValues := negatedResult.Responses[4].(ValuesAvailable)
+	if negatedValues.Values[0].(IntegerValue).Value <= 8 {
+		t.Fatalf("negated square model=%#v", negatedValues)
+	}
+}
+
 func TestExecuteBooleanLinearIntegerArithmetic(t *testing.T) {
 	script := `(set-logic QF_LIA)
 (declare-const x Int)

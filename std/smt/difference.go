@@ -110,7 +110,7 @@ func containsIntegerTheory(term Term[BoolSort]) bool {
 		return true
 	case IntegerLinearEquality, IntegerLinearDisequality, IntegerLinearChoice, integerLinearStrictBound, IntegerDivModRelation, IntegerDivModSystem:
 		return true
-	case IntegerProductRelation, IntegerProductSystem:
+	case IntegerProductRelation, IntegerProductSystem, IntegerSquareBound, IntegerSquareSystem:
 		return true
 	case IntegerUnaryComparison, IntegerBinaryComparison, IntegerTernaryComparison:
 		return true
