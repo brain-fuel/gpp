@@ -1105,6 +1105,78 @@ func TestFloatingPointFromRealRelation(t *testing.T) {
 	}
 }
 
+func TestFloatingPointFromRealRelationSynthesizesSource(t *testing.T) {
+	tests := []struct {
+		name       string
+		mode       FloatingPointRoundingMode
+		bits       uint64
+		wantStatus uint8
+	}{
+		{"finite", RoundNearestTiesToEven(), 0xc0400000, 1},
+		{"positive zero", RoundNearestTiesToEven(), 0x00000000, 1},
+		{"negative zero nearest", RoundNearestTiesToEven(), 0x80000000, 1},
+		{"negative zero positive", RoundTowardPositive(), 0x80000000, 1},
+		{"negative zero negative impossible", RoundTowardNegative(), 0x80000000, 2},
+		{"positive infinity nearest", RoundNearestTiesToAway(), 0x7f800000, 1},
+		{"positive infinity positive", RoundTowardPositive(), 0x7f800000, 1},
+		{"positive infinity negative impossible", RoundTowardNegative(), 0x7f800000, 2},
+		{"negative infinity nearest", RoundNearestTiesToEven(), 0xff800000, 1},
+		{"negative infinity negative", RoundTowardNegative(), 0xff800000, 1},
+		{"negative infinity positive impossible", RoundTowardPositive(), 0xff800000, 2},
+		{"infinity toward zero impossible", RoundTowardZero(), 0x7f800000, 2},
+		{"nan impossible", RoundNearestTiesToEven(), 0x7fc00000, 2},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			relation := NewFloatingPointFromRealRelation(
+				8, 24, 1, test.mode,
+				NewBitVectorUint64(32, test.bits),
+			)
+			result := Check(AssertFloatingPointFromRealRelation(
+				1, New(), relation,
+			))
+			if test.wantStatus == 2 {
+				if _, ok := result.(Unsatisfiable); !ok {
+					t.Fatalf("result=%T, want unsatisfiable", result)
+				}
+				return
+			}
+			sat, ok := result.(Satisfiable)
+			if !ok {
+				t.Fatalf("result=%T, want satisfiable", result)
+			}
+			source, found := RealSymbolModelValue(sat.Value, 1)
+			if !found {
+				t.Fatal("synthesized Real source missing from model")
+			}
+			converted := FloatingPointFromRational(8, 24, test.mode, source)
+			if !EqualBitVectorValue(
+				FloatingPointBits(converted), relation.Value,
+			) {
+				t.Fatalf("source %s does not reproduce %#x", source, test.bits)
+			}
+		})
+	}
+}
+
+func TestFloatingPointFromRealRelationSynthesizesBinary128Source(t *testing.T) {
+	target := FloatingPointFromRational(
+		15, 113, RoundNearestTiesToEven(), NewRational(-3, 2),
+	)
+	relation := NewFloatingPointFromRealRelation(
+		15, 113, 1, RoundNearestTiesToEven(), FloatingPointBits(target),
+	)
+	result := Check(AssertFloatingPointFromRealRelation(1, New(), relation))
+	sat, ok := result.(Satisfiable)
+	if !ok {
+		t.Fatalf("result=%T", result)
+	}
+	source, found := RealSymbolModelValue(sat.Value, 1)
+	if !found || CompareRational(source, NewRational(-3, 2)) != 0 {
+		t.Fatalf("source=%s found=%v", source, found)
+	}
+}
+
 func TestFloatingPointToRational(t *testing.T) {
 	tests := []struct {
 		bits  uint64

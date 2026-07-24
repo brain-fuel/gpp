@@ -1,7 +1,9 @@
 package smt
 
-// FloatingPointFromRealRelation constrains conversion of one directly assigned
-// exact Real symbol to a concrete target IEEE bit pattern.
+// FloatingPointFromRealRelation constrains conversion of one exact Real symbol
+// to a concrete target IEEE bit pattern. A symbol without an independent Real
+// assignment may be synthesized when the target has a validated compact
+// preimage.
 type FloatingPointFromRealRelation struct {
 	ExponentBits    int
 	SignificandBits int
@@ -100,7 +102,7 @@ func solveCompactRealToFloatingPointAssertions(
 			return checkOutcome{}, false
 		}
 	}
-	if relationCount == 0 || realCount == 0 {
+	if relationCount == 0 {
 		return checkOutcome{}, false
 	}
 	outcome := checkOutcome{status: checkSat}
@@ -117,11 +119,43 @@ func solveCompactRealToFloatingPointAssertions(
 		}
 		outcome.reals.set(symbolID, value)
 	}
-	if !direct {
+	if realCount != 0 && !direct {
 		var recognized bool
 		outcome, recognized = solveLinearRealAssertions(realTerms[:realCount])
 		if !recognized || outcome.status != checkSat {
 			return outcome, recognized
+		}
+	}
+	for relationIndex := 0; relationIndex < relationCount; relationIndex++ {
+		relation := relations[relationIndex]
+		if _, found := outcome.reals.lookup(relation.SymbolID); found {
+			continue
+		}
+		synthesized := false
+		for candidateIndex := 0; candidateIndex < relationCount; candidateIndex++ {
+			candidateRelation := relations[candidateIndex]
+			if candidateRelation.SymbolID != relation.SymbolID ||
+				candidateRelation.Negated {
+				continue
+			}
+			candidate, available, impossible :=
+				synthesizeFloatingPointFromRealPreimage(candidateRelation)
+			if impossible {
+				return checkOutcome{status: checkUnsat}, true
+			}
+			if !available ||
+				!floatingPointFromRealCandidateSatisfies(
+					candidate, relations[:relationCount],
+					relation.SymbolID,
+				) {
+				continue
+			}
+			outcome.reals.set(relation.SymbolID, candidate)
+			synthesized = true
+			break
+		}
+		if !synthesized {
+			return checkOutcome{}, false
 		}
 	}
 	for _, relation := range relations[:relationCount] {
@@ -141,6 +175,90 @@ func solveCompactRealToFloatingPointAssertions(
 		}
 	}
 	return outcome, true
+}
+
+func synthesizeFloatingPointFromRealPreimage(
+	relation FloatingPointFromRealRelation,
+) (Rational, bool, bool) {
+	target := FloatingPointFromBits(
+		relation.ExponentBits, relation.SignificandBits, relation.Value,
+	)
+	if FloatingPointIsNaN(target) {
+		return Rational{}, false, true
+	}
+	validate := func(candidate Rational) (Rational, bool, bool) {
+		converted := floatingPointFromRational(
+			relation.Mode, relation.ExponentBits,
+			relation.SignificandBits, candidate,
+		)
+		if EqualBitVectorValue(FloatingPointBits(converted), relation.Value) {
+			return candidate, true, false
+		}
+		return Rational{}, false, false
+	}
+	if finite, exact := floatingPointToRational(target); exact {
+		if !FloatingPointIsZero(target) || !FloatingPointIsNegative(target) {
+			return validate(finite)
+		}
+		if relation.Mode == 4 {
+			return Rational{}, false, true
+		}
+		minimum, _ := floatingPointToRational(FloatingPointFromBits(
+			relation.ExponentBits, relation.SignificandBits,
+			NewBitVectorUint64(
+				relation.ExponentBits+relation.SignificandBits, 1,
+			),
+		))
+		return validate(NegateRational(DivideRational(
+			minimum, NewRational(4, 1),
+		)))
+	}
+	negative := FloatingPointIsNegative(target)
+	if relation.Mode == 5 ||
+		(!negative && relation.Mode == 4) ||
+		(negative && relation.Mode == 3) {
+		return Rational{}, false, true
+	}
+	positiveInfinity := FloatingPointPositiveInfinity(
+		relation.ExponentBits, relation.SignificandBits,
+	)
+	maximumBits := SubBitVectorValue(
+		FloatingPointBits(positiveInfinity),
+		NewBitVectorUint64(
+			relation.ExponentBits+relation.SignificandBits, 1,
+		),
+	)
+	maximum, _ := floatingPointToRational(FloatingPointFromBits(
+		relation.ExponentBits, relation.SignificandBits, maximumBits,
+	))
+	candidate := MultiplyRational(maximum, NewRational(2, 1))
+	if negative {
+		candidate = NegateRational(candidate)
+	}
+	return validate(candidate)
+}
+
+func floatingPointFromRealCandidateSatisfies(
+	candidate Rational,
+	relations []FloatingPointFromRealRelation,
+	symbolID int,
+) bool {
+	for _, relation := range relations {
+		if relation.SymbolID != symbolID {
+			continue
+		}
+		converted := floatingPointFromRational(
+			relation.Mode, relation.ExponentBits,
+			relation.SignificandBits, candidate,
+		)
+		holds := EqualBitVectorValue(
+			FloatingPointBits(converted), relation.Value,
+		)
+		if holds == relation.Negated {
+			return false
+		}
+	}
+	return true
 }
 
 func floatingPointDirectRealAssignment(

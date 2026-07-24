@@ -3288,6 +3288,46 @@ func TestExecuteSymbolicFloatingPointFromReal(t *testing.T) {
 	}
 }
 
+func TestExecuteUnconstrainedFloatingPointFromReal(t *testing.T) {
+	script := `(set-logic ALL)
+(declare-const x Real)
+(assert (= (fp.to_ieee_bv ((_ to_fp 8 24) RNE x)) #xc0400000))
+(check-sat)`
+	fast, recognized := executeFloatingPointFast(script)
+	if !recognized {
+		t.Fatal("unconstrained Real-to-FP did not use streaming execution")
+	}
+	result, ok := fast.(Executed)
+	if !ok {
+		t.Fatalf("streaming execution=%#v", fast)
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+		t.Fatalf("streaming result=%#v", result)
+	}
+	parsed, ok := Parse(script).(Parsed)
+	if !ok {
+		t.Fatal("general parse failed")
+	}
+	responses, errors := executeCommands(parsed.Commands)
+	if len(errors) != 0 {
+		t.Fatalf("general execution errors=%#v", errors)
+	}
+	if _, ok := responses[len(responses)-1].(Satisfiable); !ok {
+		t.Fatalf("general result=%#v", responses)
+	}
+	impossible := `(set-logic ALL)
+(declare-const x Real)
+(assert (= (fp.to_ieee_bv ((_ to_fp 8 24) RTN x)) #x80000000))
+(check-sat)`
+	executed, ok := Execute(impossible).(Executed)
+	if !ok {
+		t.Fatalf("impossible execution=%#v", Execute(impossible))
+	}
+	if _, ok := executed.Responses[len(executed.Responses)-1].(Unsatisfiable); !ok {
+		t.Fatalf("impossible result=%#v", executed)
+	}
+}
+
 func TestStreamFloatingPointFromReal(t *testing.T) {
 	script := `(set-logic QF_FP)
 (assert (= (fp.to_ieee_bv
@@ -4656,6 +4696,47 @@ func BenchmarkExecuteFloatingPointFromReal(b *testing.B) {
   ((_ to_fp 8 24) RNE 1.000000059604644775390625)) #x3f800000))
 (assert (= (fp.to_ieee_bv
   ((_ to_fp 8 24) RNA 1.000000059604644775390625)) #x3f800001))
+(check-sat)`
+	b.Run("stream", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			result, ok := Execute(script).(Executed)
+			if !ok {
+				b.Fatal("stream execution failed")
+			}
+			if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+	b.Run("general", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			parsed, ok := Parse(script).(Parsed)
+			if !ok {
+				b.Fatal("parse failed")
+			}
+			responses, errors := executeCommands(parsed.Commands)
+			if len(errors) != 0 {
+				b.Fatal("general executor rejected script")
+			}
+			if _, ok := responses[len(responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+}
+
+func BenchmarkExecuteUnconstrainedFloatingPointFromReal(b *testing.B) {
+	script := `(set-logic ALL)
+(declare-const half Real)
+(declare-const negative Real)
+(declare-const double Real)
+(declare-const quarter Real)
+(assert (= (fp.to_ieee_bv ((_ to_fp 8 24) RNE half)) #x3fc00000))
+(assert (= (fp.to_ieee_bv ((_ to_fp 8 24) RNA negative)) #xc0400000))
+(assert (= (fp.to_ieee_bv ((_ to_fp 8 24) RTZ double)) #x40000000))
+(assert (= (fp.to_ieee_bv ((_ to_fp 8 24) RTP quarter)) #x3e800000))
 (check-sat)`
 	b.Run("stream", func(b *testing.B) {
 		b.ReportAllocs()

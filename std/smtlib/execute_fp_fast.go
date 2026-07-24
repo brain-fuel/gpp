@@ -22,6 +22,7 @@ const (
 	fpFastRem
 	fpFastConvert
 	fpFastFromBV
+	fpFastFromReal
 	fpFastFormat
 	fpFastToReal
 	fpFastToRealAffine
@@ -198,6 +199,7 @@ const (
 	fpFastConversionBits
 	fpFastBitVectorSymbolBits
 	fpFastFromBVBits
+	fpFastFromRealBits
 	fpFastFormatBits
 	fpFastExactFloatingBits
 	fpFastLiteralBits
@@ -207,7 +209,8 @@ const (
 
 func executeFloatingPointFast(source string) (ExecutionResult, bool) {
 	if !strings.Contains(source, "QF_FP") &&
-		!strings.Contains(source, "fp.to_real") {
+		!strings.Contains(source, "fp.to_real") &&
+		!strings.Contains(source, "(_ to_fp") {
 		return nil, false
 	}
 	var commands [32]fpFastCommand
@@ -470,6 +473,17 @@ func executeFloatingPointFast(source string) (ExecutionResult, bool) {
 			)
 			relation.Negated = command.negated
 			solver = smt.AssertFloatingPointFromBitVectorRelation(
+				nextAssertion, solver, relation,
+			)
+			nextAssertion++
+			responses = append(responses, Acknowledged{CommandIndex: command.commandIndex})
+		case fpFastFromReal:
+			relation := smt.NewFloatingPointFromRealRelation(
+				command.exponentBits, command.significandBits,
+				command.symbolID, command.mode, command.value,
+			)
+			relation.Negated = command.negated
+			solver = smt.AssertFloatingPointFromRealRelation(
 				nextAssertion, solver, relation,
 			)
 			nextAssertion++
@@ -824,6 +838,8 @@ func (scanner *fpFastScanner) formula(
 		command.kind = fpFastAssign
 	case fpFastFromBVBits:
 		command.kind = fpFastFromBV
+	case fpFastFromRealBits:
+		command.kind = fpFastFromReal
 	case fpFastFormatBits:
 		command.kind = fpFastFormat
 	default:
@@ -967,6 +983,16 @@ func (scanner *fpFastScanner) operand(
 					significandBits: significandBits,
 					mode:            mode,
 					signed:          scanner.text(name) == "to_fp",
+				}, true
+			}
+			if modeOK && symbolOK && modeFound && symbolFound &&
+				scanner.text(name) == "to_fp" && symbol.real &&
+				scanner.right() && scanner.right() {
+				return fpFastOperand{
+					kind: fpFastFromRealBits, symbolID: symbol.id,
+					exponentBits:    exponentBits,
+					significandBits: significandBits,
+					mode:            mode,
 				}, true
 			}
 			if modeOK && symbolOK && modeFound && symbolFound &&
