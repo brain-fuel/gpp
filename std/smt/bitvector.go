@@ -389,6 +389,7 @@ const (
 	compactFloatingIdentitySub
 	compactFloatingIdentityMul
 	compactFloatingIdentityDiv
+	compactFloatingIdentityRem
 )
 
 func synthesizeFloatingPointIdentity(
@@ -617,6 +618,51 @@ func synthesizeFloatingPointRemIdentity(
 	}
 	*assignmentCount++
 	return true, false
+}
+
+func synthesizeFloatingPointSelfOperation(
+	assignments *[4]compactBitVectorAssignment,
+	assignmentCount *int,
+	exponentBits, significandBits, symbolID int,
+	mode uint8,
+	value BitVectorValue,
+	operation uint8,
+) (bool, bool) {
+	total := exponentBits + significandBits
+	if value.Width() != total || *assignmentCount == len(assignments) {
+		return false, false
+	}
+	target := FloatingPointFromBits(exponentBits, significandBits, value)
+	one := floatingPointFromRational(
+		mode, exponentBits, significandBits, NewRational(1, 1),
+	)
+	negativeOne := floatingPointFromRational(
+		mode, exponentBits, significandBits, NewRational(-1, 1),
+	)
+	candidates := [3]FloatingPointValue{one, negativeOne, target}
+	for _, candidate := range candidates {
+		actual := floatingPointSub(mode, candidate, candidate)
+		switch operation {
+		case compactFloatingIdentityDiv:
+			actual = floatingPointDiv(mode, candidate, candidate)
+		case compactFloatingIdentityRem:
+			actual = floatingPointRem(candidate, candidate)
+		}
+		if !EqualBitVectorValue(FloatingPointBits(actual), value) {
+			continue
+		}
+		assignments[*assignmentCount] = compactBitVectorAssignment{
+			id: symbolID, value: FloatingPointBits(candidate),
+			fixed: NotBitVectorValue(NewBitVectorUint64(total, 0)),
+		}
+		*assignmentCount++
+		return true, false
+	}
+	// With one repeated operand, subtraction can only yield a signed zero or
+	// NaN; division can only yield +1 or NaN; and remainder can only yield a
+	// signed zero or NaN. Preserve unknown for a NaN payload that these
+	// canonical candidates did not reproduce exactly.
+	return false, !FloatingPointIsNaN(target)
 }
 
 func synthesizeFloatingPointToRealPreimage(
@@ -1630,6 +1676,21 @@ func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome,
 		if leftFound || rightFound || relation.Negated {
 			continue
 		}
+		if relation.LeftSymbolID == relation.RightSymbolID {
+			synthesized, impossible := synthesizeFloatingPointSelfOperation(
+				&assignments, &assignmentCount,
+				relation.ExponentBits, relation.SignificandBits,
+				relation.LeftSymbolID, 1, relation.Value,
+				compactFloatingIdentityRem,
+			)
+			if impossible {
+				return checkOutcome{status: checkUnsat}, true
+			}
+			if !synthesized {
+				return checkOutcome{}, false
+			}
+			continue
+		}
 		synthesized, impossible := synthesizeFloatingPointRemIdentity(
 			&assignments, &assignmentCount, relation,
 		)
@@ -1677,6 +1738,21 @@ func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome,
 		if leftFound || rightFound || relation.Negated {
 			continue
 		}
+		if relation.LeftSymbolID == relation.RightSymbolID {
+			synthesized, impossible := synthesizeFloatingPointSelfOperation(
+				&assignments, &assignmentCount,
+				relation.ExponentBits, relation.SignificandBits,
+				relation.LeftSymbolID, relation.Mode, relation.Value,
+				compactFloatingIdentitySub,
+			)
+			if impossible {
+				return checkOutcome{status: checkUnsat}, true
+			}
+			if !synthesized {
+				return checkOutcome{}, false
+			}
+			continue
+		}
 		if !synthesizeFloatingPointIdentity(
 			&assignments, &assignmentCount,
 			relation.ExponentBits, relation.SignificandBits,
@@ -1717,6 +1793,21 @@ func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome,
 				assignments[index].id == relation.RightSymbolID
 		}
 		if leftFound || rightFound || relation.Negated {
+			continue
+		}
+		if relation.LeftSymbolID == relation.RightSymbolID {
+			synthesized, impossible := synthesizeFloatingPointSelfOperation(
+				&assignments, &assignmentCount,
+				relation.ExponentBits, relation.SignificandBits,
+				relation.LeftSymbolID, relation.Mode, relation.Value,
+				compactFloatingIdentityDiv,
+			)
+			if impossible {
+				return checkOutcome{status: checkUnsat}, true
+			}
+			if !synthesized {
+				return checkOutcome{}, false
+			}
 			continue
 		}
 		if !synthesizeFloatingPointIdentity(

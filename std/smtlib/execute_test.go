@@ -2562,6 +2562,62 @@ func TestExecuteSharedFloatingPointEqualityGraph(t *testing.T) {
 	}
 }
 
+func TestExecuteRepeatedOperandFloatingPointImages(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		body    string
+		wantSat bool
+	}{
+		{
+			name: "canonical images",
+			body: `(assert (= (fp.to_ieee_bv (fp.sub RNE subSource subSource)) #x00000000))
+(assert (= (fp.to_ieee_bv (fp.div RNE divSource divSource)) #x3f800000))
+(assert (= (fp.to_ieee_bv (fp.rem remSource remSource)) #x00000000))`,
+			wantSat: true,
+		},
+		{
+			name: "outside subtraction image",
+			body: `(assert (= (fp.to_ieee_bv (fp.sub RNE subSource subSource)) #x3f800000))`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			script := `(set-logic QF_FP)
+(declare-const subSource (_ FloatingPoint 8 24))
+(declare-const divSource (_ FloatingPoint 8 24))
+(declare-const remSource (_ FloatingPoint 8 24))
+` + test.body + `
+(check-sat)`
+			fast, recognized := executeFloatingPointFast(script)
+			if !recognized {
+				t.Fatal("repeated operands missed streaming executor")
+			}
+			stream := fast.(Executed)
+			parsed, ok := Parse(script).(Parsed)
+			if !ok {
+				t.Fatal("general parse failed")
+			}
+			responses, errors := executeCommands(parsed.Commands)
+			if len(errors) != 0 {
+				t.Fatalf("general execution errors=%#v", errors)
+			}
+			for name, response := range map[string]Response{
+				"stream":  stream.Responses[len(stream.Responses)-1],
+				"general": responses[len(responses)-1],
+			} {
+				t.Run(name, func(t *testing.T) {
+					if test.wantSat {
+						if _, ok := response.(Satisfiable); !ok {
+							t.Fatalf("result=%#v", response)
+						}
+					} else if _, ok := response.(Unsatisfiable); !ok {
+						t.Fatalf("result=%#v", response)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestExecuteNestedGroundFloatingPointOrdering(t *testing.T) {
 	script := `(set-logic QF_FP)
 (assert (fp.gt
@@ -4101,6 +4157,45 @@ func BenchmarkExecuteSharedFloatingPointEqualityGraph(b *testing.B) {
 (assert (fp.eq x y))
 (assert (not (fp.eq y z)))
 (assert (not (fp.eq z z)))
+(check-sat)`
+	b.Run("stream", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			result, ok := Execute(script).(Executed)
+			if !ok {
+				b.Fatal("execution failed")
+			}
+			if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+	b.Run("general", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			parsed, ok := Parse(script).(Parsed)
+			if !ok {
+				b.Fatal("parse failed")
+			}
+			responses, errors := executeCommands(parsed.Commands)
+			if len(errors) != 0 {
+				b.Fatal("execution failed")
+			}
+			if _, ok := responses[len(responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+}
+
+func BenchmarkExecuteRepeatedOperandFloatingPointImages(b *testing.B) {
+	script := `(set-logic QF_FP)
+(declare-const subSource (_ FloatingPoint 8 24))
+(declare-const divSource (_ FloatingPoint 8 24))
+(declare-const remSource (_ FloatingPoint 8 24))
+(assert (= (fp.to_ieee_bv (fp.sub RNE subSource subSource)) #x00000000))
+(assert (= (fp.to_ieee_bv (fp.div RNE divSource divSource)) #x3f800000))
+(assert (= (fp.to_ieee_bv (fp.rem remSource remSource)) #x00000000))
 (check-sat)`
 	b.Run("stream", func(b *testing.B) {
 		b.ReportAllocs()

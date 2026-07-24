@@ -1144,6 +1144,111 @@ func TestSymbolicFloatingPointRemSynthesizesUnconstrainedOperands(t *testing.T) 
 	}
 }
 
+func TestRepeatedOperandFloatingPointImages(t *testing.T) {
+	const exponentBits, significandBits = 15, 113
+	modeValue := RoundTowardNegative()
+	mode := floatingPointRoundingModeCode(modeValue)
+	one := floatingPointFromRational(
+		mode, exponentBits, significandBits, NewRational(1, 1),
+	)
+	negativeOne := floatingPointFromRational(
+		mode, exponentBits, significandBits, NewRational(-1, 1),
+	)
+	for _, test := range []struct {
+		name   string
+		target FloatingPointValue
+		assert func(BitVectorValue) CheckResult
+		eval   func(FloatingPointValue) FloatingPointValue
+	}{
+		{
+			"subtract",
+			floatingPointSub(mode, one, one),
+			func(target BitVectorValue) CheckResult {
+				return Check(AssertFloatingPointSubRelation(
+					1, New(), NewFloatingPointSubRelation(
+						exponentBits, significandBits, 1, 1, modeValue, target,
+					),
+				))
+			},
+			func(value FloatingPointValue) FloatingPointValue {
+				return floatingPointSub(mode, value, value)
+			},
+		},
+		{
+			"divide",
+			floatingPointDiv(mode, one, one),
+			func(target BitVectorValue) CheckResult {
+				return Check(AssertFloatingPointDivRelation(
+					1, New(), NewFloatingPointDivRelation(
+						exponentBits, significandBits, 1, 1, modeValue, target,
+					),
+				))
+			},
+			func(value FloatingPointValue) FloatingPointValue {
+				return floatingPointDiv(mode, value, value)
+			},
+		},
+		{
+			"remainder-negative",
+			floatingPointRem(negativeOne, negativeOne),
+			func(target BitVectorValue) CheckResult {
+				return Check(AssertFloatingPointRemRelation(
+					1, New(), NewFloatingPointRemRelation(
+						exponentBits, significandBits, 1, 1, target,
+					),
+				))
+			},
+			func(value FloatingPointValue) FloatingPointValue {
+				return floatingPointRem(value, value)
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			target := FloatingPointBits(test.target)
+			result, ok := test.assert(target).(Satisfiable)
+			if !ok {
+				t.Fatal("expected repeated-operand image model")
+			}
+			bits, found := FloatingPointSymbolModelBits(result.Value, 1)
+			if !found || bits.Width() != 128 {
+				t.Fatal("repeated-operand model is incomplete")
+			}
+			actual := test.eval(FloatingPointFromBits(
+				exponentBits, significandBits, bits,
+			))
+			if !EqualBitVectorValue(FloatingPointBits(actual), target) {
+				t.Fatal("repeated-operand model does not reproduce target")
+			}
+		})
+	}
+}
+
+func TestRepeatedOperandFloatingPointRejectsOutsideImages(t *testing.T) {
+	one := FloatingPointBits(floatingPointFromRational(
+		1, 8, 24, NewRational(1, 1),
+	))
+	zero := FloatingPointBits(FloatingPointPositiveZero(8, 24))
+	if _, ok := Check(AssertFloatingPointSubRelation(
+		1, New(), NewFloatingPointSubRelation(
+			8, 24, 1, 1, RoundNearestTiesToEven(), one,
+		),
+	)).(Unsatisfiable); !ok {
+		t.Fatal("x-x cannot equal one")
+	}
+	if _, ok := Check(AssertFloatingPointDivRelation(
+		1, New(), NewFloatingPointDivRelation(
+			8, 24, 1, 1, RoundNearestTiesToEven(), zero,
+		),
+	)).(Unsatisfiable); !ok {
+		t.Fatal("x/x cannot equal zero")
+	}
+	if _, ok := Check(AssertFloatingPointRemRelation(
+		1, New(), NewFloatingPointRemRelation(8, 24, 1, 1, one),
+	)).(Unsatisfiable); !ok {
+		t.Fatal("rem x x cannot equal one")
+	}
+}
+
 func TestSymbolicFloatingPointRemRejectsInfiniteResult(t *testing.T) {
 	for _, target := range []uint64{0x7f800000, 0xff800000} {
 		relation := NewFloatingPointRemRelation(
