@@ -170,6 +170,43 @@ func TestNonlinearIntegerSelfSquareImage(t *testing.T) {
 	}
 }
 
+func TestNonlinearIntegerDisequalityEscapeAndConflict(t *testing.T) {
+	x := IntSymbol{ID: 105, Name: "x"}
+	y := IntSymbol{ID: 106, Name: "y"}
+	product := MultiplyInteger(x, y)
+	var exclusions []Term[BoolSort]
+	for _, target := range []int64{-1, 0, 1} {
+		exclusions = append(exclusions, Not{Value: Equal{
+			Left: product, Right: IntegerTerm(NewIntegerValue(target)),
+		}})
+	}
+	checked := Check(Assert(1, New(), And{Values: exclusions}))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("finite disequalities need an escape model, got %#v", checked)
+	}
+	xValue, xOK := IntegerModelValue(result.Value, x)
+	yValue, yOK := IntegerModelValue(result.Value, y)
+	productValue := MultiplyIntegerValue(xValue, yValue)
+	if !xOK || !yOK {
+		t.Fatalf("model x=%v/%v y=%v/%v", xValue, xOK, yValue, yOK)
+	}
+	for _, target := range []int64{-1, 0, 1} {
+		if CompareIntegerValue(productValue, NewIntegerValue(target)) == 0 {
+			t.Fatalf("excluded product model x=%v y=%v", xValue, yValue)
+		}
+	}
+
+	conflict := And{Values: []Term[BoolSort]{
+		Equal{Left: product, Right: IntegerTerm(NewIntegerValue(6))},
+		Equal{Left: MultiplyInteger(y, x), Right: IntegerTerm(NewIntegerValue(7))},
+	}}
+	conflictResult := Check(Assert(2, New(), conflict))
+	if _, ok := conflictResult.(Unsatisfiable); !ok {
+		t.Fatalf("conflicting repeated product=%#v", conflictResult)
+	}
+}
+
 func TestLinearIntegerArithmeticIntegralityUnsat(t *testing.T) {
 	x := IntSymbol{ID: 1, Name: "x"}
 	twoX := ScaleInteger(NewIntegerValue(2), x)

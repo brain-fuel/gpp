@@ -57,19 +57,19 @@ func (values *nonlinearIntegerCandidates) add(value IntegerValue) bool {
 }
 
 type nonlinearIntegerProblem struct {
-	symbolCount   int
-	symbols       [nonlinearIntegerSymbolLimit]int
-	candidates    [nonlinearIntegerSymbolLimit]nonlinearIntegerCandidates
-	relationCount int
-	relations     [nonlinearIntegerRelationLimit]nonlinearIntegerProductRelation
-	impossible    bool
-	complete      bool
+	symbolCount    int
+	symbols        [nonlinearIntegerSymbolLimit]int
+	candidates     [nonlinearIntegerSymbolLimit]nonlinearIntegerCandidates
+	domainComplete [nonlinearIntegerSymbolLimit]bool
+	relationCount  int
+	relations      [nonlinearIntegerRelationLimit]nonlinearIntegerProductRelation
+	impossible     bool
 }
 
 func solveNonlinearIntegerAssertions(
 	assertions []Term[BoolSort],
 ) (checkOutcome, bool) {
-	problem := nonlinearIntegerProblem{complete: true}
+	problem := nonlinearIntegerProblem{}
 	for _, assertion := range assertions {
 		if !problem.boolean(assertion, false) {
 			return checkOutcome{}, false
@@ -81,6 +81,7 @@ func solveNonlinearIntegerAssertions(
 	if problem.impossible {
 		return checkOutcome{status: checkUnsat}, true
 	}
+	problem.addEscapeCandidates()
 	var assigned [nonlinearIntegerSymbolLimit]bool
 	var values [nonlinearIntegerSymbolLimit]IntegerValue
 	nodes := 0
@@ -98,7 +99,7 @@ func solveNonlinearIntegerAssertions(
 			reason: ResourceLimit{Limit: nonlinearIntegerSearchLimit},
 		}, true
 	}
-	if problem.complete {
+	if problem.allDomainsComplete() {
 		return checkOutcome{status: checkUnsat}, true
 	}
 	return checkOutcome{
@@ -189,6 +190,19 @@ func (problem *nonlinearIntegerProblem) addRelation(
 		return false
 	}
 	leftID, rightID := value.LeftID, value.RightID
+	for _, existing := range problem.relations[:problem.relationCount] {
+		samePair := existing.leftID == leftID && existing.rightID == rightID ||
+			existing.leftID == rightID && existing.rightID == leftID
+		if !samePair {
+			continue
+		}
+		sameTarget := CompareIntegerValue(existing.target, value.Target) == 0
+		if (!existing.negated && !value.Negated && !sameTarget) ||
+			(sameTarget && existing.negated != value.Negated) {
+			problem.impossible = true
+			return true
+		}
+	}
 	leftPosition, leftAdded := problem.ensureSymbol(leftID)
 	rightPosition, rightAdded := problem.ensureSymbol(rightID)
 	if !leftAdded || !rightAdded {
@@ -214,13 +228,19 @@ func (problem *nonlinearIntegerProblem) addRelation(
 				problem.candidates[leftPosition].add(
 					NegateIntegerValue(root),
 				)
+				problem.domainComplete[leftPosition] = true
 			}
 		}
 	} else {
 		relation.complete = problem.addFactorCandidates(
 			leftPosition, rightPosition, value.Target,
 		)
-		problem.complete = problem.complete && relation.complete
+		if !value.Negated &&
+			CompareIntegerValue(value.Target, IntegerValue{}) != 0 &&
+			relation.complete {
+			problem.domainComplete[leftPosition] = true
+			problem.domainComplete[rightPosition] = true
+		}
 	}
 	problem.candidates[leftPosition].add(IntegerValue{})
 	problem.candidates[leftPosition].add(NewIntegerValue(1))
@@ -230,6 +250,36 @@ func (problem *nonlinearIntegerProblem) addRelation(
 	problem.candidates[rightPosition].add(NewIntegerValue(-1))
 	problem.relations[problem.relationCount] = relation
 	problem.relationCount++
+	return true
+}
+
+func (problem *nonlinearIntegerProblem) addEscapeCandidates() {
+	escape := NewIntegerValue(1)
+	for _, relation := range problem.relations[:problem.relationCount] {
+		absolute := relation.target
+		if CompareIntegerValue(absolute, IntegerValue{}) < 0 {
+			absolute = NegateIntegerValue(absolute)
+		}
+		candidate := AddIntegerValue(absolute, NewIntegerValue(1))
+		if CompareIntegerValue(candidate, escape) > 0 {
+			escape = candidate
+		}
+	}
+	for position := 0; position < problem.symbolCount; position++ {
+		if problem.domainComplete[position] {
+			continue
+		}
+		problem.candidates[position].add(escape)
+		problem.candidates[position].add(NegateIntegerValue(escape))
+	}
+}
+
+func (problem *nonlinearIntegerProblem) allDomainsComplete() bool {
+	for position := 0; position < problem.symbolCount; position++ {
+		if !problem.domainComplete[position] {
+			return false
+		}
+	}
 	return true
 }
 

@@ -788,6 +788,35 @@ func TestExecuteNonlinearIntegerArithmetic(t *testing.T) {
 	if _, ok := unsatResult.Responses[3].(Unsatisfiable); !ok {
 		t.Fatalf("square image=%T", unsatResult.Responses[3])
 	}
+
+	disequalities := `(set-logic QF_NIA)
+(declare-const x Int)
+(declare-const y Int)
+(assert (distinct (* x y) (- 1)))
+(assert (distinct (* x y) 0))
+(assert (distinct (* x y) 1))
+(check-sat)
+(get-value (x y (* x y)))`
+	disequalityResult := Execute(disequalities).(Executed)
+	if _, ok := disequalityResult.Responses[6].(Satisfiable); !ok {
+		t.Fatalf("disequality escape=%T", disequalityResult.Responses[6])
+	}
+	values = disequalityResult.Responses[7].(ValuesAvailable)
+	product := values.Values[2].(IntegerValue).Value
+	if product >= -1 && product <= 1 {
+		t.Fatalf("excluded product=%d", product)
+	}
+
+	conflict := `(set-logic QF_NIA)
+(declare-const x Int)
+(declare-const y Int)
+(assert (= (* x y) 6))
+(assert (= (* y x) 7))
+(check-sat)`
+	conflictResult := Execute(conflict).(Executed)
+	if _, ok := conflictResult.Responses[5].(Unsatisfiable); !ok {
+		t.Fatalf("product conflict=%T", conflictResult.Responses[5])
+	}
 }
 
 func TestExecuteBooleanLinearIntegerArithmetic(t *testing.T) {
