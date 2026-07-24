@@ -228,7 +228,7 @@ func containsBitVectorTheory(term Term[BoolSort]) bool {
 		return true
 	case bitVectorUnsignedAddOverflow[BoolSort], bitVectorSignedAddOverflow[BoolSort], bitVectorUnsignedSubOverflow[BoolSort], bitVectorSignedSubOverflow[BoolSort], bitVectorUnsignedMulOverflow[BoolSort], bitVectorSignedMulOverflow[BoolSort], bitVectorSignedDivOverflow[BoolSort], bitVectorNegOverflow[BoolSort]:
 		return true
-	case BitVectorRelation, BitVectorConjunction, BitVectorIntegerRelation, BitVectorMixedConjunction, BitVectorEUFRelation, BitVectorEUFConjunction, FloatingPointRelation, FloatingPointComparisonRelation, FloatingPointMinMaxRelation:
+	case BitVectorRelation, BitVectorConjunction, BitVectorIntegerRelation, BitVectorMixedConjunction, BitVectorEUFRelation, BitVectorEUFConjunction, FloatingPointRelation, FloatingPointComparisonRelation, FloatingPointMinMaxRelation, FloatingPointRoundToIntegralRelation:
 		return true
 	}
 	return false
@@ -236,7 +236,7 @@ func containsBitVectorTheory(term Term[BoolSort]) bool {
 
 func isBitVectorTerm(term any) bool {
 	switch term.(type) {
-	case bitVector[BitVecSort], bitVectorSymbol[BitVecSort], bitVectorNot[BitVecSort], bitVectorAnd[BitVecSort], bitVectorOr[BitVecSort], bitVectorXor[BitVecSort], bitVectorAdd[BitVecSort], bitVectorSub[BitVecSort], bitVectorMul[BitVecSort], bitVectorShiftLeft[BitVecSort], bitVectorLogicalShiftRight[BitVecSort], bitVectorArithmeticShiftRight[BitVecSort], bitVectorUnsignedDiv[BitVecSort], bitVectorUnsignedRem[BitVecSort], bitVectorSignedDiv[BitVecSort], bitVectorSignedRem[BitVecSort], bitVectorConcat[BitVecSort], bitVectorExtract[BitVecSort], bitVectorZeroExtend[BitVecSort], bitVectorSignExtend[BitVecSort], bitVectorRotateLeft[BitVecSort], bitVectorRotateRight[BitVecSort], bitVectorRepeat[BitVecSort], sortedUnaryApplication[BitVecSort], sortedBinaryApplication[BitVecSort], integerToBitVector[BitVecSort], If[BitVecSort]:
+	case bitVector[BitVecSort], bitVectorSymbol[BitVecSort], bitVectorNot[BitVecSort], bitVectorAnd[BitVecSort], bitVectorOr[BitVecSort], bitVectorXor[BitVecSort], bitVectorAdd[BitVecSort], bitVectorSub[BitVecSort], bitVectorMul[BitVecSort], bitVectorShiftLeft[BitVecSort], bitVectorLogicalShiftRight[BitVecSort], bitVectorArithmeticShiftRight[BitVecSort], bitVectorUnsignedDiv[BitVecSort], bitVectorUnsignedRem[BitVecSort], bitVectorSignedDiv[BitVecSort], bitVectorSignedRem[BitVecSort], bitVectorConcat[BitVecSort], bitVectorExtract[BitVecSort], bitVectorZeroExtend[BitVecSort], bitVectorSignExtend[BitVecSort], bitVectorRotateLeft[BitVecSort], bitVectorRotateRight[BitVecSort], bitVectorRepeat[BitVecSort], sortedUnaryApplication[BitVecSort], sortedBinaryApplication[BitVecSort], integerToBitVector[BitVecSort], If[BitVecSort], floatingPointRoundToIntegralBitVector:
 		return true
 	}
 	return false
@@ -344,6 +344,8 @@ type compactBitVectorProblem struct {
 	comparisons     [4]FloatingPointComparisonRelation
 	minMaxCount     int
 	minMax          [4]FloatingPointMinMaxRelation
+	roundCount      int
+	rounds          [4]FloatingPointRoundToIntegralRelation
 }
 
 func (problem *compactBitVectorProblem) add(term Term[BoolSort], negated bool) bool {
@@ -397,6 +399,14 @@ func (problem *compactBitVectorProblem) add(term Term[BoolSort], negated bool) b
 		value.Negated = value.Negated != negated
 		problem.minMax[problem.minMaxCount] = value
 		problem.minMaxCount++
+		return true
+	case FloatingPointRoundToIntegralRelation:
+		if problem.roundCount == len(problem.rounds) {
+			return false
+		}
+		value.Negated = value.Negated != negated
+		problem.rounds[problem.roundCount] = value
+		problem.roundCount++
 		return true
 	case BitVectorRelation:
 		if problem.relationCount == len(problem.relations) {
@@ -694,6 +704,28 @@ func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome,
 			return checkOutcome{status: checkUnsat}, true
 		}
 	}
+	for _, relation := range problem.rounds[:problem.roundCount] {
+		var assigned BitVectorValue
+		found := false
+		for index := 0; index < assignmentCount; index++ {
+			if assignments[index].id == relation.SymbolID {
+				assigned, found = assignments[index].value, true
+				break
+			}
+		}
+		total := relation.ExponentBits + relation.SignificandBits
+		if !found || assigned.Width() != total {
+			return checkOutcome{}, false
+		}
+		value := FloatingPointFromBits(
+			relation.ExponentBits, relation.SignificandBits, assigned,
+		)
+		rounded := floatingPointRoundToIntegral(relation.Mode, value)
+		holds := EqualBitVectorValue(FloatingPointBits(rounded), relation.Value)
+		if holds == relation.Negated {
+			return checkOutcome{status: checkUnsat}, true
+		}
+	}
 	for _, relation := range relations {
 		var assigned BitVectorValue
 		found := false
@@ -917,6 +949,8 @@ func (encoder *bitVectorEncoder) boolean(term Term[BoolSort]) (int, bool) {
 		return encoder.boolean(expandFloatingPointComparisonRelation(value))
 	case FloatingPointMinMaxRelation:
 		return encoder.boolean(expandFloatingPointMinMaxRelation(value))
+	case FloatingPointRoundToIntegralRelation:
+		return 0, false
 	case BitVectorConjunction:
 		literals := make([]int, 0, value.Count)
 		for _, relation := range value.values() {
@@ -1902,6 +1936,18 @@ func (encoder *bitVectorEncoder) constantBits(value BitVectorValue) []int {
 
 func evaluateBitVector(term any, model bitVectorModel, integers integerModel) (BitVectorValue, bool) {
 	switch value := term.(type) {
+	case floatingPointRoundToIntegralBitVector:
+		bits, ok := evaluateBitVector(value.value, model, integers)
+		if !ok {
+			return BitVectorValue{}, false
+		}
+		rounded := floatingPointRoundToIntegral(
+			value.mode,
+			FloatingPointFromBits(
+				value.exponentBits, value.significandBits, bits,
+			),
+		)
+		return FloatingPointBits(rounded), true
 	case If[BitVecSort]:
 		condition, ok := evaluateBitVectorBoolean(value.Condition, model, integers)
 		if !ok {

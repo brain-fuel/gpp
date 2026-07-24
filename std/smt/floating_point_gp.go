@@ -25,6 +25,169 @@ type floatingPointValue struct {
 
 func (floatingPointValue) isFloatingPointValue() {}
 
+//goplus:enum FloatingPointRoundingMode
+type FloatingPointRoundingMode interface{ isFloatingPointRoundingMode() }
+
+//goplus:variant (FloatingPointRoundingMode) floatingPointRoundNearestTiesToEven
+type floatingPointRoundNearestTiesToEven struct{}
+
+func (floatingPointRoundNearestTiesToEven) isFloatingPointRoundingMode() {}
+
+//goplus:variant (FloatingPointRoundingMode) floatingPointRoundNearestTiesToAway
+type floatingPointRoundNearestTiesToAway struct{}
+
+func (floatingPointRoundNearestTiesToAway) isFloatingPointRoundingMode() {}
+
+//goplus:variant (FloatingPointRoundingMode) floatingPointRoundTowardPositive
+type floatingPointRoundTowardPositive struct{}
+
+func (floatingPointRoundTowardPositive) isFloatingPointRoundingMode() {}
+
+//goplus:variant (FloatingPointRoundingMode) floatingPointRoundTowardNegative
+type floatingPointRoundTowardNegative struct{}
+
+func (floatingPointRoundTowardNegative) isFloatingPointRoundingMode() {}
+
+//goplus:variant (FloatingPointRoundingMode) floatingPointRoundTowardZero
+type floatingPointRoundTowardZero struct{}
+
+func (floatingPointRoundTowardZero) isFloatingPointRoundingMode() {}
+
+// FloatingPointRoundingModeCases selects one handler per FloatingPointRoundingMode variant for FloatingPointRoundingModeFold.
+type FloatingPointRoundingModeCases[R any] struct {
+	floatingPointRoundNearestTiesToEven func() R
+	floatingPointRoundNearestTiesToAway func() R
+	floatingPointRoundTowardPositive    func() R
+	floatingPointRoundTowardNegative    func() R
+	floatingPointRoundTowardZero        func() R
+}
+
+// FloatingPointRoundingModeFold reduces FloatingPointRoundingMode by one-level case analysis.
+func FloatingPointRoundingModeFold[R any](f FloatingPointRoundingMode, cs FloatingPointRoundingModeCases[R]) R {
+	switch any(f).(type) {
+	case floatingPointRoundNearestTiesToEven:
+		return cs.floatingPointRoundNearestTiesToEven()
+	case floatingPointRoundNearestTiesToAway:
+		return cs.floatingPointRoundNearestTiesToAway()
+	case floatingPointRoundTowardPositive:
+		return cs.floatingPointRoundTowardPositive()
+	case floatingPointRoundTowardNegative:
+		return cs.floatingPointRoundTowardNegative()
+	case floatingPointRoundTowardZero:
+		return cs.floatingPointRoundTowardZero()
+	default:
+		panic("goplus: impossible enum value in FloatingPointRoundingModeFold")
+	}
+}
+
+// FloatingPointRoundingModeEqOverrides carries optional per-variant hooks for FloatingPointRoundingModeEqualWith.
+// A hook returning handled=false falls through to the derived comparison.
+type FloatingPointRoundingModeEqOverrides struct {
+	floatingPointRoundNearestTiesToEven func(x, y floatingPointRoundNearestTiesToEven) (eq, handled bool)
+	floatingPointRoundNearestTiesToAway func(x, y floatingPointRoundNearestTiesToAway) (eq, handled bool)
+	floatingPointRoundTowardPositive    func(x, y floatingPointRoundTowardPositive) (eq, handled bool)
+	floatingPointRoundTowardNegative    func(x, y floatingPointRoundTowardNegative) (eq, handled bool)
+	floatingPointRoundTowardZero        func(x, y floatingPointRoundTowardZero) (eq, handled bool)
+}
+
+// FloatingPointRoundingModeEqualWith reports structural equality of a and b under ov.
+func FloatingPointRoundingModeEqualWith(a, b FloatingPointRoundingMode, ov FloatingPointRoundingModeEqOverrides) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	switch x := any(a).(type) {
+	case floatingPointRoundNearestTiesToEven:
+		y, ok := any(b).(floatingPointRoundNearestTiesToEven)
+		if !ok {
+			return false
+		}
+		if ov.floatingPointRoundNearestTiesToEven != nil {
+			if eq, handled := ov.floatingPointRoundNearestTiesToEven(x, y); handled {
+				return eq
+			}
+		}
+		_ = y
+		return true
+	case floatingPointRoundNearestTiesToAway:
+		y, ok := any(b).(floatingPointRoundNearestTiesToAway)
+		if !ok {
+			return false
+		}
+		if ov.floatingPointRoundNearestTiesToAway != nil {
+			if eq, handled := ov.floatingPointRoundNearestTiesToAway(x, y); handled {
+				return eq
+			}
+		}
+		_ = y
+		return true
+	case floatingPointRoundTowardPositive:
+		y, ok := any(b).(floatingPointRoundTowardPositive)
+		if !ok {
+			return false
+		}
+		if ov.floatingPointRoundTowardPositive != nil {
+			if eq, handled := ov.floatingPointRoundTowardPositive(x, y); handled {
+				return eq
+			}
+		}
+		_ = y
+		return true
+	case floatingPointRoundTowardNegative:
+		y, ok := any(b).(floatingPointRoundTowardNegative)
+		if !ok {
+			return false
+		}
+		if ov.floatingPointRoundTowardNegative != nil {
+			if eq, handled := ov.floatingPointRoundTowardNegative(x, y); handled {
+				return eq
+			}
+		}
+		_ = y
+		return true
+	case floatingPointRoundTowardZero:
+		y, ok := any(b).(floatingPointRoundTowardZero)
+		if !ok {
+			return false
+		}
+		if ov.floatingPointRoundTowardZero != nil {
+			if eq, handled := ov.floatingPointRoundTowardZero(x, y); handled {
+				return eq
+			}
+		}
+		_ = y
+		return true
+	}
+	return false
+}
+
+// FloatingPointRoundingModeEqual reports structural equality of a and b.
+func FloatingPointRoundingModeEqual(a, b FloatingPointRoundingMode) bool {
+	return FloatingPointRoundingModeEqualWith(a, b, FloatingPointRoundingModeEqOverrides{})
+}
+
+func RoundNearestTiesToEven() FloatingPointRoundingMode { return floatingPointRoundNearestTiesToEven{} }
+func RoundNearestTiesToAway() FloatingPointRoundingMode { return floatingPointRoundNearestTiesToAway{} }
+func RoundTowardPositive() FloatingPointRoundingMode    { return floatingPointRoundTowardPositive{} }
+func RoundTowardNegative() FloatingPointRoundingMode    { return floatingPointRoundTowardNegative{} }
+func RoundTowardZero() FloatingPointRoundingMode        { return floatingPointRoundTowardZero{} }
+
+func floatingPointRoundingModeCode(mode FloatingPointRoundingMode) uint8 {
+	switch any(mode).(type) {
+	case floatingPointRoundNearestTiesToEven:
+		return 1
+	case floatingPointRoundNearestTiesToAway:
+		return 2
+	case floatingPointRoundTowardPositive:
+		return 3
+	case floatingPointRoundTowardNegative:
+		return 4
+	case floatingPointRoundTowardZero:
+		return 5
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
 //goplus:dep FloatingPointFromBits(exponentBits nat, significandBits nat, bits BitVectorValue) FloatingPointValue[exponentBits, significandBits]
 func FloatingPointFromBits(exponentBits int, significandBits int, bits BitVectorValue) FloatingPointValue {
 	if exponentBits < 2 {
@@ -46,9 +209,9 @@ func FloatingPointFromUint64(exponentBits int, significandBits int, bits uint64)
 
 //goplus:dep FloatingPointBits(0 e nat, 0 s nat, value FloatingPointValue[e, s]) BitVectorValue
 func FloatingPointBits(value FloatingPointValue) BitVectorValue {
-	switch __gp_m0 := any(value).(type) {
+	switch __gp_m1 := any(value).(type) {
 	case floatingPointValue:
-		bits := __gp_m0.bits
+		bits := __gp_m1.bits
 		return bits
 	default:
 		panic("goplus: impossible enum value in match")
@@ -57,9 +220,9 @@ func FloatingPointBits(value FloatingPointValue) BitVectorValue {
 
 //goplus:dep FloatingPointExponentBits(0 e nat, 0 s nat, value FloatingPointValue[e, s]) int
 func FloatingPointExponentBits(value FloatingPointValue) int {
-	switch __gp_m1 := any(value).(type) {
+	switch __gp_m2 := any(value).(type) {
 	case floatingPointValue:
-		exponentBits := __gp_m1.exponentBits
+		exponentBits := __gp_m2.exponentBits
 		return exponentBits
 	default:
 		panic("goplus: impossible enum value in match")
@@ -68,9 +231,9 @@ func FloatingPointExponentBits(value FloatingPointValue) int {
 
 //goplus:dep FloatingPointSignificandBits(0 e nat, 0 s nat, value FloatingPointValue[e, s]) int
 func FloatingPointSignificandBits(value FloatingPointValue) int {
-	switch __gp_m2 := any(value).(type) {
+	switch __gp_m3 := any(value).(type) {
 	case floatingPointValue:
-		significandBits := __gp_m2.significandBits
+		significandBits := __gp_m3.significandBits
 		return significandBits
 	default:
 		panic("goplus: impossible enum value in match")
@@ -83,11 +246,11 @@ func FloatingPointSignificandBits(value FloatingPointValue) int {
 //
 //goplus:dep FloatingPointAbs(0 e nat, 0 s nat, value FloatingPointValue[e, s]) FloatingPointValue[e, s]
 func FloatingPointAbs(value FloatingPointValue) FloatingPointValue {
-	switch __gp_m3 := any(value).(type) {
+	switch __gp_m4 := any(value).(type) {
 	case floatingPointValue:
-		exponentBits := __gp_m3.exponentBits
-		significandBits := __gp_m3.significandBits
-		bits := __gp_m3.bits
+		exponentBits := __gp_m4.exponentBits
+		significandBits := __gp_m4.significandBits
+		bits := __gp_m4.bits
 
 		total := exponentBits + significandBits
 		sign := ConcatBitVectorValue(NewBitVectorUint64(1, 1), NewBitVectorUint64(total-1, 0))
@@ -102,11 +265,11 @@ func FloatingPointAbs(value FloatingPointValue) FloatingPointValue {
 //
 //goplus:dep FloatingPointNeg(0 e nat, 0 s nat, value FloatingPointValue[e, s]) FloatingPointValue[e, s]
 func FloatingPointNeg(value FloatingPointValue) FloatingPointValue {
-	switch __gp_m4 := any(value).(type) {
+	switch __gp_m5 := any(value).(type) {
 	case floatingPointValue:
-		exponentBits := __gp_m4.exponentBits
-		significandBits := __gp_m4.significandBits
-		bits := __gp_m4.bits
+		exponentBits := __gp_m5.exponentBits
+		significandBits := __gp_m5.significandBits
+		bits := __gp_m5.bits
 
 		total := exponentBits + significandBits
 		sign := ConcatBitVectorValue(NewBitVectorUint64(1, 1), NewBitVectorUint64(total-1, 0))
@@ -118,11 +281,11 @@ func FloatingPointNeg(value FloatingPointValue) FloatingPointValue {
 
 //goplus:dep FloatingPointIsNegative(0 e nat, 0 s nat, value FloatingPointValue[e, s]) bool
 func FloatingPointIsNegative(value FloatingPointValue) bool {
-	switch __gp_m5 := any(value).(type) {
+	switch __gp_m6 := any(value).(type) {
 	case floatingPointValue:
-		exponentBits := __gp_m5.exponentBits
-		significandBits := __gp_m5.significandBits
-		bits := __gp_m5.bits
+		exponentBits := __gp_m6.exponentBits
+		significandBits := __gp_m6.significandBits
+		bits := __gp_m6.bits
 
 		return !FloatingPointIsNaN(value) && bits.Bit(exponentBits+significandBits-1)
 	default:
@@ -137,11 +300,11 @@ func FloatingPointIsPositive(value FloatingPointValue) bool {
 
 //goplus:dep FloatingPointIsNaN(0 e nat, 0 s nat, value FloatingPointValue[e, s]) bool
 func FloatingPointIsNaN(value FloatingPointValue) bool {
-	switch __gp_m6 := any(value).(type) {
+	switch __gp_m7 := any(value).(type) {
 	case floatingPointValue:
-		exponentBits := __gp_m6.exponentBits
-		significandBits := __gp_m6.significandBits
-		bits := __gp_m6.bits
+		exponentBits := __gp_m7.exponentBits
+		significandBits := __gp_m7.significandBits
+		bits := __gp_m7.bits
 
 		return floatingPointExponentAll(bits, significandBits, exponentBits) &&
 			floatingPointSignificandNonzero(bits, significandBits)
@@ -152,11 +315,11 @@ func FloatingPointIsNaN(value FloatingPointValue) bool {
 
 //goplus:dep FloatingPointIsInfinite(0 e nat, 0 s nat, value FloatingPointValue[e, s]) bool
 func FloatingPointIsInfinite(value FloatingPointValue) bool {
-	switch __gp_m7 := any(value).(type) {
+	switch __gp_m8 := any(value).(type) {
 	case floatingPointValue:
-		exponentBits := __gp_m7.exponentBits
-		significandBits := __gp_m7.significandBits
-		bits := __gp_m7.bits
+		exponentBits := __gp_m8.exponentBits
+		significandBits := __gp_m8.significandBits
+		bits := __gp_m8.bits
 
 		return floatingPointExponentAll(bits, significandBits, exponentBits) &&
 			!floatingPointSignificandNonzero(bits, significandBits)
@@ -167,11 +330,11 @@ func FloatingPointIsInfinite(value FloatingPointValue) bool {
 
 //goplus:dep FloatingPointIsZero(0 e nat, 0 s nat, value FloatingPointValue[e, s]) bool
 func FloatingPointIsZero(value FloatingPointValue) bool {
-	switch __gp_m8 := any(value).(type) {
+	switch __gp_m9 := any(value).(type) {
 	case floatingPointValue:
-		exponentBits := __gp_m8.exponentBits
-		significandBits := __gp_m8.significandBits
-		bits := __gp_m8.bits
+		exponentBits := __gp_m9.exponentBits
+		significandBits := __gp_m9.significandBits
+		bits := __gp_m9.bits
 
 		return floatingPointExponentNone(bits, significandBits, exponentBits) &&
 			!floatingPointSignificandNonzero(bits, significandBits)
@@ -182,11 +345,11 @@ func FloatingPointIsZero(value FloatingPointValue) bool {
 
 //goplus:dep FloatingPointIsSubnormal(0 e nat, 0 s nat, value FloatingPointValue[e, s]) bool
 func FloatingPointIsSubnormal(value FloatingPointValue) bool {
-	switch __gp_m9 := any(value).(type) {
+	switch __gp_m10 := any(value).(type) {
 	case floatingPointValue:
-		exponentBits := __gp_m9.exponentBits
-		significandBits := __gp_m9.significandBits
-		bits := __gp_m9.bits
+		exponentBits := __gp_m10.exponentBits
+		significandBits := __gp_m10.significandBits
+		bits := __gp_m10.bits
 
 		return floatingPointExponentNone(bits, significandBits, exponentBits) &&
 			floatingPointSignificandNonzero(bits, significandBits)
@@ -197,11 +360,11 @@ func FloatingPointIsSubnormal(value FloatingPointValue) bool {
 
 //goplus:dep FloatingPointIsNormal(0 e nat, 0 s nat, value FloatingPointValue[e, s]) bool
 func FloatingPointIsNormal(value FloatingPointValue) bool {
-	switch __gp_m10 := any(value).(type) {
+	switch __gp_m11 := any(value).(type) {
 	case floatingPointValue:
-		exponentBits := __gp_m10.exponentBits
-		significandBits := __gp_m10.significandBits
-		bits := __gp_m10.bits
+		exponentBits := __gp_m11.exponentBits
+		significandBits := __gp_m11.significandBits
+		bits := __gp_m11.bits
 
 		return !floatingPointExponentNone(bits, significandBits, exponentBits) &&
 			!floatingPointExponentAll(bits, significandBits, exponentBits)
@@ -295,6 +458,11 @@ func FloatingPointMax(left FloatingPointValue, right FloatingPointValue) Floatin
 		return right
 	}
 	return left
+}
+
+//goplus:dep FloatingPointRoundToIntegral(0 e nat, 0 s nat, mode FloatingPointRoundingMode, value FloatingPointValue[e, s]) FloatingPointValue[e, s]
+func FloatingPointRoundToIntegral(mode FloatingPointRoundingMode, value FloatingPointValue) FloatingPointValue {
+	return floatingPointRoundToIntegral(floatingPointRoundingModeCode(mode), value)
 }
 
 func floatingPointSignificandNonzero(bits BitVectorValue, significandBits int) bool {

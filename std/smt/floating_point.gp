@@ -13,6 +13,30 @@ type FloatingPointValue[e nat, s nat] enum {
 	floatingPointValue(ExponentBits int, SignificandBits int, Bits BitVectorValue) FloatingPointValue[e, s]
 }
 
+type FloatingPointRoundingMode enum {
+	floatingPointRoundNearestTiesToEven
+	floatingPointRoundNearestTiesToAway
+	floatingPointRoundTowardPositive
+	floatingPointRoundTowardNegative
+	floatingPointRoundTowardZero
+}
+
+func RoundNearestTiesToEven() FloatingPointRoundingMode { return floatingPointRoundNearestTiesToEven }
+func RoundNearestTiesToAway() FloatingPointRoundingMode { return floatingPointRoundNearestTiesToAway }
+func RoundTowardPositive() FloatingPointRoundingMode { return floatingPointRoundTowardPositive }
+func RoundTowardNegative() FloatingPointRoundingMode { return floatingPointRoundTowardNegative }
+func RoundTowardZero() FloatingPointRoundingMode { return floatingPointRoundTowardZero }
+
+func floatingPointRoundingModeCode(mode FloatingPointRoundingMode) uint8 {
+	match mode {
+	case floatingPointRoundNearestTiesToEven: return 1
+	case floatingPointRoundNearestTiesToAway: return 2
+	case floatingPointRoundTowardPositive: return 3
+	case floatingPointRoundTowardNegative: return 4
+	case floatingPointRoundTowardZero: return 5
+	}
+}
+
 func FloatingPointFromBits(exponentBits nat, significandBits nat, bits BitVectorValue) FloatingPointValue[exponentBits, significandBits] {
 	if exponentBits < 2 { panic("smt: floating-point exponent width must be at least 2") }
 	if significandBits < 2 { panic("smt: floating-point significand width must be at least 2") }
@@ -152,6 +176,10 @@ func FloatingPointMax(0 e nat, 0 s nat, left FloatingPointValue[e, s], right Flo
 	if FloatingPointIsNaN(right) { return left }
 	if FloatingPointLessThan(left, right) { return right }
 	return left
+}
+
+func FloatingPointRoundToIntegral(0 e nat, 0 s nat, mode FloatingPointRoundingMode, value FloatingPointValue[e, s]) FloatingPointValue[e, s] {
+	return floatingPointRoundToIntegral(floatingPointRoundingModeCode(mode), value)
 }
 
 func floatingPointSignificandNonzero(bits BitVectorValue, significandBits int) bool {

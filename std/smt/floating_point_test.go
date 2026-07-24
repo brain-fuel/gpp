@@ -131,6 +131,55 @@ func TestFloatingPointGroundMinMax(t *testing.T) {
 	}
 }
 
+func TestFloatingPointRoundToIntegralModes(t *testing.T) {
+	tests := []struct {
+		name string
+		mode FloatingPointRoundingMode
+		bits uint64
+		want uint64
+	}{
+		{"RNE tie odd", RoundNearestTiesToEven(), 0x3fc00000, 0x40000000},
+		{"RNE tie even", RoundNearestTiesToEven(), 0x40200000, 0x40000000},
+		{"RNA tie", RoundNearestTiesToAway(), 0x40200000, 0x40400000},
+		{"RTP positive", RoundTowardPositive(), 0x3fa00000, 0x40000000},
+		{"RTP negative", RoundTowardPositive(), 0xbfa00000, 0xbf800000},
+		{"RTN positive", RoundTowardNegative(), 0x3fa00000, 0x3f800000},
+		{"RTN negative", RoundTowardNegative(), 0xbfa00000, 0xc0000000},
+		{"RTZ positive", RoundTowardZero(), 0x3fa00000, 0x3f800000},
+		{"RTZ negative", RoundTowardZero(), 0xbfa00000, 0xbf800000},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			value := FloatingPointFromUint64(8, 24, test.bits)
+			rounded := FloatingPointRoundToIntegral(test.mode, value)
+			got, ok := FloatingPointBits(rounded).Uint64()
+			if !ok || got != test.want {
+				t.Fatalf("bits=%#x, want %#x", got, test.want)
+			}
+		})
+	}
+}
+
+func TestFloatingPointRoundToIntegralBinary128(t *testing.T) {
+	bits, err := ParseBitVector(
+		128, "0x3fff8000000000000000000000000000",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := FloatingPointFromBits(15, 113, bits)
+	rounded := FloatingPointRoundToIntegral(RoundNearestTiesToEven(), value)
+	want, err := ParseBitVector(
+		128, "0x40000000000000000000000000000000",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !EqualBitVectorValue(FloatingPointBits(rounded), want) {
+		t.Fatalf("binary128 rounded bits=%v, want %v", FloatingPointBits(rounded), want)
+	}
+}
+
 func TestFloatingPointGroundAbsAndNeg(t *testing.T) {
 	tests := []struct {
 		name string

@@ -59,6 +59,26 @@ type FloatingPointMinMaxRelation struct {
 
 func (FloatingPointMinMaxRelation) isTerm(BoolSort) {}
 
+type FloatingPointRoundToIntegralRelation struct {
+	ExponentBits    int
+	SignificandBits int
+	SymbolID        int
+	Mode            uint8
+	Value           BitVectorValue
+	Negated         bool
+}
+
+func (FloatingPointRoundToIntegralRelation) isTerm(BoolSort) {}
+
+type floatingPointRoundToIntegralBitVector struct {
+	exponentBits    int
+	significandBits int
+	value           Term[BitVecSort]
+	mode            uint8
+}
+
+func (floatingPointRoundToIntegralBitVector) isTerm(BitVecSort) {}
+
 func NewFloatingPointComparisonRelation(
 	exponentBits, significandBits, leftSymbolID, rightSymbolID int,
 	comparison uint8,
@@ -98,6 +118,24 @@ func NewFloatingPointMinMaxRelation(
 		ExponentBits: exponentBits, SignificandBits: significandBits,
 		LeftSymbolID: leftSymbolID, RightSymbolID: rightSymbolID,
 		Operation: operation, Value: value,
+	}
+}
+
+func NewFloatingPointRoundToIntegralRelation(
+	exponentBits, significandBits, symbolID int,
+	mode FloatingPointRoundingMode,
+	value BitVectorValue,
+) FloatingPointRoundToIntegralRelation {
+	modeCode := floatingPointRoundingModeCode(mode)
+	if exponentBits < 2 || significandBits < 2 {
+		panic("smt: invalid floating-point format")
+	}
+	if value.Width() != exponentBits+significandBits {
+		panic("smt: floating-point rounded result width mismatch")
+	}
+	return FloatingPointRoundToIntegralRelation{
+		ExponentBits: exponentBits, SignificandBits: significandBits,
+		SymbolID: symbolID, Mode: modeCode, Value: value,
 	}
 }
 
@@ -188,6 +226,49 @@ func AssertFloatingPointMinMaxRelation(
 		contextID: nextContext,
 		depth:     solver.depth,
 		state:     solver.state.asserted(relation),
+	}
+}
+
+func AssertFloatingPointRoundToIntegralRelation(
+	assertion int,
+	solver Solver,
+	relation FloatingPointRoundToIntegralRelation,
+) Solver {
+	if assertion < 0 {
+		panic("smt: negative assertion identity")
+	}
+	nextContext := runtimeContextID(solver.contextID, assertion)
+	return solverValue{
+		contextID: nextContext,
+		depth:     solver.depth,
+		state:     solver.state.asserted(relation),
+	}
+}
+
+func FloatingPointRoundToIntegralBitVector(
+	exponentBits, significandBits, symbolID int,
+	symbolName string,
+	mode FloatingPointRoundingMode,
+) Term[BitVecSort] {
+	total := exponentBits + significandBits
+	return FloatingPointRoundToIntegralBitVectorTerm(
+		exponentBits, significandBits,
+		BitVecConst(total, symbolID, symbolName), mode,
+	)
+}
+
+func FloatingPointRoundToIntegralBitVectorTerm(
+	exponentBits, significandBits int,
+	value Term[BitVecSort],
+	mode FloatingPointRoundingMode,
+) Term[BitVecSort] {
+	modeCode := floatingPointRoundingModeCode(mode)
+	if exponentBits < 2 || significandBits < 2 {
+		panic("smt: invalid floating-point round-to-integral term")
+	}
+	return floatingPointRoundToIntegralBitVector{
+		exponentBits: exponentBits, significandBits: significandBits,
+		value: value, mode: modeCode,
 	}
 }
 

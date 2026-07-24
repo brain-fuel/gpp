@@ -116,6 +116,42 @@ func TestCompactFloatingPointMinMaxWithAssignedSymbols(t *testing.T) {
 	}
 }
 
+func TestCompactFloatingPointRoundToIntegralWithAssignedSymbol(t *testing.T) {
+	solver := New()
+	solver = Assert(1, solver, BitVectorRelation{
+		Width: 32, SymbolID: 1, Value: NewBitVectorUint64(32, 0x3fc00000),
+	})
+	solver = AssertFloatingPointRoundToIntegralRelation(
+		2, solver,
+		NewFloatingPointRoundToIntegralRelation(
+			8, 24, 1, RoundNearestTiesToEven(),
+			NewBitVectorUint64(32, 0x40000000),
+		),
+	)
+	if _, ok := Check(solver).(Satisfiable); !ok {
+		t.Fatalf("expected satisfiable compact fp.roundToIntegral, got %#v", Check(solver))
+	}
+}
+
+func TestFloatingPointRoundToIntegralDerivedModel(t *testing.T) {
+	solver := New()
+	solver = Assert(1, solver, BitVectorRelation{
+		Width: 32, SymbolID: 1, Value: NewBitVectorUint64(32, 0xbfc00000),
+	})
+	result, ok := Check(solver).(Satisfiable)
+	if !ok {
+		t.Fatal("expected assigned floating-point source to be satisfiable")
+	}
+	rounded := FloatingPointRoundToIntegralBitVector(
+		8, 24, 1, "value", RoundTowardZero(),
+	)
+	bits, found := BitVecModelValue(result.Value, rounded)
+	value, inline := bits.Uint64()
+	if !found || !inline || value != 0xbf800000 {
+		t.Fatalf("unexpected derived fp.roundToIntegral model: %#x/%v/%v", value, found, inline)
+	}
+}
+
 func TestFloatingPointMinMaxBitBlastFallback(t *testing.T) {
 	expected := NewBitVectorUint64(32, 0xbf800000)
 	relation := NewFloatingPointMinMaxRelation(
