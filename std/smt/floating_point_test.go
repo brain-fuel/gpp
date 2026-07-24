@@ -107,6 +107,30 @@ func TestFloatingPointGroundOrdering(t *testing.T) {
 	}
 }
 
+func TestFloatingPointGroundMinMax(t *testing.T) {
+	negativeOne := FloatingPointFromUint64(8, 24, 0xbf800000)
+	positiveOne := FloatingPointFromUint64(8, 24, 0x3f800000)
+	nan := FloatingPointFromUint64(8, 24, 0x7fc12345)
+	if !FloatingPointEqual(FloatingPointMin(negativeOne, positiveOne), negativeOne) {
+		t.Fatal("min(-1,+1) must be -1")
+	}
+	if !FloatingPointEqual(FloatingPointMax(negativeOne, positiveOne), positiveOne) {
+		t.Fatal("max(-1,+1) must be +1")
+	}
+	if !FloatingPointEqual(FloatingPointMin(nan, positiveOne), positiveOne) ||
+		!FloatingPointEqual(FloatingPointMax(positiveOne, nan), positiveOne) {
+		t.Fatal("a sole NaN must yield the numeric operand")
+	}
+	leftNaN := FloatingPointFromUint64(8, 24, 0x7fc12345)
+	rightNaN := FloatingPointFromUint64(8, 24, 0xffc54321)
+	if !EqualBitVectorValue(
+		FloatingPointBits(FloatingPointMin(leftNaN, rightNaN)),
+		FloatingPointBits(rightNaN),
+	) {
+		t.Fatal("deterministic two-NaN min must select the right payload")
+	}
+}
+
 func TestFloatingPointGroundAbsAndNeg(t *testing.T) {
 	tests := []struct {
 		name string

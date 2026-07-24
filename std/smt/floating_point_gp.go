@@ -262,6 +262,41 @@ func FloatingPointGreaterOrEqual(left FloatingPointValue, right FloatingPointVal
 	return FloatingPointLessOrEqual(right, left)
 }
 
+// FloatingPointMin implements one deterministic result permitted by SMT-LIB
+// fp.min: a sole NaN yields the numeric operand, two NaNs select the right
+// payload, and equal signed zeros select the right operand.
+//
+//goplus:dep FloatingPointMin(0 e nat, 0 s nat, left FloatingPointValue[e, s], right FloatingPointValue[e, s]) FloatingPointValue[e, s]
+func FloatingPointMin(left FloatingPointValue, right FloatingPointValue) FloatingPointValue {
+	if FloatingPointIsNaN(left) {
+		return right
+	}
+	if FloatingPointIsNaN(right) {
+		return left
+	}
+	if FloatingPointLessThan(left, right) {
+		return left
+	}
+	return right
+}
+
+// FloatingPointMax is the corresponding deterministic SMT-LIB fp.max result.
+// Equal signed zeros select the left operand.
+//
+//goplus:dep FloatingPointMax(0 e nat, 0 s nat, left FloatingPointValue[e, s], right FloatingPointValue[e, s]) FloatingPointValue[e, s]
+func FloatingPointMax(left FloatingPointValue, right FloatingPointValue) FloatingPointValue {
+	if FloatingPointIsNaN(left) {
+		return right
+	}
+	if FloatingPointIsNaN(right) {
+		return left
+	}
+	if FloatingPointLessThan(left, right) {
+		return right
+	}
+	return left
+}
+
 func floatingPointSignificandNonzero(bits BitVectorValue, significandBits int) bool {
 	for index := 0; index < significandBits-1; index++ {
 		if bits.Bit(index) {

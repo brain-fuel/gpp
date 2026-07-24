@@ -15,6 +15,11 @@ const (
 	FloatingPointComparisonLessOrEqual
 )
 
+const (
+	FloatingPointOperationMin uint8 = iota + 1
+	FloatingPointOperationMax
+)
+
 // FloatingPointRelation is the compact solver-neutral form of a classification
 // predicate over one IEEE/SMT-LIB floating-point bit-vector symbol.
 type FloatingPointRelation struct {
@@ -40,6 +45,20 @@ type FloatingPointComparisonRelation struct {
 
 func (FloatingPointComparisonRelation) isTerm(BoolSort) {}
 
+// FloatingPointMinMaxRelation constrains the exact IEEE bits selected by
+// fp.min/fp.max over two same-format symbols.
+type FloatingPointMinMaxRelation struct {
+	ExponentBits    int
+	SignificandBits int
+	LeftSymbolID    int
+	RightSymbolID   int
+	Operation       uint8
+	Value           BitVectorValue
+	Negated         bool
+}
+
+func (FloatingPointMinMaxRelation) isTerm(BoolSort) {}
+
 func NewFloatingPointComparisonRelation(
 	exponentBits, significandBits, leftSymbolID, rightSymbolID int,
 	comparison uint8,
@@ -58,6 +77,27 @@ func NewFloatingPointComparisonRelation(
 		ExponentBits: exponentBits, SignificandBits: significandBits,
 		LeftSymbolID: leftSymbolID, RightSymbolID: rightSymbolID,
 		Comparison: comparison,
+	}
+}
+
+func NewFloatingPointMinMaxRelation(
+	exponentBits, significandBits, leftSymbolID, rightSymbolID int,
+	operation uint8,
+	value BitVectorValue,
+) FloatingPointMinMaxRelation {
+	if exponentBits < 2 || significandBits < 2 {
+		panic("smt: invalid floating-point format")
+	}
+	if operation < FloatingPointOperationMin || operation > FloatingPointOperationMax {
+		panic("smt: invalid floating-point min/max operation")
+	}
+	if value.Width() != exponentBits+significandBits {
+		panic("smt: floating-point min/max result width mismatch")
+	}
+	return FloatingPointMinMaxRelation{
+		ExponentBits: exponentBits, SignificandBits: significandBits,
+		LeftSymbolID: leftSymbolID, RightSymbolID: rightSymbolID,
+		Operation: operation, Value: value,
 	}
 }
 
@@ -133,6 +173,129 @@ func AssertFloatingPointComparisonRelation(
 		depth:     solver.depth,
 		state:     solver.state.asserted(relation),
 	}
+}
+
+func AssertFloatingPointMinMaxRelation(
+	assertion int,
+	solver Solver,
+	relation FloatingPointMinMaxRelation,
+) Solver {
+	if assertion < 0 {
+		panic("smt: negative assertion identity")
+	}
+	nextContext := runtimeContextID(solver.contextID, assertion)
+	return solverValue{
+		contextID: nextContext,
+		depth:     solver.depth,
+		state:     solver.state.asserted(relation),
+	}
+}
+
+// FloatingPointMinMaxBitVector materializes the complete solver-neutral
+// bit-vector selection term used outside the compact assigned-symbol path.
+func FloatingPointMinMaxBitVector(
+	exponentBits, significandBits, leftSymbolID, rightSymbolID int,
+	leftName, rightName string,
+	operation uint8,
+) Term[BitVecSort] {
+	total := exponentBits + significandBits
+	left := BitVecConst(total, leftSymbolID, leftName)
+	right := BitVecConst(total, rightSymbolID, rightName)
+	return FloatingPointMinMaxBitVectorTerms(
+		exponentBits, significandBits, left, right, operation,
+	)
+}
+
+func FloatingPointMinMaxBitVectorTerms(
+	exponentBits, significandBits int,
+	left, right Term[BitVecSort],
+	operation uint8,
+) Term[BitVecSort] {
+	leftNaN := floatingPointNaNBitVectorTerm(
+		exponentBits, significandBits, left,
+	)
+	rightNaN := floatingPointNaNBitVectorTerm(
+		exponentBits, significandBits, right,
+	)
+	less := floatingPointLessBitVectorTerm(
+		exponentBits, significandBits, left, right,
+	)
+	numeric := Term[BitVecSort](If[BitVecSort]{
+		Condition: less, Then: left, Else: right,
+	})
+	if operation == FloatingPointOperationMax {
+		numeric = If[BitVecSort]{Condition: less, Then: right, Else: left}
+	}
+	return If[BitVecSort]{
+		Condition: leftNaN,
+		Then:      right,
+		Else: If[BitVecSort]{
+			Condition: rightNaN,
+			Then:      left,
+			Else:      numeric,
+		},
+	}
+}
+
+func floatingPointNaNBitVectorTerm(
+	exponentBits, significandBits int,
+	value Term[BitVecSort],
+) Term[BoolSort] {
+	total := exponentBits + significandBits
+	exponent := BitVecExtract(total-2, significandBits-1, value)
+	significand := BitVecExtract(significandBits-2, 0, value)
+	return And{Values: []Term[BoolSort]{
+		Equal{
+			Left: exponent,
+			Right: BitVectorTerm(
+				NotBitVectorValue(NewBitVectorUint64(exponentBits, 0)),
+			),
+		},
+		Not{Value: Equal{
+			Left: significand, Right: BitVecVal(significandBits-1, 0),
+		}},
+	}}
+}
+
+func floatingPointZeroBitVectorTerm(
+	exponentBits, significandBits int,
+	value Term[BitVecSort],
+) Term[BoolSort] {
+	total := exponentBits + significandBits
+	exponent := BitVecExtract(total-2, significandBits-1, value)
+	significand := BitVecExtract(significandBits-2, 0, value)
+	return And{Values: []Term[BoolSort]{
+		Equal{Left: exponent, Right: BitVecVal(exponentBits, 0)},
+		Equal{Left: significand, Right: BitVecVal(significandBits-1, 0)},
+	}}
+}
+
+func floatingPointLessBitVectorTerm(
+	exponentBits, significandBits int,
+	left, right Term[BitVecSort],
+) Term[BoolSort] {
+	total := exponentBits + significandBits
+	leftSign := Equal{
+		Left: BitVecExtract(total-1, total-1, left), Right: BitVecVal(1, 1),
+	}
+	rightSign := Equal{
+		Left: BitVecExtract(total-1, total-1, right), Right: BitVecVal(1, 1),
+	}
+	return And{Values: []Term[BoolSort]{
+		Not{Value: floatingPointNaNBitVectorTerm(exponentBits, significandBits, left)},
+		Not{Value: floatingPointNaNBitVectorTerm(exponentBits, significandBits, right)},
+		Not{Value: And{Values: []Term[BoolSort]{
+			floatingPointZeroBitVectorTerm(exponentBits, significandBits, left),
+			floatingPointZeroBitVectorTerm(exponentBits, significandBits, right),
+		}}},
+		Or{Values: []Term[BoolSort]{
+			And{Values: []Term[BoolSort]{leftSign, Not{Value: rightSign}}},
+			And{Values: []Term[BoolSort]{leftSign, rightSign, BitVecULT(right, left)}},
+			And{Values: []Term[BoolSort]{
+				Not{Value: leftSign}, Not{Value: rightSign}, BitVecULT(left, right),
+			}},
+		}},
+	}}
 }
 
 // FloatingPointSymbolModelBits returns the exact IEEE bit pattern assigned to

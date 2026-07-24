@@ -95,3 +95,57 @@ func TestFloatingPointComparisonBitBlastFallback(t *testing.T) {
 		t.Fatalf("invalid fp.leq model: left=%v right=%v", leftBits, rightBits)
 	}
 }
+
+func TestCompactFloatingPointMinMaxWithAssignedSymbols(t *testing.T) {
+	solver := New()
+	solver = Assert(1, solver, BitVectorRelation{
+		Width: 32, SymbolID: 1, Value: NewBitVectorUint64(32, 0xbf800000),
+	})
+	solver = Assert(2, solver, BitVectorRelation{
+		Width: 32, SymbolID: 2, Value: NewBitVectorUint64(32, 0x3f800000),
+	})
+	solver = AssertFloatingPointMinMaxRelation(
+		3, solver,
+		NewFloatingPointMinMaxRelation(
+			8, 24, 1, 2, FloatingPointOperationMin,
+			NewBitVectorUint64(32, 0xbf800000),
+		),
+	)
+	if _, ok := Check(solver).(Satisfiable); !ok {
+		t.Fatalf("expected satisfiable compact fp.min, got %#v", Check(solver))
+	}
+}
+
+func TestFloatingPointMinMaxBitBlastFallback(t *testing.T) {
+	expected := NewBitVectorUint64(32, 0xbf800000)
+	relation := NewFloatingPointMinMaxRelation(
+		8, 24, 1, 2, FloatingPointOperationMin, expected,
+	)
+	result, ok := Check(AssertFloatingPointMinMaxRelation(
+		1, New(), relation,
+	)).(Satisfiable)
+	if !ok {
+		t.Fatal("unconstrained fp.min equality must be satisfiable")
+	}
+	leftBits, leftFound := FloatingPointSymbolModelBits(result.Value, 1)
+	rightBits, rightFound := FloatingPointSymbolModelBits(result.Value, 2)
+	if !leftFound || !rightFound {
+		t.Fatal("bit-blasted fp.min must model both operands")
+	}
+	selected := FloatingPointMin(
+		FloatingPointFromBits(8, 24, leftBits),
+		FloatingPointFromBits(8, 24, rightBits),
+	)
+	if !EqualBitVectorValue(FloatingPointBits(selected), expected) {
+		t.Fatalf("invalid fp.min model: left=%v right=%v", leftBits, rightBits)
+	}
+	selectedBits, selectedFound := BitVecModelValue(
+		result.Value,
+		FloatingPointMinMaxBitVector(
+			8, 24, 1, 2, "left", "right", FloatingPointOperationMin,
+		),
+	)
+	if !selectedFound || !EqualBitVectorValue(selectedBits, expected) {
+		t.Fatalf("derived fp.min model=%v/%v", selectedBits, selectedFound)
+	}
+}
