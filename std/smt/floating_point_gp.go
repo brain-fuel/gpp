@@ -77,13 +77,52 @@ func FloatingPointSignificandBits(value FloatingPointValue) int {
 	}
 }
 
-//goplus:dep FloatingPointIsNegative(0 e nat, 0 s nat, value FloatingPointValue[e, s]) bool
-func FloatingPointIsNegative(value FloatingPointValue) bool {
+// FloatingPointAbs implements SMT-LIB fp.abs exactly at the IEEE encoding
+// boundary: it clears only the sign bit, including for zeros, infinities, and
+// NaNs.
+//
+//goplus:dep FloatingPointAbs(0 e nat, 0 s nat, value FloatingPointValue[e, s]) FloatingPointValue[e, s]
+func FloatingPointAbs(value FloatingPointValue) FloatingPointValue {
 	switch __gp_m3 := any(value).(type) {
 	case floatingPointValue:
 		exponentBits := __gp_m3.exponentBits
 		significandBits := __gp_m3.significandBits
 		bits := __gp_m3.bits
+
+		total := exponentBits + significandBits
+		sign := ConcatBitVectorValue(NewBitVectorUint64(1, 1), NewBitVectorUint64(total-1, 0))
+		return floatingPointValue{exponentBits: exponentBits, significandBits: significandBits, bits: AndBitVectorValue(bits, NotBitVectorValue(sign))}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
+// FloatingPointNeg implements SMT-LIB fp.neg exactly at the IEEE encoding
+// boundary by toggling only the sign bit.
+//
+//goplus:dep FloatingPointNeg(0 e nat, 0 s nat, value FloatingPointValue[e, s]) FloatingPointValue[e, s]
+func FloatingPointNeg(value FloatingPointValue) FloatingPointValue {
+	switch __gp_m4 := any(value).(type) {
+	case floatingPointValue:
+		exponentBits := __gp_m4.exponentBits
+		significandBits := __gp_m4.significandBits
+		bits := __gp_m4.bits
+
+		total := exponentBits + significandBits
+		sign := ConcatBitVectorValue(NewBitVectorUint64(1, 1), NewBitVectorUint64(total-1, 0))
+		return floatingPointValue{exponentBits: exponentBits, significandBits: significandBits, bits: XorBitVectorValue(bits, sign)}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+}
+
+//goplus:dep FloatingPointIsNegative(0 e nat, 0 s nat, value FloatingPointValue[e, s]) bool
+func FloatingPointIsNegative(value FloatingPointValue) bool {
+	switch __gp_m5 := any(value).(type) {
+	case floatingPointValue:
+		exponentBits := __gp_m5.exponentBits
+		significandBits := __gp_m5.significandBits
+		bits := __gp_m5.bits
 
 		return !FloatingPointIsNaN(value) && bits.Bit(exponentBits+significandBits-1)
 	default:
@@ -98,11 +137,11 @@ func FloatingPointIsPositive(value FloatingPointValue) bool {
 
 //goplus:dep FloatingPointIsNaN(0 e nat, 0 s nat, value FloatingPointValue[e, s]) bool
 func FloatingPointIsNaN(value FloatingPointValue) bool {
-	switch __gp_m4 := any(value).(type) {
+	switch __gp_m6 := any(value).(type) {
 	case floatingPointValue:
-		exponentBits := __gp_m4.exponentBits
-		significandBits := __gp_m4.significandBits
-		bits := __gp_m4.bits
+		exponentBits := __gp_m6.exponentBits
+		significandBits := __gp_m6.significandBits
+		bits := __gp_m6.bits
 
 		return floatingPointExponentAll(bits, significandBits, exponentBits) &&
 			floatingPointSignificandNonzero(bits, significandBits)
@@ -113,11 +152,11 @@ func FloatingPointIsNaN(value FloatingPointValue) bool {
 
 //goplus:dep FloatingPointIsInfinite(0 e nat, 0 s nat, value FloatingPointValue[e, s]) bool
 func FloatingPointIsInfinite(value FloatingPointValue) bool {
-	switch __gp_m5 := any(value).(type) {
+	switch __gp_m7 := any(value).(type) {
 	case floatingPointValue:
-		exponentBits := __gp_m5.exponentBits
-		significandBits := __gp_m5.significandBits
-		bits := __gp_m5.bits
+		exponentBits := __gp_m7.exponentBits
+		significandBits := __gp_m7.significandBits
+		bits := __gp_m7.bits
 
 		return floatingPointExponentAll(bits, significandBits, exponentBits) &&
 			!floatingPointSignificandNonzero(bits, significandBits)
@@ -128,11 +167,11 @@ func FloatingPointIsInfinite(value FloatingPointValue) bool {
 
 //goplus:dep FloatingPointIsZero(0 e nat, 0 s nat, value FloatingPointValue[e, s]) bool
 func FloatingPointIsZero(value FloatingPointValue) bool {
-	switch __gp_m6 := any(value).(type) {
+	switch __gp_m8 := any(value).(type) {
 	case floatingPointValue:
-		exponentBits := __gp_m6.exponentBits
-		significandBits := __gp_m6.significandBits
-		bits := __gp_m6.bits
+		exponentBits := __gp_m8.exponentBits
+		significandBits := __gp_m8.significandBits
+		bits := __gp_m8.bits
 
 		return floatingPointExponentNone(bits, significandBits, exponentBits) &&
 			!floatingPointSignificandNonzero(bits, significandBits)
@@ -143,11 +182,11 @@ func FloatingPointIsZero(value FloatingPointValue) bool {
 
 //goplus:dep FloatingPointIsSubnormal(0 e nat, 0 s nat, value FloatingPointValue[e, s]) bool
 func FloatingPointIsSubnormal(value FloatingPointValue) bool {
-	switch __gp_m7 := any(value).(type) {
+	switch __gp_m9 := any(value).(type) {
 	case floatingPointValue:
-		exponentBits := __gp_m7.exponentBits
-		significandBits := __gp_m7.significandBits
-		bits := __gp_m7.bits
+		exponentBits := __gp_m9.exponentBits
+		significandBits := __gp_m9.significandBits
+		bits := __gp_m9.bits
 
 		return floatingPointExponentNone(bits, significandBits, exponentBits) &&
 			floatingPointSignificandNonzero(bits, significandBits)
@@ -158,11 +197,11 @@ func FloatingPointIsSubnormal(value FloatingPointValue) bool {
 
 //goplus:dep FloatingPointIsNormal(0 e nat, 0 s nat, value FloatingPointValue[e, s]) bool
 func FloatingPointIsNormal(value FloatingPointValue) bool {
-	switch __gp_m8 := any(value).(type) {
+	switch __gp_m10 := any(value).(type) {
 	case floatingPointValue:
-		exponentBits := __gp_m8.exponentBits
-		significandBits := __gp_m8.significandBits
-		bits := __gp_m8.bits
+		exponentBits := __gp_m10.exponentBits
+		significandBits := __gp_m10.significandBits
+		bits := __gp_m10.bits
 
 		return !floatingPointExponentNone(bits, significandBits, exponentBits) &&
 			!floatingPointExponentAll(bits, significandBits, exponentBits)

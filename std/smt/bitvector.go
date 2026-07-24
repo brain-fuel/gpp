@@ -661,6 +661,8 @@ func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome,
 			actual = RotateRightBitVectorValue(actual, relation.ParameterA)
 		case 16:
 			actual = RepeatBitVectorValue(actual, relation.ParameterA)
+		case 17:
+			actual = XorBitVectorValue(actual, relation.Operand)
 		}
 		if relation.Masked {
 			actual = AndBitVectorValue(actual, relation.Mask)
@@ -926,6 +928,8 @@ func expandBitVectorRelation(relation BitVectorRelation) Term[BoolSort] {
 		actual = BitVecRotateRight(relation.ParameterA, actual)
 	case 16:
 		actual = BitVecRepeat(relation.ParameterA, actual)
+	case 17:
+		actual = BitVecXor(actual, operand)
 	}
 	if relation.Masked {
 		actual = BitVecAnd(actual, BitVectorTerm(relation.Mask))

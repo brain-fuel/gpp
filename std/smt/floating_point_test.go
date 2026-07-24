@@ -66,6 +66,51 @@ func TestFloatingPointGroundEquality(t *testing.T) {
 	}
 }
 
+func TestFloatingPointGroundAbsAndNeg(t *testing.T) {
+	tests := []struct {
+		name string
+		bits uint64
+		abs  uint64
+		neg  uint64
+	}{
+		{"positive zero", 0x00000000, 0x00000000, 0x80000000},
+		{"negative zero", 0x80000000, 0x00000000, 0x00000000},
+		{"positive normal", 0x3f800000, 0x3f800000, 0xbf800000},
+		{"negative normal", 0xbf800000, 0x3f800000, 0x3f800000},
+		{"positive infinity", 0x7f800000, 0x7f800000, 0xff800000},
+		{"negative NaN payload", 0xffc12345, 0x7fc12345, 0x7fc12345},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			value := FloatingPointFromUint64(8, 24, test.bits)
+			absolute, ok := FloatingPointBits(FloatingPointAbs(value)).Uint64()
+			if !ok || absolute != test.abs {
+				t.Fatalf("abs bits = %#x, want %#x", absolute, test.abs)
+			}
+			negated, ok := FloatingPointBits(FloatingPointNeg(value)).Uint64()
+			if !ok || negated != test.neg {
+				t.Fatalf("neg bits = %#x, want %#x", negated, test.neg)
+			}
+		})
+	}
+}
+
+func TestFloatingPointArbitraryFormatAbsAndNeg(t *testing.T) {
+	bits, err := ParseBitVector(128, "0x80000000000000000000000000000001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := FloatingPointFromBits(15, 113, bits)
+	absolute := FloatingPointBits(FloatingPointAbs(value))
+	negated := FloatingPointBits(FloatingPointNeg(value))
+	if absolute.Bit(127) || !absolute.Bit(0) {
+		t.Fatalf("unexpected binary128 absolute value: %v", absolute)
+	}
+	if negated.Bit(127) || !negated.Bit(0) {
+		t.Fatalf("unexpected binary128 negated value: %v", negated)
+	}
+}
+
 func TestFloatingPointArbitraryFormat(t *testing.T) {
 	bits, err := ParseBitVector(128, "0x7fff0000000000000000000000000000")
 	if err != nil {

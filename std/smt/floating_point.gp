@@ -36,6 +36,27 @@ func FloatingPointSignificandBits(0 e nat, 0 s nat, value FloatingPointValue[e, 
 	match value { case floatingPointValue(_, significandBits, _): return significandBits }
 }
 
+// FloatingPointAbs implements SMT-LIB fp.abs exactly at the IEEE encoding
+// boundary: it clears only the sign bit, including for zeros, infinities, and
+// NaNs.
+func FloatingPointAbs(0 e nat, 0 s nat, value FloatingPointValue[e, s]) FloatingPointValue[e, s] {
+	match value { case floatingPointValue(exponentBits, significandBits, bits):
+		total := exponentBits+significandBits
+		sign := ConcatBitVectorValue(NewBitVectorUint64(1, 1), NewBitVectorUint64(total-1, 0))
+		return floatingPointValue(exponentBits, significandBits, AndBitVectorValue(bits, NotBitVectorValue(sign)))
+	}
+}
+
+// FloatingPointNeg implements SMT-LIB fp.neg exactly at the IEEE encoding
+// boundary by toggling only the sign bit.
+func FloatingPointNeg(0 e nat, 0 s nat, value FloatingPointValue[e, s]) FloatingPointValue[e, s] {
+	match value { case floatingPointValue(exponentBits, significandBits, bits):
+		total := exponentBits+significandBits
+		sign := ConcatBitVectorValue(NewBitVectorUint64(1, 1), NewBitVectorUint64(total-1, 0))
+		return floatingPointValue(exponentBits, significandBits, XorBitVectorValue(bits, sign))
+	}
+}
+
 func FloatingPointIsNegative(0 e nat, 0 s nat, value FloatingPointValue[e, s]) bool {
 	match value { case floatingPointValue(exponentBits, significandBits, bits):
 		return !FloatingPointIsNaN(value) && bits.Bit(exponentBits+significandBits-1)
