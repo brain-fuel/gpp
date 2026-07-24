@@ -44,6 +44,7 @@ type dynamicTerm struct {
 	floatingPointFromBV     *dynamicFloatingPointFromBV
 	floatingPointFormat     *dynamicFloatingPointFormat
 	floatingPointFromReal   *dynamicFloatingPointFromReal
+	floatingPointToReal     *dynamicFloatingPointToReal
 	floatingPointMinMax     *dynamicFloatingPointMinMax
 	floatingPointAdd        *dynamicFloatingPointAdd
 	floatingPointSub        *dynamicFloatingPointSub
@@ -99,6 +100,11 @@ type dynamicFloatingPointFromReal struct {
 	exponentBits, significandBits int
 	symbolID                      int
 	mode                          smt.FloatingPointRoundingMode
+}
+
+type dynamicFloatingPointToReal struct {
+	exponentBits, significandBits int
+	symbolID                      int
 }
 
 type dynamicFloatingPointMinMax struct {
@@ -2426,6 +2432,38 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 			bitVectorSymbol:       terms[0].floatingPointSymbol,
 		}, nil
 	}
+	if operator == "fp.to_real" && len(terms) == 1 &&
+		terms[0].sort == sortFloatingPoint {
+		value := terms[0]
+		if value.bitVectorExact {
+			converted, valid := smt.FloatingPointToRational(
+				smt.FloatingPointFromBits(
+					value.exponentBits, value.significandBits,
+					value.bitVectorValue,
+				),
+			)
+			if !valid {
+				// SMT-LIB leaves NaN/infinity conversion unspecified.
+				converted = smt.Rational{}
+			}
+			return dynamicTerm{
+				sort: sortReal, real: smt.Real{Value: converted},
+			}, nil
+		}
+		if value.floatingPointSymbol == 0 {
+			return dynamicTerm{}, fmt.Errorf(
+				"fp.to_real currently requires a ground value or direct symbol",
+			)
+		}
+		return dynamicTerm{
+			sort: sortReal,
+			floatingPointToReal: &dynamicFloatingPointToReal{
+				exponentBits:    value.exponentBits,
+				significandBits: value.significandBits,
+				symbolID:        value.floatingPointSymbol,
+			},
+		}, nil
+	}
 	if operator == "fp.add" && len(terms) == 3 &&
 		terms[0].sort == sortRoundingMode &&
 		terms[1].sort == sortFloatingPoint &&
@@ -3352,6 +3390,23 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 					),
 				}, nil
 			}
+			toReal, exact := terms[0], terms[1]
+			if toReal.floatingPointToReal == nil {
+				toReal, exact = terms[1], terms[0]
+			}
+			if toReal.floatingPointToReal != nil {
+				if rational, ok := smt.ExactRealConstant(exact.real); ok {
+					relation := toReal.floatingPointToReal
+					return dynamicTerm{
+						sort: sortBool,
+						boolean: smt.NewFloatingPointToRealRelation(
+							relation.exponentBits,
+							relation.significandBits,
+							relation.symbolID, rational,
+						),
+					}, nil
+				}
+			}
 			selected, exact := terms[0], terms[1]
 			if selected.floatingPointMinMax == nil {
 				selected, exact = terms[1], terms[0]
@@ -3550,6 +3605,16 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 		}
 		if values, ok := reals(); ok && len(values) >= 2 && hasReal() {
 			if len(values) == 2 {
+				left, leftExact := smt.ExactRealConstant(values[0])
+				right, rightExact := smt.ExactRealConstant(values[1])
+				if leftExact && rightExact {
+					return dynamicTerm{
+						sort: sortBool,
+						boolean: smt.Bool{
+							Value: smt.CompareRational(left, right) == 0,
+						},
+					}, nil
+				}
 				return dynamicTerm{sort: sortBool, boolean: smt.Equal{Left: values[0], Right: values[1]}}, nil
 			}
 			equalities := make([]smt.Term[smt.BoolSort], len(values)-1)

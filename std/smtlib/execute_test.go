@@ -2980,6 +2980,55 @@ func TestStreamFloatingPointFromReal(t *testing.T) {
 	}
 }
 
+func TestExecuteFloatingPointToReal(t *testing.T) {
+	script := `(set-logic ALL)
+(assert (= (fp.to_real ((_ to_fp 8 24) #x3fc00000)) (/ 3.0 2.0)))
+(assert (= (fp.to_real ((_ to_fp 8 24) #xc0600000)) (- (/ 7.0 2.0))))
+(assert (= (fp.to_real (_ +oo 8 24)) 0.0))
+(check-sat)`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("execute=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+		t.Fatalf("check-sat=%#v", result.Responses[len(result.Responses)-1])
+	}
+}
+
+func TestExecuteSymbolicFloatingPointToReal(t *testing.T) {
+	script := `(set-logic ALL)
+(declare-const x (_ FloatingPoint 8 24))
+(assert (= (fp.to_ieee_bv x) #x3fc00000))
+(assert (= (fp.to_real x) (/ 3.0 2.0)))
+(check-sat)`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("execute=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+		t.Fatalf("check-sat=%#v", result.Responses[len(result.Responses)-1])
+	}
+}
+
+func TestStreamFloatingPointToReal(t *testing.T) {
+	script := `(set-logic QF_FP)
+(declare-const x (_ FloatingPoint 8 24))
+(assert (= (fp.to_ieee_bv x) #x3fc00000))
+(assert (= (fp.to_real x) 1.5))
+(check-sat)`
+	result, ok := executeFloatingPointFast(script)
+	if !ok {
+		t.Fatal("streaming executor rejected fp.to_real")
+	}
+	executed, ok := result.(Executed)
+	if !ok {
+		t.Fatalf("execute=%#v", result)
+	}
+	if _, ok := executed.Responses[len(executed.Responses)-1].(Satisfiable); !ok {
+		t.Fatalf("check-sat=%#v", executed.Responses[len(executed.Responses)-1])
+	}
+}
+
 func TestExecuteSymbolicFloatingPointFromBitVector(t *testing.T) {
 	script := `(set-logic QF_FP)
 (declare-const x (_ BitVec 8))
@@ -3732,6 +3781,45 @@ func BenchmarkExecuteFloatingPointFromReal(b *testing.B) {
   ((_ to_fp 8 24) RNE 1.000000059604644775390625)) #x3f800000))
 (assert (= (fp.to_ieee_bv
   ((_ to_fp 8 24) RNA 1.000000059604644775390625)) #x3f800001))
+(check-sat)`
+	b.Run("stream", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			result, ok := Execute(script).(Executed)
+			if !ok {
+				b.Fatal("stream execution failed")
+			}
+			if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+	b.Run("general", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			parsed, ok := Parse(script).(Parsed)
+			if !ok {
+				b.Fatal("parse failed")
+			}
+			responses, errors := executeCommands(parsed.Commands)
+			if len(errors) != 0 {
+				b.Fatal("general executor rejected script")
+			}
+			if _, ok := responses[len(responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+}
+
+func BenchmarkExecuteFloatingPointToReal(b *testing.B) {
+	script := `(set-logic QF_FP)
+(declare-const positive (_ FloatingPoint 8 24))
+(declare-const larger (_ FloatingPoint 8 24))
+(assert (= (fp.to_ieee_bv positive) #x3fc00000))
+(assert (= (fp.to_ieee_bv larger) #x40600000))
+(assert (= (fp.to_real positive) 1.5))
+(assert (= (fp.to_real larger) 3.5))
 (check-sat)`
 	b.Run("stream", func(b *testing.B) {
 		b.ReportAllocs()

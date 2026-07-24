@@ -67,6 +67,12 @@ func FloatingPointFromRational(exponentBits nat, significandBits nat, mode Float
 	)
 }
 
+// FloatingPointToRational implements SMT-LIB fp.to_real for finite values.
+// The Boolean is false for NaN and infinities, whose result is unspecified.
+func FloatingPointToRational(0 e nat, 0 s nat, value FloatingPointValue[e, s]) (Rational, bool) {
+	return floatingPointToRational(value)
+}
+
 // FloatingPointFromComponents implements SMT-LIB's native
 // (fp sign exponent significand) constructor. The significand argument contains
 // the s-1 explicitly encoded trailing bits, not the hidden leading bit.

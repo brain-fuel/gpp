@@ -961,6 +961,58 @@ func TestFloatingPointFromRealRelation(t *testing.T) {
 	}
 }
 
+func TestFloatingPointToRational(t *testing.T) {
+	tests := []struct {
+		bits  uint64
+		value Rational
+	}{
+		{0x00000000, Rational{}},
+		{0x80000000, Rational{}},
+		{0x3fc00000, NewRational(3, 2)},
+		{0xc0600000, NewRational(-7, 2)},
+		{0x00000001, MustParseRational("1/713623846352979940529142984724747568191373312")},
+	}
+	for _, test := range tests {
+		value, valid := FloatingPointToRational(
+			FloatingPointFromUint64(8, 24, test.bits),
+		)
+		if !valid || CompareRational(value, test.value) != 0 {
+			t.Fatalf("%#x = %s,%v, want %s", test.bits, value, valid, test.value)
+		}
+	}
+	for _, bits := range []uint64{0x7f800000, 0x7fc12345} {
+		if _, valid := FloatingPointToRational(
+			FloatingPointFromUint64(8, 24, bits),
+		); valid {
+			t.Fatalf("%#x unexpectedly has a defined Real value", bits)
+		}
+	}
+}
+
+func TestFloatingPointToRealRelation(t *testing.T) {
+	symbol := BitVecConst(32, 1, "value")
+	assignment := BitVectorRelation{
+		Width: 32, SymbolID: 1,
+		Value: NewBitVectorUint64(32, 0x3fc00000),
+	}
+	relation := NewFloatingPointToRealRelation(
+		8, 24, 1, NewRational(3, 2),
+	)
+	result := Check(AssertFloatingPointToRealRelation(
+		2, Assert(1, New(), assignment), relation,
+	))
+	if _, ok := result.(Satisfiable); !ok {
+		t.Fatalf("result=%T symbol=%#v", result, symbol)
+	}
+	relation.Value = NewRational(7, 4)
+	result = Check(AssertFloatingPointToRealRelation(
+		2, Assert(1, New(), assignment), relation,
+	))
+	if _, ok := result.(Unsatisfiable); !ok {
+		t.Fatalf("contradictory result=%T", result)
+	}
+}
+
 func TestFloatingPointFromSignedBitVectorArbitraryWidth(t *testing.T) {
 	value := IntegerToBitVectorValue(
 		130,

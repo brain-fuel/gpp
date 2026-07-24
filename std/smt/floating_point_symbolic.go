@@ -127,6 +127,16 @@ type FloatingPointFormatConversionRelation struct {
 
 func (FloatingPointFormatConversionRelation) isTerm(BoolSort) {}
 
+type FloatingPointToRealRelation struct {
+	ExponentBits    int
+	SignificandBits int
+	SymbolID        int
+	Value           Rational
+	Negated         bool
+}
+
+func (FloatingPointToRealRelation) isTerm(BoolSort) {}
+
 // FloatingPointAddRelation constrains the exact rounded IEEE bits of fp.add
 // over two assigned same-format symbols.
 type FloatingPointAddRelation struct {
@@ -387,6 +397,19 @@ func NewFloatingPointFormatConversionRelation(
 		TargetSignificandBits: targetSignificandBits,
 		SymbolID:              symbolID, Mode: floatingPointRoundingModeCode(mode),
 		Value: value,
+	}
+}
+
+func NewFloatingPointToRealRelation(
+	exponentBits, significandBits, symbolID int,
+	value Rational,
+) FloatingPointToRealRelation {
+	if exponentBits < 2 || significandBits < 2 || symbolID <= 0 {
+		panic("smt: invalid floating-point to Real relation")
+	}
+	return FloatingPointToRealRelation{
+		ExponentBits: exponentBits, SignificandBits: significandBits,
+		SymbolID: symbolID, Value: value,
 	}
 }
 
@@ -824,6 +847,20 @@ func AssertFloatingPointFormatConversionRelation(
 		contextID: nextContext,
 		depth:     solver.depth,
 		state:     solver.state.asserted(relation),
+	}
+}
+
+func AssertFloatingPointToRealRelation(
+	assertion int,
+	solver Solver,
+	relation FloatingPointToRealRelation,
+) Solver {
+	if assertion < 0 {
+		panic("smt: negative assertion identity")
+	}
+	return solverValue{
+		contextID: runtimeContextID(solver.contextID, assertion),
+		depth:     solver.depth, state: solver.state.asserted(relation),
 	}
 }
 
