@@ -1,6 +1,9 @@
 package smt
 
-import "math"
+import (
+	"math"
+	"math/big"
+)
 
 const (
 	nonlinearIntegerSymbolLimit    = 8
@@ -63,6 +66,25 @@ type IntegerAffineProductSystem struct {
 }
 
 func (IntegerAffineProductSystem) isTerm(BoolSort) {}
+
+// IntegerAffineCubeRelation is the compact form (a*x+b)^3 = k (or != k).
+type IntegerAffineCubeRelation struct {
+	Factor  IntegerAffineFactor
+	Target  IntegerValue
+	Negated bool
+}
+
+func (IntegerAffineCubeRelation) isTerm(BoolSort) {}
+
+// IntegerAffineCubeSystem is an allocation-free conjunction of affine cube
+// relations for the exact nonlinear integer fragment.
+type IntegerAffineCubeSystem struct {
+	Count    int
+	Inline   [4]IntegerAffineCubeRelation
+	Overflow []IntegerAffineCubeRelation
+}
+
+func (IntegerAffineCubeSystem) isTerm(BoolSort) {}
 
 // IntegerSquareBound represents x² <(=) k when Lower is false and
 // k <(=) x² when Lower is true.
@@ -177,6 +199,8 @@ type nonlinearIntegerProblem struct {
 	bounds            [nonlinearIntegerRelationLimit]IntegerAffineSquareBound
 	productBoundCount int
 	productBounds     [nonlinearIntegerRelationLimit]IntegerAffineProductBound
+	cubeCount         int
+	cubes             [nonlinearIntegerRelationLimit]IntegerAffineCubeRelation
 	impossible        bool
 }
 
@@ -190,7 +214,7 @@ func solveNonlinearIntegerAssertions(
 		}
 	}
 	if problem.relationCount == 0 && problem.boundCount == 0 &&
-		problem.productBoundCount == 0 {
+		problem.productBoundCount == 0 && problem.cubeCount == 0 {
 		return checkOutcome{}, false
 	}
 	if problem.impossible {
@@ -296,6 +320,25 @@ func (problem *nonlinearIntegerProblem) boolean(
 		}
 		for _, relation := range relations {
 			if !problem.addAffineRelation(relation) {
+				return false
+			}
+		}
+		return true
+	case IntegerAffineCubeRelation:
+		value.Negated = value.Negated != negated
+		return problem.addAffineCubeRelation(value)
+	case IntegerAffineCubeSystem:
+		if negated || value.Count < 0 {
+			return false
+		}
+		relations := value.Overflow
+		if value.Count <= len(value.Inline) {
+			relations = value.Inline[:value.Count]
+		} else if len(relations) != value.Count {
+			return false
+		}
+		for _, relation := range relations {
+			if !problem.addAffineCubeRelation(relation) {
 				return false
 			}
 		}
@@ -613,6 +656,15 @@ func (problem *nonlinearIntegerProblem) addAffineSquareRange(
 func (problem *nonlinearIntegerProblem) equality(
 	left, right any, negated bool,
 ) bool {
+	cube, target, ok := nonlinearIntegerAffineCubeEquality(left, right)
+	if !ok {
+		cube, target, ok = nonlinearIntegerAffineCubeEquality(right, left)
+	}
+	if ok {
+		return problem.addAffineCubeRelation(IntegerAffineCubeRelation{
+			Factor: cube, Target: target, Negated: negated,
+		})
+	}
 	product, target, ok := nonlinearIntegerProductEquality(left, right)
 	if !ok {
 		product, target, ok = nonlinearIntegerProductEquality(right, left)
@@ -628,6 +680,89 @@ func (problem *nonlinearIntegerProblem) equality(
 	return problem.addAffineRelation(IntegerAffineProductRelation{
 		Left: leftFactor, Right: rightFactor, Target: target, Negated: negated,
 	})
+}
+
+func (problem *nonlinearIntegerProblem) addAffineCubeRelation(
+	value IntegerAffineCubeRelation,
+) bool {
+	if problem.cubeCount == len(problem.cubes) {
+		return false
+	}
+	for _, existing := range problem.cubes[:problem.cubeCount] {
+		if !equalIntegerAffineFactor(existing.Factor, value.Factor) {
+			continue
+		}
+		sameTarget := CompareIntegerValue(existing.Target, value.Target) == 0
+		if (!existing.Negated && !value.Negated && !sameTarget) ||
+			(sameTarget && existing.Negated != value.Negated) {
+			problem.impossible = true
+			return true
+		}
+	}
+	position, added := problem.ensureSymbol(value.Factor.SymbolID)
+	if !added {
+		return false
+	}
+	if value.Negated {
+		// An affine cube with a nonzero coefficient is injective. For m
+		// excluded targets, m+1 distinct variable values guarantee an escape.
+		for candidate := 0; candidate <= problem.cubeCount+1; candidate++ {
+			problem.candidates[position].add(
+				NewIntegerValue(int64(candidate)),
+			)
+		}
+	} else {
+		root := integerCubeRoot(value.Target)
+		cube := MultiplyIntegerValue(
+			MultiplyIntegerValue(root, root), root,
+		)
+		if CompareIntegerValue(cube, value.Target) != 0 {
+			problem.impossible = true
+		} else {
+			problem.addAffineFactorCandidate(position, value.Factor, root)
+			problem.domainComplete[position] = true
+		}
+	}
+	problem.cubes[problem.cubeCount] = value
+	problem.cubeCount++
+	return true
+}
+
+func integerCubeRoot(value IntegerValue) IntegerValue {
+	negative := CompareIntegerValue(value, IntegerValue{}) < 0
+	magnitude := absoluteIntegerValue(value)
+	if inline, ok := magnitude.Int64(); ok {
+		root := int64(math.Cbrt(float64(inline)))
+		for root < inline && root+1 <= inline/(root+1)/(root+1) {
+			root++
+		}
+		for root > 0 && root > inline/root/root {
+			root--
+		}
+		if negative {
+			root = -root
+		}
+		return NewIntegerValue(root)
+	}
+	target := magnitude.big()
+	low := new(big.Int)
+	high := new(big.Int).Lsh(big.NewInt(1), uint((target.BitLen()+2)/3))
+	one := big.NewInt(1)
+	for new(big.Int).Sub(high, low).Cmp(one) > 0 {
+		middle := new(big.Int).Add(low, high)
+		middle.Rsh(middle, 1)
+		cube := new(big.Int).Mul(middle, middle)
+		cube.Mul(cube, middle)
+		if cube.Cmp(target) <= 0 {
+			low = middle
+		} else {
+			high = middle
+		}
+	}
+	if negative {
+		low.Neg(low)
+	}
+	return integerValueFromBig(low)
 }
 
 func (problem *nonlinearIntegerProblem) addRelation(
@@ -795,6 +930,58 @@ func nonlinearIntegerProductEquality(
 		booleanModel{}, integerModel{}, rationalModel{},
 	)
 	return product, target, ok
+}
+
+func nonlinearIntegerAffineCubeEquality(
+	cubeTerm, targetTerm any,
+) (IntegerAffineFactor, IntegerValue, bool) {
+	cubeExpression, ok := cubeTerm.(Term[IntSort])
+	if !ok {
+		return IntegerAffineFactor{}, IntegerValue{}, false
+	}
+	factor, ok := nonlinearIntegerAffineCube(cubeExpression)
+	if !ok {
+		return IntegerAffineFactor{}, IntegerValue{}, false
+	}
+	targetExpression, ok := targetTerm.(Term[IntSort])
+	if !ok {
+		return IntegerAffineFactor{}, IntegerValue{}, false
+	}
+	target, ok := evaluateInteger(
+		targetExpression,
+		booleanModel{}, integerModel{}, rationalModel{},
+	)
+	return factor, target, ok
+}
+
+func nonlinearIntegerAffineCube(
+	term Term[IntSort],
+) (IntegerAffineFactor, bool) {
+	product, ok := term.(IntegerMultiply)
+	if !ok {
+		return IntegerAffineFactor{}, false
+	}
+	for _, orientation := range [2]struct {
+		factor Term[IntSort]
+		square Term[IntSort]
+	}{
+		{factor: product.Left, square: product.Right},
+		{factor: product.Right, square: product.Left},
+	} {
+		factor, factorOK := nonlinearIntegerAffineFactor(orientation.factor)
+		square, squareOK := orientation.square.(IntegerMultiply)
+		if !factorOK || !squareOK {
+			continue
+		}
+		left, leftOK := nonlinearIntegerAffineFactor(square.Left)
+		right, rightOK := nonlinearIntegerAffineFactor(square.Right)
+		if leftOK && rightOK &&
+			equalIntegerAffineFactor(factor, left) &&
+			equalIntegerAffineFactor(factor, right) {
+			return factor, true
+		}
+	}
+	return IntegerAffineFactor{}, false
 }
 
 func (problem *nonlinearIntegerProblem) ensureSymbol(id int) (int, bool) {
@@ -982,6 +1169,22 @@ func (problem *nonlinearIntegerProblem) valid(
 			}
 		}
 		if !holds {
+			return false
+		}
+	}
+	for _, relation := range problem.cubes[:problem.cubeCount] {
+		position := problem.symbolPosition(relation.Factor.SymbolID)
+		if position < 0 || !assigned[position] {
+			continue
+		}
+		factor := evaluateIntegerAffineFactor(
+			relation.Factor, values[position],
+		)
+		cube := MultiplyIntegerValue(
+			MultiplyIntegerValue(factor, factor), factor,
+		)
+		holds := CompareIntegerValue(cube, relation.Target) == 0
+		if holds == relation.Negated {
 			return false
 		}
 	}

@@ -432,6 +432,105 @@ func TestNonlinearIntegerAffineProductBounds(t *testing.T) {
 	}
 }
 
+func TestNonlinearIntegerAffineCubeRelations(t *testing.T) {
+	x := IntSymbol{ID: 115, Name: "x"}
+	factor := Add{Values: []Term[IntSort]{
+		ScaleInteger(NewIntegerValue(2), x),
+		IntegerTerm(NewIntegerValue(1)),
+	}}
+	square := MultiplyInteger(factor, factor)
+	cube := MultiplyInteger(square, factor)
+	equality := Equal{
+		Left: cube, Right: IntegerTerm(NewIntegerValue(343)),
+	}
+	checked := Check(Assert(1, New(), equality))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("affine cube=%#v", checked)
+	}
+	value, found := IntegerModelValue(result.Value, x)
+	if !found || CompareIntegerValue(value, NewIntegerValue(3)) != 0 {
+		t.Fatalf("affine cube model=%v/%v", value, found)
+	}
+
+	noncube := Equal{
+		Left: cube, Right: IntegerTerm(NewIntegerValue(342)),
+	}
+	noncubeResult := Check(Assert(2, New(), noncube))
+	if _, ok := noncubeResult.(Unsatisfiable); !ok {
+		t.Fatalf("noncube result=%#v", noncubeResult)
+	}
+
+	congruence := Equal{
+		Left: cube, Right: IntegerTerm(NewIntegerValue(8)),
+	}
+	congruenceResult := Check(Assert(3, New(), congruence))
+	if _, ok := congruenceResult.(Unsatisfiable); !ok {
+		t.Fatalf("cube congruence=%#v", congruenceResult)
+	}
+
+	disequality := Not{Value: equality}
+	disequalityResult := Check(Assert(4, New(), disequality))
+	if _, ok := disequalityResult.(Satisfiable); !ok {
+		t.Fatalf("cube disequality=%#v", disequalityResult)
+	}
+
+	exclusions := make([]Term[BoolSort], 5)
+	for candidate := int64(0); candidate < int64(len(exclusions)); candidate++ {
+		factorValue := 2*candidate + 1
+		exclusions[candidate] = Not{Value: Equal{
+			Left: cube,
+			Right: IntegerTerm(NewIntegerValue(
+				factorValue * factorValue * factorValue,
+			)),
+		}}
+	}
+	exclusionResult := Check(Assert(5, New(), And{Values: exclusions}))
+	exclusionModel, ok := exclusionResult.(Satisfiable)
+	if !ok {
+		t.Fatalf("cube exclusions=%#v", exclusionResult)
+	}
+	value, found = IntegerModelValue(exclusionModel.Value, x)
+	if !found || CompareIntegerValue(
+		value, NewIntegerValue(int64(len(exclusions))),
+	) < 0 {
+		t.Fatalf("cube exclusion escape=%v/%v", value, found)
+	}
+
+	conflict := And{Values: []Term[BoolSort]{equality, disequality}}
+	conflictResult := Check(Assert(6, New(), conflict))
+	if _, ok := conflictResult.(Unsatisfiable); !ok {
+		t.Fatalf("cube conflict=%#v", conflictResult)
+	}
+
+	wideRoot, err := ParseIntegerValue("1267650600228229401496703205376")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wideCube := MultiplyIntegerValue(
+		MultiplyIntegerValue(wideRoot, wideRoot), wideRoot,
+	)
+	wideFactor := Add{Values: []Term[IntSort]{
+		x, IntegerTerm(NewIntegerValue(2)),
+	}}
+	wideTerm := MultiplyInteger(
+		MultiplyInteger(wideFactor, wideFactor), wideFactor,
+	)
+	checked = Check(Assert(7, New(), Equal{
+		Left: wideTerm, Right: IntegerTerm(wideCube),
+	}))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("wide cube=%#v", checked)
+	}
+	value, found = IntegerModelValue(result.Value, x)
+	if !found || CompareIntegerValue(
+		AddIntegerValue(value, NewIntegerValue(2)), wideRoot,
+	) != 0 {
+		t.Fatalf("wide cube model=%v/%v", value, found)
+	}
+}
+
 func TestNonlinearIntegerAffineFactorProducts(t *testing.T) {
 	x := IntSymbol{ID: 110, Name: "x"}
 	y := IntSymbol{ID: 111, Name: "y"}
