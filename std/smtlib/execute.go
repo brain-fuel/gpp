@@ -9,17 +9,19 @@ import (
 )
 
 const (
-	sortNumber       = -2
-	sortBitVector    = -3
-	sortArrayIntInt  = -4
-	sortArrayBitVec  = -5
-	sortString       = -6
-	sortRegexString  = -7
-	sortReal         = -1
-	sortBool         = 0
-	sortInt          = 1
-	sortDatatypeSelf = 2
-	sortDatatypeBase = -1000000
+	sortNumber        = -2
+	sortBitVector     = -3
+	sortArrayIntInt   = -4
+	sortArrayBitVec   = -5
+	sortString        = -6
+	sortRegexString   = -7
+	sortFloatingPoint = -8
+	sortRoundingMode  = -9
+	sortReal          = -1
+	sortBool          = 0
+	sortInt           = 1
+	sortDatatypeSelf  = 2
+	sortDatatypeBase  = -1000000
 )
 
 type dynamicTerm struct {
@@ -28,9 +30,17 @@ type dynamicTerm struct {
 	integer              smt.Term[smt.IntSort]
 	real                 smt.Term[smt.RealSort]
 	bitVector            smt.Term[smt.BitVecSort]
+	bitVectorExact       bool
+	bitVectorValue       smt.BitVectorValue
+	bitVectorSymbol      int
 	stringValue          smt.Term[smt.StringSort]
 	regexString          smt.Regex[smt.StringSort]
 	bitWidth             int
+	exponentBits         int
+	significandBits      int
+	roundingMode         smt.FloatingPointRoundingMode
+	floatingPointRound   *dynamicFloatingPointRound
+	floatingPointSymbol  int
 	uninterpreted        smt.Term[smt.UninterpretedSort]
 	arrayIntInt          smt.Term[smt.ArraySort[smt.IntSort, smt.IntSort]]
 	arrayBitVec          smt.Term[smt.ArraySort[smt.BitVecSort, smt.BitVecSort]]
@@ -44,6 +54,12 @@ type dynamicTerm struct {
 	selectorConstructors int
 	selectorField        int
 	datatypeMatch        *dynamicDatatypeMatch
+}
+
+type dynamicFloatingPointRound struct {
+	exponentBits, significandBits int
+	symbolID                      int
+	mode                          smt.FloatingPointRoundingMode
 }
 
 type dynamicDatatypeMatch struct {
@@ -160,6 +176,7 @@ type executor struct {
 	integers               map[string]smt.Term[smt.IntSort]
 	reals                  map[string]smt.Term[smt.RealSort]
 	bitVectors             map[string]dynamicTerm
+	floatingPoints         map[string]dynamicTerm
 	strings                map[string]smt.Term[smt.StringSort]
 	arrays                 map[string]dynamicTerm
 	uninterpreted          map[string]dynamicTerm
@@ -191,6 +208,7 @@ func executeCommands(commands []Command) ([]Response, []ExecutionError) {
 		integers:               make(map[string]smt.Term[smt.IntSort]),
 		reals:                  make(map[string]smt.Term[smt.RealSort]),
 		bitVectors:             make(map[string]dynamicTerm),
+		floatingPoints:         make(map[string]dynamicTerm),
 		strings:                make(map[string]smt.Term[smt.StringSort]),
 		arrays:                 make(map[string]dynamicTerm),
 		uninterpreted:          make(map[string]dynamicTerm),
@@ -449,6 +467,10 @@ func (executor *executor) declare(index int, name string, sortExpression SExpr, 
 		executor.fail(index, at, "duplicate declaration "+name)
 		return
 	}
+	if _, exists := executor.floatingPoints[name]; exists {
+		executor.fail(index, at, "duplicate declaration "+name)
+		return
+	}
 	if _, exists := executor.strings[name]; exists {
 		executor.fail(index, at, "duplicate declaration "+name)
 		return
@@ -478,7 +500,23 @@ func (executor *executor) declare(index int, name string, sortExpression SExpr, 
 	}
 	if width, bitVector := bitVectorSortWidth(sortExpression); bitVector {
 		executor.nextSymbol++
-		executor.bitVectors[name] = dynamicTerm{sort: sortBitVector, bitWidth: width, bitVector: smt.BitVecConst(width, executor.nextSymbol, name)}
+		executor.bitVectors[name] = dynamicTerm{
+			sort: sortBitVector, bitWidth: width,
+			bitVector:       smt.BitVecConst(width, executor.nextSymbol, name),
+			bitVectorSymbol: executor.nextSymbol,
+		}
+		executor.acknowledge(index)
+		return
+	}
+	if exponentBits, significandBits, floatingPoint := floatingPointSortWidths(sortExpression); floatingPoint {
+		executor.nextSymbol++
+		total := exponentBits + significandBits
+		executor.floatingPoints[name] = dynamicTerm{
+			sort: sortFloatingPoint, bitWidth: total,
+			exponentBits: exponentBits, significandBits: significandBits,
+			bitVector:           smt.BitVecConst(total, executor.nextSymbol, name),
+			floatingPointSymbol: executor.nextSymbol,
+		}
 		executor.acknowledge(index)
 		return
 	}
@@ -1439,6 +1477,16 @@ func (executor *executor) term(expression SExpr) (dynamicTerm, error) {
 			return dynamicTerm{sort: sortRegexString, regexString: smt.FullRegex[smt.StringSort]()}, nil
 		case "re.allchar":
 			return dynamicTerm{sort: sortRegexString, regexString: smt.AllCharRegex[smt.StringSort]()}, nil
+		case "RNE", "roundNearestTiesToEven":
+			return dynamicTerm{sort: sortRoundingMode, roundingMode: smt.RoundNearestTiesToEven()}, nil
+		case "RNA", "roundNearestTiesToAway":
+			return dynamicTerm{sort: sortRoundingMode, roundingMode: smt.RoundNearestTiesToAway()}, nil
+		case "RTP", "roundTowardPositive":
+			return dynamicTerm{sort: sortRoundingMode, roundingMode: smt.RoundTowardPositive()}, nil
+		case "RTN", "roundTowardNegative":
+			return dynamicTerm{sort: sortRoundingMode, roundingMode: smt.RoundTowardNegative()}, nil
+		case "RTZ", "roundTowardZero":
+			return dynamicTerm{sort: sortRoundingMode, roundingMode: smt.RoundTowardZero()}, nil
 		}
 		if value, found := executor.localTerms[atom.Text]; found {
 			return value, nil
@@ -1456,6 +1504,9 @@ func (executor *executor) term(expression SExpr) (dynamicTerm, error) {
 			return dynamicTerm{sort: sortReal, real: value}, nil
 		}
 		if value, found := executor.bitVectors[atom.Text]; found {
+			return value, nil
+		}
+		if value, found := executor.floatingPoints[atom.Text]; found {
 			return value, nil
 		}
 		if value, found := executor.strings[atom.Text]; found {
@@ -1478,7 +1529,11 @@ func (executor *executor) term(expression SExpr) (dynamicTerm, error) {
 			if err != nil {
 				return dynamicTerm{}, err
 			}
-			return dynamicTerm{sort: sortBitVector, bitWidth: width, bitVector: smt.BitVectorTerm(value)}, nil
+			return dynamicTerm{
+				sort: sortBitVector, bitWidth: width,
+				bitVector:      smt.BitVectorTerm(value),
+				bitVectorExact: true, bitVectorValue: value,
+			}, nil
 		}
 		if _, numeral := atom.Kind.(NumeralAtom); numeral {
 			value, err := strconv.ParseInt(atom.Text, 10, 64)
@@ -2225,6 +2280,53 @@ func compactDatatypeTerms(values []dynamicTerm) smt.NaryDatatypeTerms {
 }
 
 func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error) {
+	if operator == "fp.to_ieee_bv" && len(terms) == 1 &&
+		terms[0].sort == sortFloatingPoint {
+		return dynamicTerm{
+			sort: sortBitVector, bitWidth: terms[0].bitWidth,
+			bitVector:          terms[0].bitVector,
+			bitVectorExact:     terms[0].bitVectorExact,
+			bitVectorValue:     terms[0].bitVectorValue,
+			floatingPointRound: terms[0].floatingPointRound,
+			bitVectorSymbol:    terms[0].floatingPointSymbol,
+		}, nil
+	}
+	if operator == "fp.roundToIntegral" && len(terms) == 2 &&
+		terms[0].sort == sortRoundingMode &&
+		terms[1].sort == sortFloatingPoint {
+		if terms[1].bitVectorExact {
+			value := smt.FloatingPointFromBits(
+				terms[1].exponentBits, terms[1].significandBits,
+				terms[1].bitVectorValue,
+			)
+			bits := smt.FloatingPointBits(
+				smt.FloatingPointRoundToIntegral(terms[0].roundingMode, value),
+			)
+			return dynamicTerm{
+				sort: sortFloatingPoint, bitWidth: terms[1].bitWidth,
+				exponentBits:    terms[1].exponentBits,
+				significandBits: terms[1].significandBits,
+				bitVector:       smt.BitVectorTerm(bits),
+				bitVectorExact:  true, bitVectorValue: bits,
+			}, nil
+		}
+		rounded := &dynamicFloatingPointRound{
+			exponentBits:    terms[1].exponentBits,
+			significandBits: terms[1].significandBits,
+			symbolID:        terms[1].floatingPointSymbol,
+			mode:            terms[0].roundingMode,
+		}
+		return dynamicTerm{
+			sort: sortFloatingPoint, bitWidth: terms[1].bitWidth,
+			exponentBits:    terms[1].exponentBits,
+			significandBits: terms[1].significandBits,
+			bitVector: smt.FloatingPointRoundToIntegralBitVectorTerm(
+				terms[1].exponentBits, terms[1].significandBits,
+				terms[1].bitVector, terms[0].roundingMode,
+			),
+			floatingPointRound: rounded,
+		}, nil
+	}
 	if operator == "select" && len(terms) == 2 && terms[0].sort == sortArrayBitVec && terms[1].sort == sortBitVector && terms[1].bitWidth == terms[0].arrayIndexWidth {
 		return dynamicTerm{sort: sortBitVector, bitWidth: terms[0].arrayElementWidth, bitVector: smt.Select(terms[0].arrayBitVec, terms[1].bitVector)}, nil
 	}
@@ -2545,6 +2647,38 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 			return dynamicTerm{sort: sortBool, boolean: smt.And{Values: disequalities}}, nil
 		}
 	case "=":
+		if len(terms) == 2 {
+			symbol, exact := terms[0], terms[1]
+			if symbol.bitVectorSymbol == 0 {
+				symbol, exact = terms[1], terms[0]
+			}
+			if symbol.sort == sortBitVector && symbol.bitVectorSymbol != 0 &&
+				exact.bitVectorExact && symbol.bitWidth == exact.bitWidth {
+				return dynamicTerm{
+					sort: sortBool,
+					boolean: smt.BitVectorRelation{
+						Width: symbol.bitWidth, SymbolID: symbol.bitVectorSymbol,
+						Value: exact.bitVectorValue,
+					},
+				}, nil
+			}
+			rounded, exact := terms[0], terms[1]
+			if rounded.floatingPointRound == nil {
+				rounded, exact = terms[1], terms[0]
+			}
+			if rounded.floatingPointRound != nil && exact.bitVectorExact &&
+				rounded.bitWidth == exact.bitWidth &&
+				rounded.floatingPointRound.symbolID != 0 {
+				relation := rounded.floatingPointRound
+				return dynamicTerm{
+					sort: sortBool,
+					boolean: smt.NewFloatingPointRoundToIntegralRelation(
+						relation.exponentBits, relation.significandBits,
+						relation.symbolID, relation.mode, exact.bitVectorValue,
+					),
+				}, nil
+			}
+		}
 		if values, ok := stringTerms(); ok && len(values) >= 2 {
 			equalities := make([]smt.Term[smt.BoolSort], len(values)-1)
 			for index := 1; index < len(values); index++ {
@@ -2893,6 +3027,21 @@ func indexedBitVectorOperator(expression SExpr) (string, []int, bool) {
 }
 
 func buildIndexedBitVectorApplication(operator string, parameters []int, terms []dynamicTerm) (dynamicTerm, error) {
+	if operator == "to_fp" {
+		if len(parameters) == 2 && parameters[0] >= 2 && parameters[1] >= 2 &&
+			len(terms) == 1 && terms[0].sort == sortBitVector &&
+			terms[0].bitWidth == parameters[0]+parameters[1] {
+			return dynamicTerm{
+				sort: sortFloatingPoint, bitWidth: terms[0].bitWidth,
+				exponentBits: parameters[0], significandBits: parameters[1],
+				bitVector:           terms[0].bitVector,
+				bitVectorExact:      terms[0].bitVectorExact,
+				bitVectorValue:      terms[0].bitVectorValue,
+				floatingPointSymbol: terms[0].bitVectorSymbol,
+			}, nil
+		}
+		return dynamicTerm{}, fmt.Errorf("ill-sorted indexed application %s", operator)
+	}
 	if operator == "int_to_bv" {
 		if len(parameters) == 1 && parameters[0] > 0 && len(terms) == 1 && (terms[0].sort == sortInt || terms[0].sort == sortNumber && terms[0].integer != nil) {
 			return dynamicTerm{sort: sortBitVector, bitWidth: parameters[0], bitVector: smt.IntToBitVec(parameters[0], terms[0].integer)}, nil
@@ -2980,6 +3129,26 @@ func bitVectorSortWidth(expression SExpr) (int, bool) {
 	}
 	width, err := strconv.Atoi(widthText)
 	return width, err == nil && width > 0
+}
+
+func floatingPointSortWidths(expression SExpr) (int, int, bool) {
+	list, ok := expression.(List)
+	if !ok || len(list.Values) != 4 {
+		return 0, 0, false
+	}
+	marker, markerOK := atomText(list.Values[0])
+	name, nameOK := atomText(list.Values[1])
+	exponentText, exponentOK := atomText(list.Values[2])
+	significandText, significandOK := atomText(list.Values[3])
+	if !markerOK || !nameOK || !exponentOK || !significandOK ||
+		marker != "_" || name != "FloatingPoint" {
+		return 0, 0, false
+	}
+	exponentBits, exponentErr := strconv.Atoi(exponentText)
+	significandBits, significandErr := strconv.Atoi(significandText)
+	return exponentBits, significandBits,
+		exponentErr == nil && significandErr == nil &&
+			exponentBits >= 2 && significandBits >= 2
 }
 
 func intIntArraySort(expression SExpr) bool {

@@ -1,6 +1,7 @@
 package smtlib
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -2213,6 +2214,93 @@ func TestExecuteIndexedBitVectorArithmetic(t *testing.T) {
 	}
 	if _, ok := result.Responses[len(result.Responses)-1].(Unsatisfiable); !ok {
 		t.Fatalf("wrap response=%#v", result.Responses[len(result.Responses)-1])
+	}
+}
+
+func TestExecuteFloatingPointRoundToIntegral(t *testing.T) {
+	tests := []struct {
+		mode, input, expected string
+	}{
+		{"RNE", "3fc00000", "40000000"},
+		{"RNA", "3f000000", "3f800000"},
+		{"RTP", "bf000000", "80000000"},
+		{"RTN", "bf000000", "bf800000"},
+		{"RTZ", "bfc00000", "bf800000"},
+	}
+	for _, test := range tests {
+		script := `(set-logic QF_FP)
+(declare-const x (_ FloatingPoint 8 24))
+(assert (= (fp.to_ieee_bv x) #x` + test.input + `))
+(assert (= (fp.to_ieee_bv (fp.roundToIntegral ` + test.mode + ` x)) #x` + test.expected + `))
+(check-sat)
+(get-value ((fp.to_ieee_bv (fp.roundToIntegral ` + test.mode + ` x))))`
+		result, ok := Execute(script).(Executed)
+		if !ok {
+			t.Fatalf("%s execute=%#v", test.mode, Execute(script))
+		}
+		if _, ok := result.Responses[4].(Satisfiable); !ok {
+			t.Fatalf("%s check=%#v", test.mode, result.Responses[4])
+		}
+		values := result.Responses[5].(ValuesAvailable).Values
+		value := values[0].(BitVectorValue).Value
+		raw, inline := value.Uint64()
+		expected, err := strconv.ParseUint(test.expected, 16, 32)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !inline || raw != expected {
+			t.Fatalf("%s rounded=%#x/%v", test.mode, raw, inline)
+		}
+	}
+}
+
+func TestExecuteFloatingPointRoundToIntegralLongRoundingModeName(t *testing.T) {
+	script := `(set-logic QF_FP)
+(assert (= (fp.to_ieee_bv
+  (fp.roundToIntegral roundNearestTiesToEven
+    ((_ to_fp 8 24) #x3fc00000)))
+  #x40000000))
+(check-sat)`
+	result, ok := Execute(script).(Executed)
+	if !ok {
+		t.Fatalf("execute=%#v", Execute(script))
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+		t.Fatalf("last response=%#v", result.Responses[len(result.Responses)-1])
+	}
+}
+
+func TestRejectIllSortedFloatingPointRoundToIntegral(t *testing.T) {
+	scripts := []string{
+		`(declare-const x (_ FloatingPoint 1 24))`,
+		`(assert (= (fp.to_ieee_bv ((_ to_fp 8 24) #x0000)) #x00000000))`,
+		`(declare-const x (_ FloatingPoint 8 24))
+		 (assert (= (fp.to_ieee_bv (fp.roundToIntegral bogus x)) #x00000000))`,
+		`(declare-const x (_ FloatingPoint 8 24))
+		 (assert (= (fp.to_ieee_bv (fp.roundToIntegral RNE #x00000000)) #x00000000))`,
+	}
+	for index, script := range scripts {
+		if _, ok := Execute(script).(ExecutionFailed); !ok {
+			t.Fatalf("script %d unexpectedly accepted: %#v", index, Execute(script))
+		}
+	}
+}
+
+func BenchmarkExecuteFloatingPointRoundToIntegral(b *testing.B) {
+	script := `(set-logic QF_FP)
+(declare-const x (_ FloatingPoint 8 24))
+(assert (= (fp.to_ieee_bv x) #x3fc00000))
+(assert (= (fp.to_ieee_bv (fp.roundToIntegral RNE x)) #x40000000))
+(check-sat)`
+	b.ReportAllocs()
+	for b.Loop() {
+		result, ok := Execute(script).(Executed)
+		if !ok {
+			b.Fatal("execution failed")
+		}
+		if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+			b.Fatal("unexpected result")
+		}
 	}
 }
 
