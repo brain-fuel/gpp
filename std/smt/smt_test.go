@@ -648,6 +648,96 @@ func TestNonlinearIntegerAffineCubeBounds(t *testing.T) {
 	}
 }
 
+func TestNonlinearIntegerHigherAffinePowerRelations(t *testing.T) {
+	x := IntSymbol{ID: 117, Name: "x"}
+	factor := Add{Values: []Term[IntSort]{
+		ScaleInteger(NewIntegerValue(2), x),
+		IntegerTerm(NewIntegerValue(1)),
+	}}
+	square := MultiplyInteger(factor, factor)
+	fourth := MultiplyInteger(square, square)
+	checked := Check(Assert(1, New(), Equal{
+		Left: fourth, Right: IntegerTerm(NewIntegerValue(2401)),
+	}))
+	result, ok := checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("affine fourth power=%#v", checked)
+	}
+	value, found := IntegerModelValue(result.Value, x)
+	if !found || CompareIntegerValue(value, NewIntegerValue(3)) != 0 {
+		t.Fatalf("affine fourth-power model=%v/%v", value, found)
+	}
+
+	fifth := MultiplyInteger(fourth, factor)
+	checked = Check(Assert(2, New(), Equal{
+		Left: fifth, Right: IntegerTerm(NewIntegerValue(-3125)),
+	}))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("affine fifth power=%#v", checked)
+	}
+	value, found = IntegerModelValue(result.Value, x)
+	if !found || CompareIntegerValue(value, NewIntegerValue(-3)) != 0 {
+		t.Fatalf("affine fifth-power model=%v/%v", value, found)
+	}
+
+	nonimage := Check(Assert(3, New(), Equal{
+		Left: fourth, Right: IntegerTerm(NewIntegerValue(2400)),
+	}))
+	if _, ok := nonimage.(Unsatisfiable); !ok {
+		t.Fatalf("fourth-power nonimage=%#v", nonimage)
+	}
+	congruence := Check(Assert(4, New(), Equal{
+		Left: fourth, Right: IntegerTerm(NewIntegerValue(16)),
+	}))
+	if _, ok := congruence.(Unsatisfiable); !ok {
+		t.Fatalf("fourth-power congruence=%#v", congruence)
+	}
+
+	exclusions := make([]Term[BoolSort], 5)
+	for candidate := int64(0); candidate < int64(len(exclusions)); candidate++ {
+		factorValue := 2*candidate + 1
+		target := factorValue * factorValue * factorValue * factorValue
+		exclusions[candidate] = Not{Value: Equal{
+			Left: fourth, Right: IntegerTerm(NewIntegerValue(target)),
+		}}
+	}
+	escape := Check(Assert(5, New(), And{Values: exclusions}))
+	escapeModel, ok := escape.(Satisfiable)
+	if !ok {
+		t.Fatalf("fourth-power exclusions=%#v", escape)
+	}
+	value, found = IntegerModelValue(escapeModel.Value, x)
+	if !found {
+		t.Fatal("missing fourth-power escape model")
+	}
+
+	wideRoot, err := ParseIntegerValue("1267650600228229401496703205376")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wideTarget := integerPowerValue(wideRoot, 4)
+	wideFactor := Add{Values: []Term[IntSort]{
+		x, IntegerTerm(NewIntegerValue(2)),
+	}}
+	wideSquare := MultiplyInteger(wideFactor, wideFactor)
+	wideFourth := MultiplyInteger(wideSquare, wideSquare)
+	checked = Check(Assert(6, New(), Equal{
+		Left: wideFourth, Right: IntegerTerm(wideTarget),
+	}))
+	result, ok = checked.(Satisfiable)
+	if !ok {
+		t.Fatalf("wide fourth power=%#v", checked)
+	}
+	value, found = IntegerModelValue(result.Value, x)
+	positive := AddIntegerValue(value, NewIntegerValue(2))
+	if !found || CompareIntegerValue(
+		absoluteIntegerValue(positive), wideRoot,
+	) != 0 {
+		t.Fatalf("wide fourth-power model=%v/%v", value, found)
+	}
+}
+
 func TestNonlinearIntegerAffineFactorProducts(t *testing.T) {
 	x := IntSymbol{ID: 110, Name: "x"}
 	y := IntSymbol{ID: 111, Name: "y"}
