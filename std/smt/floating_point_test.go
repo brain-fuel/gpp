@@ -222,6 +222,100 @@ func TestFloatingPointRoundToIntegralBinary128(t *testing.T) {
 	}
 }
 
+func TestFloatingPointAddBinary32(t *testing.T) {
+	modes := []struct {
+		name string
+		mode FloatingPointRoundingMode
+	}{
+		{"RNE", RoundNearestTiesToEven()},
+		{"RNA", RoundNearestTiesToAway()},
+		{"RTP", RoundTowardPositive()},
+		{"RTN", RoundTowardNegative()},
+		{"RTZ", RoundTowardZero()},
+	}
+	tests := []struct {
+		name        string
+		left, right uint64
+		want        [5]uint64
+	}{
+		{"exact", 0x3f800000, 0x3f800000, [5]uint64{0x40000000, 0x40000000, 0x40000000, 0x40000000, 0x40000000}},
+		{"positive tie", 0x3f800000, 0x33800000, [5]uint64{0x3f800000, 0x3f800001, 0x3f800001, 0x3f800000, 0x3f800000}},
+		{"negative tie", 0xbf800000, 0xb3800000, [5]uint64{0xbf800000, 0xbf800001, 0xbf800000, 0xbf800001, 0xbf800000}},
+		{"cancellation", 0x3f800000, 0xbf800000, [5]uint64{0, 0, 0, 0x80000000, 0}},
+		{"subnormal carry", 0x007fffff, 0x00000001, [5]uint64{0x00800000, 0x00800000, 0x00800000, 0x00800000, 0x00800000}},
+		{"positive dominance", 0x3f800000, 0x00000001, [5]uint64{0x3f800000, 0x3f800000, 0x3f800001, 0x3f800000, 0x3f800000}},
+		{"opposite dominance", 0x3f800000, 0x80000001, [5]uint64{0x3f800000, 0x3f800000, 0x3f800000, 0x3f7fffff, 0x3f7fffff}},
+		{"overflow", 0x7f7fffff, 0x7f7fffff, [5]uint64{0x7f800000, 0x7f800000, 0x7f800000, 0x7f7fffff, 0x7f7fffff}},
+		{"negative overflow", 0xff7fffff, 0xff7fffff, [5]uint64{0xff800000, 0xff800000, 0xff7fffff, 0xff800000, 0xff7fffff}},
+	}
+	for _, test := range tests {
+		for modeIndex, mode := range modes {
+			t.Run(test.name+"/"+mode.name, func(t *testing.T) {
+				sum := FloatingPointAdd(
+					mode.mode,
+					FloatingPointFromUint64(8, 24, test.left),
+					FloatingPointFromUint64(8, 24, test.right),
+				)
+				got, ok := FloatingPointBits(sum).Uint64()
+				if !ok || got != test.want[modeIndex] {
+					t.Fatalf("bits=%#08x,%v, want %#08x,true", got, ok, test.want[modeIndex])
+				}
+			})
+		}
+	}
+}
+
+func TestFloatingPointAddSpecialValues(t *testing.T) {
+	positiveInfinity := FloatingPointPositiveInfinity(8, 24)
+	negativeInfinity := FloatingPointNegativeInfinity(8, 24)
+	one := FloatingPointFromUint64(8, 24, 0x3f800000)
+	nan := FloatingPointNaN(8, 24)
+	if !FloatingPointIsInfinite(FloatingPointAdd(RoundNearestTiesToEven(), positiveInfinity, one)) {
+		t.Fatal("positive infinity plus finite must be infinite")
+	}
+	if !FloatingPointIsNaN(FloatingPointAdd(RoundNearestTiesToEven(), positiveInfinity, negativeInfinity)) {
+		t.Fatal("opposite infinities must produce NaN")
+	}
+	if !FloatingPointIsNaN(FloatingPointAdd(RoundNearestTiesToEven(), nan, one)) {
+		t.Fatal("NaN addition must produce NaN")
+	}
+	negativeZero := FloatingPointAdd(
+		RoundTowardNegative(),
+		FloatingPointPositiveZero(8, 24),
+		FloatingPointNegativeZero(8, 24),
+	)
+	bits, _ := FloatingPointBits(negativeZero).Uint64()
+	if bits != 0x80000000 {
+		t.Fatalf("mixed zero under RTN=%#08x, want negative zero", bits)
+	}
+}
+
+func TestFloatingPointAddBinary128Tie(t *testing.T) {
+	one := FloatingPointFromComponents(
+		15, 113,
+		NewBitVectorUint64(1, 0),
+		NewBitVectorUint64(15, 0x3fff),
+		NewBitVectorUint64(112, 0),
+	)
+	halfULP := FloatingPointFromComponents(
+		15, 113,
+		NewBitVectorUint64(1, 0),
+		NewBitVectorUint64(15, 0x3fff-113),
+		NewBitVectorUint64(112, 0),
+	)
+	even := FloatingPointAdd(RoundNearestTiesToEven(), one, halfULP)
+	if !EqualBitVectorValue(FloatingPointBits(even), FloatingPointBits(one)) {
+		t.Fatalf("binary128 RNE tie=%v, want one", FloatingPointBits(even))
+	}
+	away := FloatingPointAdd(RoundNearestTiesToAway(), one, halfULP)
+	wantAway := AddBitVectorValue(
+		FloatingPointBits(one), NewBitVectorUint64(128, 1),
+	)
+	if !EqualBitVectorValue(FloatingPointBits(away), wantAway) {
+		t.Fatalf("binary128 RNA tie=%v, want %v", FloatingPointBits(away), wantAway)
+	}
+}
+
 func TestFloatingPointGroundAbsAndNeg(t *testing.T) {
 	tests := []struct {
 		name string

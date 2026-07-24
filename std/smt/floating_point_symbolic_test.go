@@ -230,6 +230,34 @@ func TestFloatingPointRoundToIntegralDerivedModel(t *testing.T) {
 	}
 }
 
+func TestSymbolicFloatingPointAddRelation(t *testing.T) {
+	leftBits := NewBitVectorUint64(32, 0x3fc00000)
+	rightBits := NewBitVectorUint64(32, 0x40100000)
+	wantBits := NewBitVectorUint64(32, 0x40700000)
+	solver := Assert(1, New(), BitVectorRelation{
+		Width: 32, SymbolID: 1, Value: leftBits,
+	})
+	solver = Assert(2, solver, BitVectorRelation{
+		Width: 32, SymbolID: 2, Value: rightBits,
+	})
+	solver = AssertFloatingPointAddRelation(
+		3, solver,
+		NewFloatingPointAddRelation(
+			8, 24, 1, 2, RoundNearestTiesToEven(), wantBits,
+		),
+	)
+	result, ok := Check(solver).(Satisfiable)
+	if !ok {
+		t.Fatalf("expected satisfiable fp.add, got %#v", Check(solver))
+	}
+	for id, want := range map[int]BitVectorValue{1: leftBits, 2: rightBits} {
+		got, found := FloatingPointSymbolModelBits(result.Value, id)
+		if !found || !EqualBitVectorValue(got, want) {
+			t.Fatalf("symbol %d bits=%v,%v, want %v,true", id, got, found, want)
+		}
+	}
+}
+
 func TestFloatingPointMinMaxBitBlastFallback(t *testing.T) {
 	expected := NewBitVectorUint64(32, 0xbf800000)
 	relation := NewFloatingPointMinMaxRelation(

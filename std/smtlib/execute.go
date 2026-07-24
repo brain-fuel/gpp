@@ -41,6 +41,7 @@ type dynamicTerm struct {
 	roundingMode         smt.FloatingPointRoundingMode
 	floatingPointRound   *dynamicFloatingPointRound
 	floatingPointMinMax  *dynamicFloatingPointMinMax
+	floatingPointAdd     *dynamicFloatingPointAdd
 	floatingPointSymbol  int
 	uninterpreted        smt.Term[smt.UninterpretedSort]
 	arrayIntInt          smt.Term[smt.ArraySort[smt.IntSort, smt.IntSort]]
@@ -67,6 +68,12 @@ type dynamicFloatingPointMinMax struct {
 	exponentBits, significandBits int
 	leftSymbolID, rightSymbolID   int
 	operation                     uint8
+}
+
+type dynamicFloatingPointAdd struct {
+	exponentBits, significandBits int
+	leftSymbolID, rightSymbolID   int
+	mode                          smt.FloatingPointRoundingMode
 }
 
 type dynamicDatatypeMatch struct {
@@ -2334,7 +2341,47 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 			bitVectorValue:      terms[0].bitVectorValue,
 			floatingPointRound:  terms[0].floatingPointRound,
 			floatingPointMinMax: terms[0].floatingPointMinMax,
+			floatingPointAdd:    terms[0].floatingPointAdd,
 			bitVectorSymbol:     terms[0].floatingPointSymbol,
+		}, nil
+	}
+	if operator == "fp.add" && len(terms) == 3 &&
+		terms[0].sort == sortRoundingMode &&
+		terms[1].sort == sortFloatingPoint &&
+		terms[2].sort == sortFloatingPoint &&
+		terms[1].exponentBits == terms[2].exponentBits &&
+		terms[1].significandBits == terms[2].significandBits {
+		left, right := terms[1], terms[2]
+		if left.bitVectorExact && right.bitVectorExact {
+			sum := smt.FloatingPointAdd(
+				terms[0].roundingMode,
+				smt.FloatingPointFromBits(
+					left.exponentBits, left.significandBits, left.bitVectorValue,
+				),
+				smt.FloatingPointFromBits(
+					right.exponentBits, right.significandBits, right.bitVectorValue,
+				),
+			)
+			bits := smt.FloatingPointBits(sum)
+			return dynamicTerm{
+				sort: sortFloatingPoint, bitWidth: left.bitWidth,
+				exponentBits: left.exponentBits, significandBits: left.significandBits,
+				bitVector:      smt.BitVectorTerm(bits),
+				bitVectorExact: true, bitVectorValue: bits,
+			}, nil
+		}
+		if left.floatingPointSymbol == 0 || right.floatingPointSymbol == 0 {
+			return dynamicTerm{}, fmt.Errorf("fp.add currently requires ground values or direct symbols")
+		}
+		return dynamicTerm{
+			sort: sortFloatingPoint, bitWidth: left.bitWidth,
+			exponentBits: left.exponentBits, significandBits: left.significandBits,
+			floatingPointAdd: &dynamicFloatingPointAdd{
+				exponentBits: left.exponentBits, significandBits: left.significandBits,
+				leftSymbolID:  left.floatingPointSymbol,
+				rightSymbolID: right.floatingPointSymbol,
+				mode:          terms[0].roundingMode,
+			},
 		}, nil
 	}
 	if operator == "fp.roundToIntegral" && len(terms) == 2 &&
@@ -2925,6 +2972,22 @@ func buildApplication(operator string, terms []dynamicTerm) (dynamicTerm, error)
 						relation.exponentBits, relation.significandBits,
 						relation.leftSymbolID, relation.rightSymbolID,
 						relation.operation, exact.bitVectorValue,
+					),
+				}, nil
+			}
+			sum, exact := terms[0], terms[1]
+			if sum.floatingPointAdd == nil {
+				sum, exact = terms[1], terms[0]
+			}
+			if sum.floatingPointAdd != nil && exact.bitVectorExact &&
+				sum.bitWidth == exact.bitWidth {
+				relation := sum.floatingPointAdd
+				return dynamicTerm{
+					sort: sortBool,
+					boolean: smt.NewFloatingPointAddRelation(
+						relation.exponentBits, relation.significandBits,
+						relation.leftSymbolID, relation.rightSymbolID,
+						relation.mode, exact.bitVectorValue,
 					),
 				}, nil
 			}

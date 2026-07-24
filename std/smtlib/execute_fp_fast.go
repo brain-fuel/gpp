@@ -13,6 +13,7 @@ const (
 	fpFastAssign
 	fpFastRound
 	fpFastMinMax
+	fpFastAdd
 	fpFastPredicate
 	fpFastComparison
 	fpFastEquality
@@ -71,6 +72,7 @@ const (
 	fpFastSymbolBits uint8 = iota + 1
 	fpFastRoundedBits
 	fpFastMinMaxBits
+	fpFastAddBits
 	fpFastExactFloatingBits
 	fpFastLiteralBits
 )
@@ -192,6 +194,18 @@ func executeFloatingPointFast(source string) (ExecutionResult, bool) {
 			)
 			relation.Negated = command.negated
 			solver = smt.AssertFloatingPointMinMaxRelation(
+				nextAssertion, solver, relation,
+			)
+			nextAssertion++
+			responses = append(responses, Acknowledged{CommandIndex: command.commandIndex})
+		case fpFastAdd:
+			relation := smt.NewFloatingPointAddRelation(
+				command.exponentBits, command.significandBits,
+				command.symbolID, command.secondSymbolID,
+				command.mode, command.value,
+			)
+			relation.Negated = command.negated
+			solver = smt.AssertFloatingPointAddRelation(
 				nextAssertion, solver, relation,
 			)
 			nextAssertion++
@@ -361,6 +375,8 @@ func (scanner *fpFastScanner) formula(
 		command.kind = fpFastRound
 	case fpFastMinMaxBits:
 		command.kind = fpFastMinMax
+	case fpFastAddBits:
+		command.kind = fpFastAdd
 	default:
 		return fpFastCommand{}, false
 	}
@@ -499,6 +515,29 @@ func (scanner *fpFastScanner) operand(
 			exponentBits:    left.exponentBits,
 			significandBits: left.significandBits,
 			operation:       selectedOperation,
+		}, true
+	case "fp.add":
+		modeToken, modeOK := scanner.atom()
+		leftToken, leftOK := scanner.atom()
+		rightToken, rightOK := scanner.atom()
+		if !modeOK || !leftOK || !rightOK {
+			return fpFastOperand{}, false
+		}
+		mode, modeFound := fpFastRoundingMode(scanner.text(modeToken))
+		left, leftFound := fpFastFindSymbol(scanner.text(leftToken), symbols)
+		right, rightFound := fpFastFindSymbol(scanner.text(rightToken), symbols)
+		if !modeFound || !leftFound || !rightFound ||
+			left.exponentBits != right.exponentBits ||
+			left.significandBits != right.significandBits ||
+			!scanner.right() || !scanner.right() {
+			return fpFastOperand{}, false
+		}
+		return fpFastOperand{
+			kind:     fpFastAddBits,
+			symbolID: left.id, secondSymbolID: right.id,
+			exponentBits:    left.exponentBits,
+			significandBits: left.significandBits,
+			mode:            mode,
 		}, true
 	default:
 		return fpFastOperand{}, false

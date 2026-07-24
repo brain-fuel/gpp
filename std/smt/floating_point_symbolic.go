@@ -88,6 +88,20 @@ type FloatingPointRoundToIntegralRelation struct {
 
 func (FloatingPointRoundToIntegralRelation) isTerm(BoolSort) {}
 
+// FloatingPointAddRelation constrains the exact rounded IEEE bits of fp.add
+// over two assigned same-format symbols.
+type FloatingPointAddRelation struct {
+	ExponentBits    int
+	SignificandBits int
+	LeftSymbolID    int
+	RightSymbolID   int
+	Mode            uint8
+	Value           BitVectorValue
+	Negated         bool
+}
+
+func (FloatingPointAddRelation) isTerm(BoolSort) {}
+
 type floatingPointRoundToIntegralBitVector struct {
 	exponentBits    int
 	significandBits int
@@ -154,6 +168,25 @@ func NewFloatingPointRoundToIntegralRelation(
 	return FloatingPointRoundToIntegralRelation{
 		ExponentBits: exponentBits, SignificandBits: significandBits,
 		SymbolID: symbolID, Mode: modeCode, Value: value,
+	}
+}
+
+func NewFloatingPointAddRelation(
+	exponentBits, significandBits, leftSymbolID, rightSymbolID int,
+	mode FloatingPointRoundingMode,
+	value BitVectorValue,
+) FloatingPointAddRelation {
+	modeCode := floatingPointRoundingModeCode(mode)
+	if exponentBits < 2 || significandBits < 2 {
+		panic("smt: invalid floating-point format")
+	}
+	if value.Width() != exponentBits+significandBits {
+		panic("smt: floating-point addition result width mismatch")
+	}
+	return FloatingPointAddRelation{
+		ExponentBits: exponentBits, SignificandBits: significandBits,
+		LeftSymbolID: leftSymbolID, RightSymbolID: rightSymbolID,
+		Mode: modeCode, Value: value,
 	}
 }
 
@@ -403,6 +436,22 @@ func AssertFloatingPointRoundToIntegralRelation(
 	assertion int,
 	solver Solver,
 	relation FloatingPointRoundToIntegralRelation,
+) Solver {
+	if assertion < 0 {
+		panic("smt: negative assertion identity")
+	}
+	nextContext := runtimeContextID(solver.contextID, assertion)
+	return solverValue{
+		contextID: nextContext,
+		depth:     solver.depth,
+		state:     solver.state.asserted(relation),
+	}
+}
+
+func AssertFloatingPointAddRelation(
+	assertion int,
+	solver Solver,
+	relation FloatingPointAddRelation,
 ) Solver {
 	if assertion < 0 {
 		panic("smt: negative assertion identity")
