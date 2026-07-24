@@ -128,11 +128,13 @@ func containsEUF(term Term[BoolSort]) bool {
 	case Equal:
 		return isEUFTerm(value.Left) || isEUFTerm(value.Right)
 	case sortedUnaryApplication[BoolSort]:
-		_, ok := value.function.(sortedUnaryFunctionValue[IntSort, BoolSort])
-		return ok
+		_, integerOK := value.function.(sortedUnaryFunctionValue[IntSort, BoolSort])
+		_, realOK := value.function.(sortedUnaryFunctionValue[RealSort, BoolSort])
+		return integerOK || realOK
 	case sortedBinaryApplication[BoolSort]:
-		_, ok := value.function.(sortedBinaryFunctionValue[IntSort, IntSort, BoolSort])
-		return ok
+		_, integerOK := value.function.(sortedBinaryFunctionValue[IntSort, IntSort, BoolSort])
+		_, realOK := value.function.(sortedBinaryFunctionValue[RealSort, RealSort, BoolSort])
+		return integerOK || realOK
 	case RealUnaryEquality:
 		return true
 	case UninterpretedEUFRelation, UninterpretedEUFConjunction:
@@ -497,33 +499,49 @@ func (problem *eufProblem) term(term any) (int, bool) {
 			thirdSortID: function.thirdKind, first: first, second: second, third: third,
 		}
 	case sortedUnaryApplication[BoolSort]:
-		function, ok := value.function.(sortedUnaryFunctionValue[IntSort, BoolSort])
+		domainKind, rangeKind, functionID, ok := 0, 0, 0, false
+		switch function := value.function.(type) {
+		case sortedUnaryFunctionValue[IntSort, BoolSort]:
+			domainKind, rangeKind, functionID, ok =
+				function.domainKind, function.rangeKind, function.iD, true
+		case sortedUnaryFunctionValue[RealSort, BoolSort]:
+			domainKind, rangeKind, functionID, ok =
+				function.domainKind, function.rangeKind, function.iD, true
+		}
 		if !ok || value.rangeKind != -1 {
 			return 0, false
 		}
 		argument, ok := problem.term(value.argument)
-		if !ok || problem.nodes[argument].sortID != function.domainKind {
+		if !ok || problem.nodes[argument].sortID != domainKind {
 			return 0, false
 		}
 		node = eufNode{
-			kind: 1, sortID: function.rangeKind, functionID: function.iD,
-			firstSortID: function.domainKind, first: argument, second: -1,
+			kind: 1, sortID: rangeKind, functionID: functionID,
+			firstSortID: domainKind, first: argument, second: -1,
 		}
 	case sortedBinaryApplication[BoolSort]:
-		function, ok := value.function.(sortedBinaryFunctionValue[IntSort, IntSort, BoolSort])
+		firstKind, secondKind, rangeKind, functionID, ok := 0, 0, 0, 0, false
+		switch function := value.function.(type) {
+		case sortedBinaryFunctionValue[IntSort, IntSort, BoolSort]:
+			firstKind, secondKind, rangeKind, functionID, ok =
+				function.firstKind, function.secondKind, function.rangeKind, function.iD, true
+		case sortedBinaryFunctionValue[RealSort, RealSort, BoolSort]:
+			firstKind, secondKind, rangeKind, functionID, ok =
+				function.firstKind, function.secondKind, function.rangeKind, function.iD, true
+		}
 		if !ok || value.rangeKind != -1 {
 			return 0, false
 		}
 		first, firstOK := problem.term(value.first)
 		second, secondOK := problem.term(value.second)
 		if !firstOK || !secondOK ||
-			problem.nodes[first].sortID != function.firstKind ||
-			problem.nodes[second].sortID != function.secondKind {
+			problem.nodes[first].sortID != firstKind ||
+			problem.nodes[second].sortID != secondKind {
 			return 0, false
 		}
 		node = eufNode{
-			kind: 2, sortID: function.rangeKind, functionID: function.iD,
-			firstSortID: function.firstKind, secondSortID: function.secondKind,
+			kind: 2, sortID: rangeKind, functionID: functionID,
+			firstSortID: firstKind, secondSortID: secondKind,
 			first: first, second: second,
 		}
 	case sortedUnaryApplication[BitVecSort]:

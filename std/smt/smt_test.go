@@ -1741,6 +1741,31 @@ func TestCompactIntegerEUFSystemExchangesDifferenceEquality(t *testing.T) {
 	}
 }
 
+func TestSharedRealPredicatesExchangeLRAEquality(t *testing.T) {
+	x := RealSymbol{ID: 1}
+	y := RealSymbol{ID: 2}
+	z := RealSymbol{ID: 3}
+	unary := DeclareRealPredicate(4, "p")
+	binary := DeclareRealBinaryPredicate(5, "q")
+	for name, formula := range map[string]Term[BoolSort]{
+		"unary": And{Values: []Term[BoolSort]{
+			RealLessEqual{Left: x, Right: y},
+			RealLessEqual{Left: y, Right: x},
+			ApplySortedUnary(unary, x),
+			Not{Value: ApplySortedUnary(unary, y)},
+		}},
+		"binary": And{Values: []Term[BoolSort]{
+			Equal{Left: x, Right: y},
+			ApplySortedBinary(binary, x, z),
+			Not{Value: ApplySortedBinary(binary, y, z)},
+		}},
+	} {
+		if result := Check(Assert(1, New(), formula)); func() bool { _, ok := result.(Unsatisfiable); return ok }() == false {
+			t.Fatalf("%s result=%T", name, result)
+		}
+	}
+}
+
 func TestSharedRealEUFExchangesLRAImpliedEquality(t *testing.T) {
 	x := RealSymbol{ID: 1, Name: "x"}
 	y := RealSymbol{ID: 2, Name: "y"}

@@ -97,6 +97,23 @@ func containsSharedRealEUF(term Term[BoolSort]) bool {
 
 func containsSortedRealApplicationBool(term Term[BoolSort]) bool {
 	switch value := term.(type) {
+	case sortedUnaryApplication[BoolSort]:
+		_, functionOK := value.function.(sortedUnaryFunctionValue[RealSort, BoolSort])
+		_, argumentOK := value.argument.(Term[RealSort])
+		return functionOK && argumentOK
+	case sortedBinaryApplication[BoolSort]:
+		_, functionOK := value.function.(sortedBinaryFunctionValue[RealSort, RealSort, BoolSort])
+		_, firstOK := value.first.(Term[RealSort])
+		_, secondOK := value.second.(Term[RealSort])
+		return functionOK && firstOK && secondOK
+	case UninterpretedEUFRelation:
+		return compactTermUsesReal(value.Left) || compactTermUsesReal(value.Right)
+	case UninterpretedEUFConjunction:
+		for _, relation := range value.values() {
+			if compactTermUsesReal(relation.Left) || compactTermUsesReal(relation.Right) {
+				return true
+			}
+		}
 	case RealLessEqual:
 		return containsSortedRealApplication(value.Left) || containsSortedRealApplication(value.Right)
 	case RealLess:
@@ -107,6 +124,11 @@ func containsSortedRealApplicationBool(term Term[BoolSort]) bool {
 		return leftOK && containsSortedRealApplication(left) || rightOK && containsSortedRealApplication(right)
 	}
 	return false
+}
+
+func compactTermUsesReal(value UninterpretedEUFTerm) bool {
+	return value.SortID == -1 || value.FirstSortID == -1 ||
+		value.SecondSortID == -1
 }
 
 func containsSortedRealApplication(term Term[RealSort]) bool {
@@ -322,6 +344,25 @@ func (purifier *sharedRealPurifier) collectBooleanSymbols(term Term[BoolSort]) {
 		}
 	case Not:
 		purifier.collectBooleanSymbols(value.Value)
+	case sortedUnaryApplication[BoolSort]:
+		if argument, ok := value.argument.(Term[RealSort]); ok {
+			purifier.collectRealSymbols(argument)
+		}
+	case sortedBinaryApplication[BoolSort]:
+		if first, ok := value.first.(Term[RealSort]); ok {
+			purifier.collectRealSymbols(first)
+		}
+		if second, ok := value.second.(Term[RealSort]); ok {
+			purifier.collectRealSymbols(second)
+		}
+	case UninterpretedEUFRelation:
+		purifier.collectCompactRealSymbols(value.Left)
+		purifier.collectCompactRealSymbols(value.Right)
+	case UninterpretedEUFConjunction:
+		for _, relation := range value.values() {
+			purifier.collectCompactRealSymbols(relation.Left)
+			purifier.collectCompactRealSymbols(relation.Right)
+		}
 	case RealLessEqual:
 		purifier.collectRealSymbols(value.Left)
 		purifier.collectRealSymbols(value.Right)
@@ -346,6 +387,20 @@ func (purifier *sharedRealPurifier) collectBooleanSymbols(term Term[BoolSort]) {
 	case RealSymbolEquality:
 		purifier.markUsed(value.LeftID)
 		purifier.markUsed(value.RightID)
+	}
+}
+
+func (purifier *sharedRealPurifier) collectCompactRealSymbols(
+	value UninterpretedEUFTerm,
+) {
+	if value.SortID == -1 && value.Kind == 1 {
+		purifier.markUsed(value.SymbolID)
+	}
+	if value.FirstSortID == -1 {
+		purifier.markUsed(value.FirstID)
+	}
+	if value.SecondSortID == -1 {
+		purifier.markUsed(value.SecondID)
 	}
 }
 
@@ -427,6 +482,41 @@ func (purifier *sharedRealPurifier) add(term Term[BoolSort], negated bool) bool 
 		return true
 	case Not:
 		return purifier.add(value.Value, !negated)
+	case sortedUnaryApplication[BoolSort]:
+		function, functionOK :=
+			value.function.(sortedUnaryFunctionValue[RealSort, BoolSort])
+		argument, argumentOK := value.argument.(Term[RealSort])
+		if !functionOK || !argumentOK || value.rangeKind != -1 {
+			return false
+		}
+		argumentSymbol, ok := purifier.realArgument(argument)
+		if !ok {
+			return false
+		}
+		purifier.partition.euf.append(
+			ApplySortedUnary(function, Term[RealSort](argumentSymbol)), negated,
+		)
+		return true
+	case sortedBinaryApplication[BoolSort]:
+		function, functionOK :=
+			value.function.(sortedBinaryFunctionValue[RealSort, RealSort, BoolSort])
+		first, firstOK := value.first.(Term[RealSort])
+		second, secondOK := value.second.(Term[RealSort])
+		if !functionOK || !firstOK || !secondOK || value.rangeKind != -1 {
+			return false
+		}
+		firstSymbol, firstOK := purifier.realArgument(first)
+		secondSymbol, secondOK := purifier.realArgument(second)
+		if !firstOK || !secondOK {
+			return false
+		}
+		purifier.partition.euf.append(
+			ApplySortedBinary(
+				function, Term[RealSort](firstSymbol), Term[RealSort](secondSymbol),
+			),
+			negated,
+		)
+		return true
 	case RealLessEqual:
 		if negated {
 			return false

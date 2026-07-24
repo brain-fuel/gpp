@@ -115,6 +115,8 @@ type dynamicUnaryFunction struct {
 	value                 smt.UnaryFunction
 	real                  bool
 	realValue             smt.SortedUnaryFunction[smt.RealSort, smt.RealSort]
+	realPredicate         bool
+	realPredicateValue    smt.SortedUnaryFunction[smt.RealSort, smt.BoolSort]
 	integer               bool
 	integerValue          smt.SortedUnaryFunction[smt.IntSort, smt.IntSort]
 	integerPredicate      bool
@@ -132,6 +134,8 @@ type dynamicBinaryFunction struct {
 	value                 smt.BinaryFunction
 	real                  bool
 	realValue             smt.SortedBinaryFunction[smt.RealSort, smt.RealSort, smt.RealSort]
+	realPredicate         bool
+	realPredicateValue    smt.SortedBinaryFunction[smt.RealSort, smt.RealSort, smt.BoolSort]
 	integer               bool
 	integerValue          smt.SortedBinaryFunction[smt.IntSort, smt.IntSort, smt.IntSort]
 	integerPredicate      bool
@@ -1246,6 +1250,17 @@ func (executor *executor) declareUnary(index int, declaration DeclareFun) {
 		executor.acknowledge(index)
 		return
 	}
+	if domainOK && rangeOK && domainName == "Real" && rangeName == "Bool" {
+		executor.nextSymbol++
+		executor.functions[declaration.Name] = dynamicUnaryFunction{
+			realPredicate: true,
+			realPredicateValue: smt.DeclareRealPredicate(
+				executor.nextSymbol, declaration.Name,
+			),
+		}
+		executor.acknowledge(index)
+		return
+	}
 	if domainOK && rangeOK && domainName == "Int" && rangeName == "Int" {
 		executor.nextSymbol++
 		executor.functions[declaration.Name] = dynamicUnaryFunction{
@@ -1304,6 +1319,18 @@ func (executor *executor) declareBinary(index int, declaration DeclareFun) {
 		executor.nextSymbol++
 		executor.binaryFunctions[declaration.Name] = dynamicBinaryFunction{
 			real: true, realValue: smt.DeclareRealBinaryFunction(executor.nextSymbol, declaration.Name),
+		}
+		executor.acknowledge(index)
+		return
+	}
+	if firstOK && secondOK && rangeOK &&
+		firstName == "Real" && secondName == "Real" && rangeName == "Bool" {
+		executor.nextSymbol++
+		executor.binaryFunctions[declaration.Name] = dynamicBinaryFunction{
+			realPredicate: true,
+			realPredicateValue: smt.DeclareRealBinaryPredicate(
+				executor.nextSymbol, declaration.Name,
+			),
 		}
 		executor.acknowledge(index)
 		return
@@ -1705,6 +1732,17 @@ func (executor *executor) term(expression SExpr) (dynamicTerm, error) {
 			}
 			return dynamicTerm{sort: sortReal, real: smt.ApplySortedUnary(function.realValue, terms[0].real)}, nil
 		}
+		if function.realPredicate {
+			if len(terms) != 1 || terms[0].sort != sortReal {
+				return dynamicTerm{}, fmt.Errorf("ill-sorted application %s", operator)
+			}
+			return dynamicTerm{
+				sort: sortBool,
+				boolean: smt.ApplySortedUnary(
+					function.realPredicateValue, terms[0].real,
+				),
+			}, nil
+		}
 		if function.integer {
 			if len(terms) != 1 || terms[0].integer == nil || terms[0].sort != sortInt && terms[0].sort != sortNumber {
 				return dynamicTerm{}, fmt.Errorf("ill-sorted application %s", operator)
@@ -1740,6 +1778,18 @@ func (executor *executor) term(expression SExpr) (dynamicTerm, error) {
 				return dynamicTerm{}, fmt.Errorf("ill-sorted application %s", operator)
 			}
 			return dynamicTerm{sort: sortReal, real: smt.ApplySortedBinary(function.realValue, terms[0].real, terms[1].real)}, nil
+		}
+		if function.realPredicate {
+			if len(terms) != 2 ||
+				terms[0].sort != sortReal || terms[1].sort != sortReal {
+				return dynamicTerm{}, fmt.Errorf("ill-sorted application %s", operator)
+			}
+			return dynamicTerm{
+				sort: sortBool,
+				boolean: smt.ApplySortedBinary(
+					function.realPredicateValue, terms[0].real, terms[1].real,
+				),
+			}, nil
 		}
 		if function.integer {
 			if len(terms) != 2 ||

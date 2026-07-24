@@ -3312,6 +3312,10 @@ func DeclareRealUnaryFunction(id int, name string) SortedUnaryFunction[RealSort,
 	return sortedUnaryFunctionValue[RealSort, RealSort]{domainKind: -1, rangeKind: -1, iD: id, name: name}
 }
 
+func DeclareRealPredicate(id int, name string) SortedUnaryFunction[RealSort, BoolSort] {
+	return sortedUnaryFunctionValue[RealSort, BoolSort]{domainKind: -1, rangeKind: -3, iD: id, name: name}
+}
+
 func DeclareIntUnaryFunction(id int, name string) SortedUnaryFunction[IntSort, IntSort] {
 	return sortedUnaryFunctionValue[IntSort, IntSort]{domainKind: -2, rangeKind: -2, iD: id, name: name}
 }
@@ -3326,6 +3330,10 @@ func ApplySortedUnary[D any, R any](function SortedUnaryFunction[D, R], argument
 
 func DeclareRealBinaryFunction(id int, name string) SortedBinaryFunction[RealSort, RealSort, RealSort] {
 	return sortedBinaryFunctionValue[RealSort, RealSort, RealSort]{firstKind: -1, secondKind: -1, rangeKind: -1, iD: id, name: name}
+}
+
+func DeclareRealBinaryPredicate(id int, name string) SortedBinaryFunction[RealSort, RealSort, BoolSort] {
+	return sortedBinaryFunctionValue[RealSort, RealSort, BoolSort]{firstKind: -1, secondKind: -1, rangeKind: -3, iD: id, name: name}
 }
 
 func DeclareIntBinaryFunction(id int, name string) SortedBinaryFunction[IntSort, IntSort, IntSort] {
