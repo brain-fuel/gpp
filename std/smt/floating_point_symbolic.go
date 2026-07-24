@@ -223,7 +223,8 @@ type FloatingPointDivRelation struct {
 func (FloatingPointDivRelation) isTerm(BoolSort) {}
 
 // FloatingPointFMARelation constrains the exact single-rounded IEEE bits of
-// fp.fma over three assigned same-format symbols.
+// fp.fma over three same-format symbols. Distinct unconstrained operands can
+// use a validated fma(result, one, signed-zero) canonical model.
 type FloatingPointFMARelation struct {
 	ExponentBits    int
 	SignificandBits int

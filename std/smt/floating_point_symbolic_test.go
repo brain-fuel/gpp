@@ -617,6 +617,77 @@ func TestSymbolicFloatingPointFMARelation(t *testing.T) {
 	}
 }
 
+func TestSymbolicFloatingPointFMASynthesizesUnconstrainedOperands(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		target, addend uint64
+	}{
+		{"finite", 0x337ffffe, 0x00000000},
+		{"negative-zero", 0x80000000, 0x80000000},
+		{"positive-infinity", 0x7f800000, 0x00000000},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			relation := NewFloatingPointFMARelation(
+				8, 24, 1, 2, 3, RoundNearestTiesToEven(),
+				NewBitVectorUint64(32, test.target),
+			)
+			result, ok := Check(AssertFloatingPointFMARelation(
+				1, New(), relation,
+			)).(Satisfiable)
+			if !ok {
+				t.Fatalf("expected synthesized fp.fma model, got %#v", Check(
+					AssertFloatingPointFMARelation(1, New(), relation),
+				))
+			}
+			left, leftFound := FloatingPointSymbolModelBits(result.Value, 1)
+			right, rightFound := FloatingPointSymbolModelBits(result.Value, 2)
+			addend, addendFound := FloatingPointSymbolModelBits(result.Value, 3)
+			leftValue, leftInline := left.Uint64()
+			rightValue, rightInline := right.Uint64()
+			addendValue, addendInline := addend.Uint64()
+			if !leftFound || !rightFound || !addendFound ||
+				!leftInline || !rightInline || !addendInline ||
+				leftValue != test.target || rightValue != 0x3f800000 ||
+				addendValue != test.addend {
+				t.Fatalf(
+					"unexpected operands: left=%#x right=%#x addend=%#x",
+					leftValue, rightValue, addendValue,
+				)
+			}
+		})
+	}
+}
+
+func TestSymbolicFloatingPointFMASynthesizesBinary128Operands(t *testing.T) {
+	target := FloatingPointBits(FloatingPointFromRational(
+		15, 113, RoundNearestTiesToEven(), NewRational(3, 2),
+	))
+	one := FloatingPointBits(FloatingPointFromRational(
+		15, 113, RoundNearestTiesToEven(), NewRational(1, 1),
+	))
+	relation := NewFloatingPointFMARelation(
+		15, 113, 1, 2, 3, RoundNearestTiesToEven(), target,
+	)
+	result, ok := Check(AssertFloatingPointFMARelation(
+		1, New(), relation,
+	)).(Satisfiable)
+	if !ok {
+		t.Fatal("expected synthesized binary128 fp.fma model")
+	}
+	left, leftFound := FloatingPointSymbolModelBits(result.Value, 1)
+	right, rightFound := FloatingPointSymbolModelBits(result.Value, 2)
+	addend, addendFound := FloatingPointSymbolModelBits(result.Value, 3)
+	if !leftFound || !rightFound || !addendFound ||
+		!EqualBitVectorValue(left, target) ||
+		!EqualBitVectorValue(right, one) ||
+		!EqualBitVectorValue(addend, NewBitVectorUint64(128, 0)) {
+		t.Fatalf(
+			"unexpected binary128 operands: left=%v right=%v addend=%v",
+			left, right, addend,
+		)
+	}
+}
+
 func TestSymbolicFloatingPointSqrtRelation(t *testing.T) {
 	valueBits := NewBitVectorUint64(32, 0x40000000)
 	wantBits := NewBitVectorUint64(32, 0x3fb504f3)

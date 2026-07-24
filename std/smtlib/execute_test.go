@@ -2892,6 +2892,38 @@ func TestExecuteAndStreamSymbolicFloatingPointFMA(t *testing.T) {
 	}
 }
 
+func TestExecuteUnconstrainedFloatingPointFMA(t *testing.T) {
+	script := `(set-logic QF_FP)
+(declare-const left (_ FloatingPoint 8 24))
+(declare-const right (_ FloatingPoint 8 24))
+(declare-const addend (_ FloatingPoint 8 24))
+(assert (= (fp.to_ieee_bv (fp.fma RNE left right addend)) #x337ffffe))
+(check-sat)`
+	fast, recognized := executeFloatingPointFast(script)
+	if !recognized {
+		t.Fatal("unconstrained fp.fma script did not use streaming execution")
+	}
+	result, ok := fast.(Executed)
+	if !ok {
+		t.Fatalf("streaming execution=%#v", fast)
+	}
+	if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+		t.Fatalf("streaming result=%#v", result)
+	}
+
+	parsed, ok := Parse(script).(Parsed)
+	if !ok {
+		t.Fatal("general parse failed")
+	}
+	responses, errors := executeCommands(parsed.Commands)
+	if len(errors) != 0 {
+		t.Fatalf("general execution errors=%#v", errors)
+	}
+	if _, ok := responses[len(responses)-1].(Satisfiable); !ok {
+		t.Fatalf("general result=%#v", responses)
+	}
+}
+
 func TestRejectIllSortedFloatingPointFMA(t *testing.T) {
 	script := `(assert (= (fp.to_ieee_bv
   (fp.fma RNE ((_ to_fp 8 24) #x3f800000)
@@ -3989,6 +4021,43 @@ func BenchmarkExecuteFloatingPointFMA(b *testing.B) {
 (assert (= (fp.to_ieee_bv left) #x3f800001))
 (assert (= (fp.to_ieee_bv right) #x3f7fffff))
 (assert (= (fp.to_ieee_bv addend) #xbf800000))
+(assert (= (fp.to_ieee_bv (fp.fma RNE left right addend)) #x337ffffe))
+(check-sat)`
+	b.Run("stream", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			result, ok := Execute(script).(Executed)
+			if !ok {
+				b.Fatal("stream execution failed")
+			}
+			if _, ok := result.Responses[len(result.Responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+	b.Run("general", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			parsed, ok := Parse(script).(Parsed)
+			if !ok {
+				b.Fatal("parse failed")
+			}
+			responses, errors := executeCommands(parsed.Commands)
+			if len(errors) != 0 {
+				b.Fatal("general execution failed")
+			}
+			if _, ok := responses[len(responses)-1].(Satisfiable); !ok {
+				b.Fatal("unexpected result")
+			}
+		}
+	})
+}
+
+func BenchmarkExecuteUnconstrainedFloatingPointFMA(b *testing.B) {
+	script := `(set-logic QF_FP)
+(declare-const left (_ FloatingPoint 8 24))
+(declare-const right (_ FloatingPoint 8 24))
+(declare-const addend (_ FloatingPoint 8 24))
 (assert (= (fp.to_ieee_bv (fp.fma RNE left right addend)) #x337ffffe))
 (check-sat)`
 	b.Run("stream", func(b *testing.B) {

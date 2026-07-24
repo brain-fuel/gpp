@@ -439,6 +439,67 @@ func synthesizeFloatingPointIdentity(
 	return true
 }
 
+func synthesizeFloatingPointFMAIdentity(
+	assignments *[4]compactBitVectorAssignment,
+	assignmentCount *int,
+	relation FloatingPointFMARelation,
+) bool {
+	if relation.LeftSymbolID == relation.RightSymbolID ||
+		relation.LeftSymbolID == relation.AddendSymbolID ||
+		relation.RightSymbolID == relation.AddendSymbolID {
+		return false
+	}
+	total := relation.ExponentBits + relation.SignificandBits
+	if relation.Value.Width() != total ||
+		*assignmentCount+3 > len(assignments) {
+		return false
+	}
+	left := FloatingPointFromBits(
+		relation.ExponentBits, relation.SignificandBits, relation.Value,
+	)
+	one := floatingPointFromRational(
+		relation.Mode, relation.ExponentBits, relation.SignificandBits,
+		NewRational(1, 1),
+	)
+	zeros := [2]FloatingPointValue{
+		FloatingPointPositiveZero(
+			relation.ExponentBits, relation.SignificandBits,
+		),
+		FloatingPointNegativeZero(
+			relation.ExponentBits, relation.SignificandBits,
+		),
+	}
+	var addend BitVectorValue
+	found := false
+	for _, zero := range zeros {
+		fused := floatingPointFMA(relation.Mode, left, one, zero)
+		if EqualBitVectorValue(
+			FloatingPointBits(fused), relation.Value,
+		) {
+			addend = FloatingPointBits(zero)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return false
+	}
+	fixed := NotBitVectorValue(NewBitVectorUint64(total, 0))
+	assignments[*assignmentCount] = compactBitVectorAssignment{
+		id: relation.LeftSymbolID, value: relation.Value, fixed: fixed,
+	}
+	*assignmentCount++
+	assignments[*assignmentCount] = compactBitVectorAssignment{
+		id: relation.RightSymbolID, value: FloatingPointBits(one), fixed: fixed,
+	}
+	*assignmentCount++
+	assignments[*assignmentCount] = compactBitVectorAssignment{
+		id: relation.AddendSymbolID, value: addend, fixed: fixed,
+	}
+	*assignmentCount++
+	return true
+}
+
 func (problem *compactBitVectorProblem) add(term Term[BoolSort], negated bool) bool {
 	switch value := term.(type) {
 	case And:
@@ -823,6 +884,26 @@ func solveCompactBitVectorAssertions(assertions []Term[BoolSort]) (checkOutcome,
 			relation.ExponentBits, relation.SignificandBits,
 			relation.LeftSymbolID, relation.RightSymbolID,
 			relation.Mode, relation.Value, compactFloatingIdentityDiv,
+		) {
+			return checkOutcome{}, false
+		}
+	}
+	// FMA uses the exact single-rounding identity fma(result, 1, signed-zero).
+	for _, relation := range problem.fmas[:problem.fmaCount] {
+		leftFound, rightFound, addendFound := false, false, false
+		for index := 0; index < assignmentCount; index++ {
+			leftFound = leftFound ||
+				assignments[index].id == relation.LeftSymbolID
+			rightFound = rightFound ||
+				assignments[index].id == relation.RightSymbolID
+			addendFound = addendFound ||
+				assignments[index].id == relation.AddendSymbolID
+		}
+		if leftFound || rightFound || addendFound || relation.Negated {
+			continue
+		}
+		if !synthesizeFloatingPointFMAIdentity(
+			&assignments, &assignmentCount, relation,
 		) {
 			return checkOutcome{}, false
 		}
