@@ -257,6 +257,35 @@ func TestIntegerEuclideanDivisionAndModulo(t *testing.T) {
 	if value, found := IntegerModelValue(negativeResult.Value, DivInteger(x, NewIntegerValue(-3))); !found || CompareIntegerValue(value, NewIntegerValue(3)) != 0 {
 		t.Fatalf("negative div=(%v,%v)", value, found)
 	}
+
+	scaled := ScaleInteger(NewIntegerValue(3), x)
+	assignment, assignmentOK := CompactIntegerLinearEquality(x, Integer{Value: 7})
+	quotientRelation, quotientOK := CompactIntegerDivModEquality(
+		DivInteger(scaled, NewIntegerValue(2)),
+		Integer{Value: 10},
+	)
+	remainderRelation, remainderOK := CompactIntegerDivModEquality(
+		ModInteger(scaled, NewIntegerValue(2)),
+		Integer{Value: 0},
+	)
+	remainderRelation.Negated = true
+	if !assignmentOK || !quotientOK || !remainderOK ||
+		CompareIntegerValue(quotientRelation.DividendCoefficient, NewIntegerValue(3)) != 0 {
+		t.Fatal("scaled div/mod relations did not compact")
+	}
+	scaledSystem := IntegerDivModSystem{
+		EqualityCount: 1,
+		RelationCount: 2,
+		Equalities:    [4]IntegerLinearEquality{assignment},
+		Relations:     [4]IntegerDivModRelation{quotientRelation, remainderRelation},
+	}
+	scaledResult, ok := Check(Assert(4, New(), scaledSystem)).(Satisfiable)
+	if !ok {
+		t.Fatalf("scaled div/mod result=%T", scaledResult)
+	}
+	if value, found := IntegerModelValue(scaledResult.Value, x); !found || CompareIntegerValue(value, NewIntegerValue(7)) != 0 {
+		t.Fatalf("scaled div/mod x=(%v,%v)", value, found)
+	}
 }
 
 func TestIntegerDifferenceLogicSatModel(t *testing.T) {
@@ -1909,6 +1938,42 @@ func TestAffineIntegerRealComparisons(t *testing.T) {
 	}}
 	if result := Check(Assert(1, New(), formula)); func() bool { _, ok := result.(Satisfiable); return ok }() == false {
 		t.Fatalf("result=%T", result)
+	}
+}
+
+func TestRationalScaledIntegerRealCoercions(t *testing.T) {
+	x := IntegerVariable(1)
+	scaled := RealScale{
+		Coefficient: NewRational(3, 2),
+		Value:       IntToReal(x),
+	}
+	nonIntegral := And{Values: []Term[BoolSort]{
+		Equal{Left: x, Right: Integer{Value: 7}},
+		Equal{Left: RealToInt(scaled), Right: Integer{Value: 10}},
+		Not{Value: RealIsInt(scaled)},
+	}}
+	if result := Check(Assert(1, New(), nonIntegral)); func() bool { _, ok := result.(Satisfiable); return ok }() == false {
+		t.Fatalf("non-integral result=%T", result)
+	}
+	integral := And{Values: []Term[BoolSort]{
+		Equal{Left: x, Right: Integer{Value: 8}},
+		Equal{Left: RealToInt(scaled), Right: Integer{Value: 12}},
+		RealIsInt(scaled),
+	}}
+	if result := Check(Assert(2, New(), integral)); func() bool { _, ok := result.(Satisfiable); return ok }() == false {
+		t.Fatalf("integral result=%T", result)
+	}
+	negative := RealScale{
+		Coefficient: NewRational(-3, 2),
+		Value:       IntToReal(x),
+	}
+	negativeFractional := And{Values: []Term[BoolSort]{
+		Equal{Left: x, Right: Integer{Value: 7}},
+		Equal{Left: RealToInt(negative), Right: Integer{Value: -11}},
+		Not{Value: RealIsInt(negative)},
+	}}
+	if result := Check(Assert(3, New(), negativeFractional)); func() bool { _, ok := result.(Satisfiable); return ok }() == false {
+		t.Fatalf("negative fractional result=%T", result)
 	}
 }
 

@@ -3293,6 +3293,9 @@ func RealToInt(value Term[RealSort]) Term[IntSort] {
 	if affine, ok := floorIntegerAffineReal(value); ok {
 		return affine
 	}
+	if scaled, ok := floorRationalScaledIntegerReal(value); ok {
+		return scaled
+	}
 	return realToInteger{value: value}
 }
 func RealIsInt(value Term[RealSort]) Term[BoolSort] {
@@ -3301,6 +3304,9 @@ func RealIsInt(value Term[RealSort]) Term[BoolSort] {
 	}
 	if integral, ok := integerAffineRealIsIntegral(value); ok {
 		return Bool{Value: integral}
+	}
+	if integral, ok := rationalScaledIntegerRealIsIntegral(value); ok {
+		return integral
 	}
 	return realIsInteger{value: value}
 }

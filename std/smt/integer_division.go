@@ -3,10 +3,12 @@ package smt
 import "math"
 
 type IntegerDivModRelation struct {
-	SymbolID  int
-	Divisor   IntegerValue
-	Expected  IntegerValue
-	Remainder bool
+	SymbolID            int
+	DividendCoefficient IntegerValue
+	Divisor             IntegerValue
+	Expected            IntegerValue
+	Remainder           bool
+	Negated             bool
 }
 
 func (IntegerDivModRelation) isTerm(BoolSort) {}
@@ -27,13 +29,25 @@ func CompactIntegerDivModEquality(left, right Term[IntSort]) (IntegerDivModRelat
 	}
 	switch value := left.(type) {
 	case IntegerDiv:
-		id, symbol := IntegerVariableID(value.Dividend)
-		return IntegerDivModRelation{SymbolID: id, Divisor: value.Divisor, Expected: expected}, symbol && CompareIntegerValue(value.Divisor, IntegerValue{}) != 0
+		id, coefficient, symbol := compactScaledIntegerSymbol(value.Dividend)
+		return IntegerDivModRelation{SymbolID: id, DividendCoefficient: coefficient, Divisor: value.Divisor, Expected: expected}, symbol && CompareIntegerValue(value.Divisor, IntegerValue{}) != 0
 	case IntegerMod:
-		id, symbol := IntegerVariableID(value.Dividend)
-		return IntegerDivModRelation{SymbolID: id, Divisor: value.Divisor, Expected: expected, Remainder: true}, symbol && CompareIntegerValue(value.Divisor, IntegerValue{}) != 0
+		id, coefficient, symbol := compactScaledIntegerSymbol(value.Dividend)
+		return IntegerDivModRelation{SymbolID: id, DividendCoefficient: coefficient, Divisor: value.Divisor, Expected: expected, Remainder: true}, symbol && CompareIntegerValue(value.Divisor, IntegerValue{}) != 0
 	}
 	return IntegerDivModRelation{}, false
+}
+
+func compactScaledIntegerSymbol(term Term[IntSort]) (int, IntegerValue, bool) {
+	if id, ok := IntegerVariableID(term); ok {
+		return id, NewIntegerValue(1), true
+	}
+	scaled, ok := term.(IntegerScale)
+	if !ok {
+		return 0, IntegerValue{}, false
+	}
+	id, symbol := IntegerVariableID(scaled.Value)
+	return id, scaled.Coefficient, symbol
 }
 
 type compactDivModSymbol struct {
@@ -151,12 +165,14 @@ func solveCompactIntegerDivModValues(equalities []IntegerLinearEquality, relatio
 		if symbol == nil || !symbol.assigned {
 			return checkOutcome{}, false
 		}
-		quotient, remainder, valid := DivModIntegerValue(symbol.value, relation.Divisor)
+		dividend := MultiplyIntegerValue(relation.DividendCoefficient, symbol.value)
+		quotient, remainder, valid := DivModIntegerValue(dividend, relation.Divisor)
 		actual := quotient
 		if relation.Remainder {
 			actual = remainder
 		}
-		if !valid || CompareIntegerValue(actual, relation.Expected) != 0 {
+		equal := valid && CompareIntegerValue(actual, relation.Expected) == 0
+		if equal == relation.Negated {
 			return checkOutcome{status: checkUnsat}, true
 		}
 	}

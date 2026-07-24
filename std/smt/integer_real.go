@@ -90,6 +90,43 @@ func integerAffineRealIsIntegral(term Term[RealSort]) (bool, bool) {
 	return value.offset.IsInteger(), true
 }
 
+func rationalScaledIntegerReal(
+	term Term[RealSort],
+) (Term[IntSort], IntegerValue, bool) {
+	scale, ok := term.(RealScale)
+	if !ok {
+		return nil, IntegerValue{}, false
+	}
+	value, valueOK := decomposeIntegerAffineReal(scale.Value)
+	if !valueOK || value.integer == nil || value.offset.Sign() != 0 {
+		return nil, IntegerValue{}, false
+	}
+	numerator := RationalNumerator(scale.Coefficient)
+	denominator := RationalDenominator(scale.Coefficient)
+	return ScaleInteger(numerator, value.integer), denominator, true
+}
+
+func floorRationalScaledIntegerReal(term Term[RealSort]) (Term[IntSort], bool) {
+	numerator, denominator, ok := rationalScaledIntegerReal(term)
+	if !ok {
+		return nil, false
+	}
+	return DivInteger(numerator, denominator), true
+}
+
+func rationalScaledIntegerRealIsIntegral(
+	term Term[RealSort],
+) (Term[BoolSort], bool) {
+	numerator, denominator, ok := rationalScaledIntegerReal(term)
+	if !ok {
+		return nil, false
+	}
+	return Equal{
+		Left:  ModInteger(numerator, denominator),
+		Right: Integer{Value: 0},
+	}, true
+}
+
 // rewriteSymbolicIntegerToReal lowers the complete conjunctive fragment in
 // which symbolic to_real terms are compared with another to_real term or an
 // exact rational constant. The resulting integer relations preserve SMT-LIB

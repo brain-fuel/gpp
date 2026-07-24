@@ -86,6 +86,20 @@ func RationalFromInteger(value IntegerValue) Rational {
 	return rationalFromBig(new(big.Rat).SetInt(value.large))
 }
 
+func RationalNumerator(value Rational) IntegerValue {
+	if numerator, _, ok := value.small(); ok {
+		return NewIntegerValue(numerator)
+	}
+	return integerValueFromBig(new(big.Int).Set(value.large.Num()))
+}
+
+func RationalDenominator(value Rational) IntegerValue {
+	if _, denominator, ok := value.small(); ok {
+		return NewIntegerValue(denominator)
+	}
+	return integerValueFromBig(new(big.Int).Set(value.large.Denom()))
+}
+
 func FloorRational(value Rational) IntegerValue {
 	if numerator, denominator, ok := value.small(); ok {
 		quotient := numerator / denominator

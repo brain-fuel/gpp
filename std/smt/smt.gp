@@ -609,11 +609,13 @@ func IntToReal(value Term[IntSort]) Term[RealSort] {
 func RealToInt(value Term[RealSort]) Term[IntSort] {
 	if exact, ok := ExactRealConstant(value); ok { return IntegerTerm(FloorRational(exact)) }
 	if affine, ok := floorIntegerAffineReal(value); ok { return affine }
+	if scaled, ok := floorRationalScaledIntegerReal(value); ok { return scaled }
 	return realToInteger(value)
 }
 func RealIsInt(value Term[RealSort]) Term[BoolSort] {
 	if exact, ok := ExactRealConstant(value); ok { return Bool(exact.IsInteger()) }
 	if integral, ok := integerAffineRealIsIntegral(value); ok { return Bool(integral) }
+	if integral, ok := rationalScaledIntegerRealIsIntegral(value); ok { return integral }
 	return realIsInteger(value)
 }
 
